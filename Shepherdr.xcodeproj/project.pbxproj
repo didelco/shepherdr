@@ -1,0 +1,554 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+		EAC9226008044C3EC25CB34A = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/NewSessionSheet.swift";
+			sourceTree = "<group>";
+		};
+		99552822A5350FB7B648416B = {
+			isa = PBXBuildFile;
+			fileRef = EAC9226008044C3EC25CB34A;
+		};
+		DD7D176086D6801FE54DFFE9 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/AppModel.swift";
+			sourceTree = "<group>";
+		};
+		0861D5AFD41B87BB15E1DCFF = {
+			isa = PBXBuildFile;
+			fileRef = DD7D176086D6801FE54DFFE9;
+		};
+		391B62EDD9ACB30599D98DEB = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/SessionSidebar.swift";
+			sourceTree = "<group>";
+		};
+		91BE335FA3EF28F72DFAB63A = {
+			isa = PBXBuildFile;
+			fileRef = 391B62EDD9ACB30599D98DEB;
+		};
+		7AFCD064800444C5C498F198 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/SessionView.swift";
+			sourceTree = "<group>";
+		};
+		54F06908BBDF8D7ABF04C064 = {
+			isa = PBXBuildFile;
+			fileRef = 7AFCD064800444C5C498F198;
+		};
+		599E83B6B4636C238A042320 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/OverviewView.swift";
+			sourceTree = "<group>";
+		};
+		5AF0F54AC5DBFA671FB7462E = {
+			isa = PBXBuildFile;
+			fileRef = 599E83B6B4636C238A042320;
+		};
+		7117CC4AAAEC04C7AFF5FBC8 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/SettingsView.swift";
+			sourceTree = "<group>";
+		};
+		7891BDAC9E1069EECC116E64 = {
+			isa = PBXBuildFile;
+			fileRef = 7117CC4AAAEC04C7AFF5FBC8;
+		};
+		0FF37B67A78E07E9B6E6E41B = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/PromptEditor.swift";
+			sourceTree = "<group>";
+		};
+		D921A51053E75D6CCE5BF147 = {
+			isa = PBXBuildFile;
+			fileRef = 0FF37B67A78E07E9B6E6E41B;
+		};
+		A3CC3935E732940DDBCF5DCA = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/Theme.swift";
+			sourceTree = "<group>";
+		};
+		1956AD24C0966D9069A0E700 = {
+			isa = PBXBuildFile;
+			fileRef = A3CC3935E732940DDBCF5DCA;
+		};
+		75046E84DAE53AA83B440071 = {
+			isa = PBXFileReference;
+			lastKnownFileType = folder.assetcatalog;
+			path = "App/Assets.xcassets";
+			sourceTree = "<group>";
+		};
+		20DDA1EF970C365A16F71374 = {
+			isa = PBXBuildFile;
+			fileRef = 75046E84DAE53AA83B440071;
+		};
+		A03001000000000000000001 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = Tests/ShepherdrCoreTests/SessionOrderTests.swift;
+			sourceTree = "<group>";
+		};
+		A03001000000000000000002 = {
+			isa = PBXBuildFile;
+			fileRef = A03001000000000000000001;
+		};
+		A02D01000000000000000003 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = Tests/ShepherdrCoreTests/TerminalTests.swift;
+			sourceTree = "<group>";
+		};
+		A02D01000000000000000004 = {
+			isa = PBXBuildFile;
+			fileRef = A02D01000000000000000003;
+		};
+		A02D01000000000000000001 = {
+			isa = XCSwiftPackageProductDependency;
+			package = 582681C2EAE02B3F3D399C0C;
+			productName = ShepherdrTerminalUI;
+		};
+		A02D01000000000000000002 = {
+			isa = PBXBuildFile;
+			productRef = A02D01000000000000000001;
+		};
+		E3785987ADB1574119C54188 = {
+			isa = "PBXFileReference";
+			lastKnownFileType = "sourcecode.swift";
+			path = "App/Components.swift";
+			sourceTree = "<group>";
+		};
+		3131AB76C1A133FFC281A5AD = {
+			isa = "PBXBuildFile";
+			fileRef = "E3785987ADB1574119C54188";
+		};
+		6D15C7CA423DE64384AAE98E = {
+			isa = "PBXFileReference";
+			lastKnownFileType = "sourcecode.swift";
+			path = "App/MainView.swift";
+			sourceTree = "<group>";
+		};
+		059B106188D37C87A3B97D0E = {
+			isa = "PBXBuildFile";
+			fileRef = "6D15C7CA423DE64384AAE98E";
+		};
+		1AF48EF43BD67C74CDCE6D96 = {
+			isa = "PBXFileReference";
+			lastKnownFileType = "sourcecode.swift";
+			path = "App/ShepherdrApp.swift";
+			sourceTree = "<group>";
+		};
+		E5D5D65EB23C2677CC3D678E = {
+			isa = "PBXBuildFile";
+			fileRef = "1AF48EF43BD67C74CDCE6D96";
+		};
+		217543D048FED9A9481A0B81 = {
+			isa = "PBXFileReference";
+			lastKnownFileType = "sourcecode.swift";
+			path = "Tests/ShepherdrCoreTests/ClusterStoreTests.swift";
+			sourceTree = "<group>";
+		};
+		EB175CD0A8510FB7C3C21F5F = {
+			isa = "PBXBuildFile";
+			fileRef = "217543D048FED9A9481A0B81";
+		};
+		9B4098D5F7825E6128D2EB2C = {
+			isa = "PBXFileReference";
+			lastKnownFileType = "sourcecode.swift";
+			path = "Tests/ShepherdrCoreTests/DecodingTests.swift";
+			sourceTree = "<group>";
+		};
+		BA8B53A2BB0C7025FFF96852 = {
+			isa = "PBXBuildFile";
+			fileRef = "9B4098D5F7825E6128D2EB2C";
+		};
+		705E9329F08DECB1E1698499 = {
+			isa = "PBXFileReference";
+			lastKnownFileType = "sourcecode.swift";
+			path = "Tests/ShepherdrCoreTests/TestSupport.swift";
+			sourceTree = "<group>";
+		};
+		57FEA94AD09177F5CF5AA65C = {
+			isa = "PBXBuildFile";
+			fileRef = "705E9329F08DECB1E1698499";
+		};
+		0B979195A6E4F07B1C544DA2 = {
+			isa = "PBXFileReference";
+			lastKnownFileType = "sourcecode.swift";
+			path = "Tests/ShepherdrCoreTests/TransportTests.swift";
+			sourceTree = "<group>";
+		};
+		6716D97D8149F7965D60AFAA = {
+			isa = "PBXBuildFile";
+			fileRef = "0B979195A6E4F07B1C544DA2";
+		};
+		17054545C5BC7D635BE3E9F4 = {
+			isa = "PBXFileReference";
+			lastKnownFileType = "folder";
+			path = "Tests/ShepherdrCoreTests/Fixtures";
+			sourceTree = "<group>";
+		};
+		5456033CB7CCB25DFB31133E = {
+			isa = "PBXBuildFile";
+			fileRef = "17054545C5BC7D635BE3E9F4";
+		};
+		B6CDB6E5D160E013280D3C68 = {
+			isa = "PBXFileReference";
+			explicitFileType = "wrapper.application";
+			includeInIndex = 0;
+			path = "Shepherdr.app";
+			sourceTree = "BUILT_PRODUCTS_DIR";
+		};
+		E02A90D9643568EA39115CFB = {
+			isa = "PBXFileReference";
+			explicitFileType = "wrapper.cfbundle";
+			includeInIndex = 0;
+			path = "ShepherdrTests.xctest";
+			sourceTree = "BUILT_PRODUCTS_DIR";
+		};
+		582681C2EAE02B3F3D399C0C = {
+			isa = "XCLocalSwiftPackageReference";
+			relativePath = ".";
+		};
+		94A0426E8D3203DA5468CCF0 = {
+			isa = "XCSwiftPackageProductDependency";
+			package = "582681C2EAE02B3F3D399C0C";
+			productName = "ShepherdrCore";
+		};
+		8BC5FA1B3F30BDC4F50E4F0E = {
+			isa = "PBXBuildFile";
+			productRef = "94A0426E8D3203DA5468CCF0";
+		};
+		EE8E2E89A6D02DA0733B5310 = {
+			isa = "PBXBuildFile";
+			productRef = "94A0426E8D3203DA5468CCF0";
+		};
+		FDBEB636160CC4A63F780304 = {
+			isa = "PBXSourcesBuildPhase";
+			buildActionMask = 2147483647;
+			files = (
+				"3131AB76C1A133FFC281A5AD",
+				"059B106188D37C87A3B97D0E",
+				"E5D5D65EB23C2677CC3D678E",
+				0861D5AFD41B87BB15E1DCFF,
+				91BE335FA3EF28F72DFAB63A,
+				54F06908BBDF8D7ABF04C064,
+				5AF0F54AC5DBFA671FB7462E,
+				7891BDAC9E1069EECC116E64,
+				D921A51053E75D6CCE5BF147,
+				1956AD24C0966D9069A0E700,
+				99552822A5350FB7B648416B,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4AC6D2D3EB3B918C36F7C620 = {
+			isa = "PBXSourcesBuildPhase";
+			buildActionMask = 2147483647;
+			files = (
+				A03001000000000000000002,
+				A02D01000000000000000004,
+				"EB175CD0A8510FB7C3C21F5F",
+				"BA8B53A2BB0C7025FFF96852",
+				"57FEA94AD09177F5CF5AA65C",
+				"6716D97D8149F7965D60AFAA",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FA3C5073B463D1BB4154A72F = {
+			isa = "PBXFrameworksBuildPhase";
+			buildActionMask = 2147483647;
+			files = (
+				A02D01000000000000000002,
+				"8BC5FA1B3F30BDC4F50E4F0E",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6AEA91B3ED7C8BDAF5C2FDA9 = {
+			isa = "PBXFrameworksBuildPhase";
+			buildActionMask = 2147483647;
+			files = (
+				"EE8E2E89A6D02DA0733B5310",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2BF5DE592226D457D3BCDAC0 = {
+			isa = "PBXResourcesBuildPhase";
+			buildActionMask = 2147483647;
+			files = (
+				20DDA1EF970C365A16F71374,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D7DA8668DC68561CF3B5D465 = {
+			isa = "PBXResourcesBuildPhase";
+			buildActionMask = 2147483647;
+			files = (
+				"5456033CB7CCB25DFB31133E",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB52CB08E0FDF02BF6C67C33 = {
+			isa = "XCBuildConfiguration";
+			name = "Debug";
+			buildSettings = {
+				MACOSX_DEPLOYMENT_TARGET = "14.0";
+				SDKROOT = "macosx";
+				SWIFT_VERSION = "6.0";
+				CLANG_ENABLE_MODULES = "YES";
+				CLANG_ENABLE_OBJC_ARC = "YES";
+				SWIFT_STRICT_CONCURRENCY = "complete";
+				CODE_SIGN_STYLE = "Automatic";
+				COMBINE_HIDPI_IMAGES = "YES";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				DEBUG_INFORMATION_FORMAT = "dwarf";
+				ENABLE_TESTABILITY = "YES";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				ONLY_ACTIVE_ARCH = "YES";
+			};
+		};
+		5283471FF90C511CFE244FFF = {
+			isa = "XCBuildConfiguration";
+			name = "Release";
+			buildSettings = {
+				MACOSX_DEPLOYMENT_TARGET = "14.0";
+				SDKROOT = "macosx";
+				SWIFT_VERSION = "6.0";
+				CLANG_ENABLE_MODULES = "YES";
+				CLANG_ENABLE_OBJC_ARC = "YES";
+				SWIFT_STRICT_CONCURRENCY = "complete";
+				CODE_SIGN_STYLE = "Automatic";
+				COMBINE_HIDPI_IMAGES = "YES";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+			};
+		};
+		4BA304E783CFBB9FA6E56552 = {
+			isa = "XCConfigurationList";
+			buildConfigurations = (
+				"AB52CB08E0FDF02BF6C67C33",
+				"5283471FF90C511CFE244FFF",
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = "Release";
+		};
+		EF00B4C26D3BA245CBAB3F00 = {
+			isa = "XCBuildConfiguration";
+			name = "Debug";
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = "io.github.javiertoledo.Shepherdr";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				GENERATE_INFOPLIST_FILE = "YES";
+				INFOPLIST_KEY_CFBundleDisplayName = "Shepherdr";
+				ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026 Shepherdr contributors";
+				CURRENT_PROJECT_VERSION = "1";
+				MARKETING_VERSION = "0.5.0";
+				ENABLE_APP_SANDBOX = "NO";
+				ENABLE_HARDENED_RUNTIME = "YES";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+			};
+		};
+		49B4940C5F901788C278DD41 = {
+			isa = "XCBuildConfiguration";
+			name = "Release";
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = "io.github.javiertoledo.Shepherdr";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				GENERATE_INFOPLIST_FILE = "YES";
+				INFOPLIST_KEY_CFBundleDisplayName = "Shepherdr";
+				ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026 Shepherdr contributors";
+				CURRENT_PROJECT_VERSION = "1";
+				MARKETING_VERSION = "0.5.0";
+				ENABLE_APP_SANDBOX = "NO";
+				ENABLE_HARDENED_RUNTIME = "YES";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+			};
+		};
+		BF6B243F84FA915024E66DCC = {
+			isa = "XCConfigurationList";
+			buildConfigurations = (
+				"EF00B4C26D3BA245CBAB3F00",
+				"49B4940C5F901788C278DD41",
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = "Release";
+		};
+		532167A2F4DF305CC7A47840 = {
+			isa = "XCBuildConfiguration";
+			name = "Debug";
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = "io.github.javiertoledo.ShepherdrTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				GENERATE_INFOPLIST_FILE = "YES";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/../Frameworks",
+					"@executable_path/../Frameworks",
+				);
+			};
+		};
+		613A5B8C1DD03DF932B456E4 = {
+			isa = "XCBuildConfiguration";
+			name = "Release";
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = "io.github.javiertoledo.ShepherdrTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				GENERATE_INFOPLIST_FILE = "YES";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/../Frameworks",
+					"@executable_path/../Frameworks",
+				);
+			};
+		};
+		5108F0FAAC041B35012A8D2F = {
+			isa = "XCConfigurationList";
+			buildConfigurations = (
+				"532167A2F4DF305CC7A47840",
+				"613A5B8C1DD03DF932B456E4",
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = "Release";
+		};
+		29C7B681C8D62CBAC94D51C0 = {
+			isa = "PBXNativeTarget";
+			buildConfigurationList = "BF6B243F84FA915024E66DCC";
+			buildPhases = (
+				"FDBEB636160CC4A63F780304",
+				"FA3C5073B463D1BB4154A72F",
+				"2BF5DE592226D457D3BCDAC0",
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Shepherdr";
+			packageProductDependencies = (
+				A02D01000000000000000001,
+				"94A0426E8D3203DA5468CCF0",
+			);
+			productName = "Shepherdr";
+			productReference = "B6CDB6E5D160E013280D3C68";
+			productType = "com.apple.product-type.application";
+		};
+		7EC8F98B7A265120217712DE = {
+			isa = "PBXNativeTarget";
+			buildConfigurationList = "5108F0FAAC041B35012A8D2F";
+			buildPhases = (
+				"4AC6D2D3EB3B918C36F7C620",
+				"6AEA91B3ED7C8BDAF5C2FDA9",
+				"D7DA8668DC68561CF3B5D465",
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "ShepherdrTests";
+			packageProductDependencies = (
+				"94A0426E8D3203DA5468CCF0",
+			);
+			productName = "ShepherdrTests";
+			productReference = "E02A90D9643568EA39115CFB";
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		48A8104B9A3AE9B3C1E275D8 = {
+			isa = "PBXGroup";
+			children = (
+				"E3785987ADB1574119C54188",
+				"6D15C7CA423DE64384AAE98E",
+				"1AF48EF43BD67C74CDCE6D96",
+				DD7D176086D6801FE54DFFE9,
+				391B62EDD9ACB30599D98DEB,
+				7AFCD064800444C5C498F198,
+				599E83B6B4636C238A042320,
+				7117CC4AAAEC04C7AFF5FBC8,
+				0FF37B67A78E07E9B6E6E41B,
+				A3CC3935E732940DDBCF5DCA,
+				EAC9226008044C3EC25CB34A,
+				75046E84DAE53AA83B440071,
+			);
+			name = "App";
+			sourceTree = "<group>";
+		};
+		4352443A37E80B3384E90F5D = {
+			isa = "PBXGroup";
+			children = (
+				A03001000000000000000001,
+				A02D01000000000000000003,
+				"217543D048FED9A9481A0B81",
+				"9B4098D5F7825E6128D2EB2C",
+				"705E9329F08DECB1E1698499",
+				"0B979195A6E4F07B1C544DA2",
+				"17054545C5BC7D635BE3E9F4",
+			);
+			name = "Tests";
+			sourceTree = "<group>";
+		};
+		FBDC4F23F93125BBEEAE800C = {
+			isa = "PBXGroup";
+			children = (
+				"B6CDB6E5D160E013280D3C68",
+				"E02A90D9643568EA39115CFB",
+			);
+			name = "Products";
+			sourceTree = "<group>";
+		};
+		DC76E9F0C0006E8F919E0C51 = {
+			isa = "PBXGroup";
+			children = (
+				"48A8104B9A3AE9B3C1E275D8",
+				"4352443A37E80B3384E90F5D",
+				"FBDC4F23F93125BBEEAE800C",
+			);
+			sourceTree = "<group>";
+		};
+		98F54143AB4E86B28C3AFEE0 = {
+			isa = "PBXProject";
+			attributes = {
+				BuildIndependentTargetsInParallel = "YES";
+				LastUpgradeCheck = "1600";
+			};
+			buildConfigurationList = "4BA304E783CFBB9FA6E56552";
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = "en";
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				"en",
+				"Base",
+			);
+			mainGroup = "DC76E9F0C0006E8F919E0C51";
+			packageReferences = (
+				"582681C2EAE02B3F3D399C0C",
+			);
+			productRefGroup = "FBDC4F23F93125BBEEAE800C";
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				"29C7B681C8D62CBAC94D51C0",
+				"7EC8F98B7A265120217712DE",
+			);
+		};
+	};
+	rootObject = "98F54143AB4E86B28C3AFEE0";
+}

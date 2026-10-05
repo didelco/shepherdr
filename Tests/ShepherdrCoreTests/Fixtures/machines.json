@@ -1,0 +1,4 @@
+[
+  {"id":"opaque-remote-a","label":"Build Studio","target":"builder","session":"agents","enabled":true,"selected":false},
+  {"id":"opaque-remote-b","label":"Lab","target":"ssh://dev@lab:2222","session":"default","enabled":false,"selected":true}
+]

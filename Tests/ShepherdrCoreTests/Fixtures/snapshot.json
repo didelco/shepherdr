@@ -1,0 +1,33 @@
+{
+  "id": "cli:api:snapshot",
+  "result": {
+    "type": "session_snapshot",
+    "snapshot": {
+      "version": "0.9.0", "protocol": 22,
+      "focused_workspace_id": "w1", "focused_tab_id": "w1:t1", "focused_pane_id": "w1:p1",
+      "workspaces": [
+        {"workspace_id":"w1","number":1,"label":"Orchard","focused":true,"pane_count":3,"tab_count":2,"active_tab_id":"w1:t1","agent_status":"blocked", "worktree":{"repo_key":"orchard","repo_name":"orchard","repo_root":"/srv/orchard","checkout_path":"/srv/orchard-review","is_linked_worktree":true}},
+        {"workspace_id":"w2","number":2,"label":"Docs","focused":false,"pane_count":2,"tab_count":1,"active_tab_id":"w2:t1","agent_status":"done"}
+      ],
+      "tabs": [
+        {"tab_id":"w1:t1","workspace_id":"w1","number":1,"label":"Development","focused":true,"pane_count":2,"agent_status":"blocked"},
+        {"tab_id":"w1:t2","workspace_id":"w1","number":2,"label":"Review","focused":false,"pane_count":1,"agent_status":"idle"},
+        {"tab_id":"w2:t1","workspace_id":"w2","number":1,"label":"Writing","focused":false,"pane_count":2,"agent_status":"done"}
+      ],
+      "panes": [
+        {"pane_id":"w1:p1","terminal_id":"term-a","workspace_id":"w1","tab_id":"w1:t1","focused":true,"agent_status":"blocked","cwd":"/srv/orchard","foreground_cwd":"/srv/orchard/packages/api","revision":12},
+        {"pane_id":"w1:p2","terminal_id":"term-b","workspace_id":"w1","tab_id":"w1:t1","focused":false,"agent_status":"working","cwd":"/srv/orchard","revision":7},
+        {"pane_id":"w1:p3","terminal_id":"term-c","workspace_id":"w1","tab_id":"w1:t2","focused":false,"agent_status":"idle","revision":0},
+        {"pane_id":"w2:p1","terminal_id":"term-d","workspace_id":"w2","tab_id":"w2:t1","focused":false,"agent_status":"done","cwd":"/srv/docs","revision":8},
+        {"pane_id":"w2:p2","terminal_id":"term-shell","workspace_id":"w2","tab_id":"w2:t1","focused":false,"agent_status":"unknown","cwd":"/srv/docs","revision":0}
+      ],
+      "layouts": [],
+      "agents": [
+        {"terminal_id":"term-a","name":"API reviewer","agent":"claude","display_agent":"Claude Code","agent_status":"blocked","workspace_id":"w1","tab_id":"w1:t1","pane_id":"w1:p1","focused":true,"revision":12,"tokens":{"summary":"Permission to run tests"},"state_labels":{"blocked":"Awaiting approval"}},
+        {"terminal_id":"term-b","agent":"codex","agent_status":"working","workspace_id":"w1","tab_id":"w1:t1","pane_id":"w1:p2","focused":false,"revision":7,"cwd":"/srv/orchard","foreground_cwd":"/srv/orchard/web"},
+        {"terminal_id":"term-c","name":" ","agent":"opencode","agent_status":"idle","workspace_id":"w1","tab_id":"w1:t2","pane_id":"w1:p3","focused":false,"revision":0,"title":"Review changes"},
+        {"terminal_id":"term-d","name":"Docs writer","agent":"codex","agent_status":"done","workspace_id":"w2","tab_id":"w2:t1","pane_id":"w2:p1","focused":false,"revision":8,"future_optional_field":{"enabled":true}}
+      ]
+    }
+  }
+}

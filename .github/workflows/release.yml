@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing stable tag to release (for example v0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Validate version and runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+            echo 'Use a stable tag such as v0.1.0.' >&2
+            exit 1
+          }
+          [[ "$(uname -m)" == arm64 ]]
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      - name: Test on Apple Silicon
+        run: |
+          xcodebuild -project Shepherdr.xcodeproj -scheme Shepherdr \
+            -configuration Debug -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath build/tests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO test
+
+      - name: Build and verify release packages
+        run: bash scripts/package-release.sh "$RELEASE_TAG"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          assets=("dist/Shepherdr-$version-macos-arm64.dmg" "dist/Shepherdr-$version-macos-arm64.zip" dist/SHA256SUMS)
+          if draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [[ "$draft" != true ]]; then
+              echo 'This release is already public. Create a new version instead of replacing its downloads.' >&2
+              exit 1
+            fi
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${assets[@]}" \
+              --verify-tag --draft --title "Shepherdr $version" \
+              --notes-file docs/RELEASE-NOTES.md --generate-notes
+          fi
+          # Keep incomplete uploads private; only publish after all three assets exist.
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' > build/release-assets.txt
+          for file in "${assets[@]}"; do
+            grep -Fx -- "${file##*/}" build/release-assets.txt
+          done
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+          gh release view "$RELEASE_TAG" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
