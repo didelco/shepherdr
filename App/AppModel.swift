@@ -279,11 +279,20 @@ final class AppModel {
         dictationTarget = nil
     }
 
+    /// Stops dictating into a session that is going away. A transcript still in progress is dropped.
+    private func abandonDictation(for id: Agent.ID) {
+        guard dictationTarget == id else { return }
+        if dictation.isRecording { dictation.cancel() }
+        dictationTarget = nil
+    }
+
     private func finishDictation() async {
         let target = dictationTarget
         let text = await dictation.stop()
+        // Its session closed while transcribing: the text has nowhere to go.
+        guard let target, dictationTarget == target else { return }
         dictationTarget = nil
-        guard let target, let text else { return }
+        guard let text else { return }
         let current = drafts[target] ?? ""
         let separator = current.isEmpty || current.hasSuffix("\n") || current.hasSuffix(" ") ? "" : " "
         drafts[target] = current + separator + text
@@ -380,6 +389,7 @@ final class AppModel {
         if selectedID == id { selection = .overview }
         do {
             try await cluster.closeSession(paneID: context.paneID, onMachine: id.machineID)
+            abandonDictation(for: id)
             drafts[id] = nil
             sessionNotices[id] = nil
             workspaces.removeValue(forKey: id)?.browser.closeAll()
@@ -430,8 +440,11 @@ final class AppModel {
         if let selectedID { move(.session(selectedID), direction) }
     }
 
-    /// The session or group being dragged in the queue.
+    /// The session or group being dragged in the queue, and the token its drag carries. A drag
+    /// that ends outside the queue leaves both behind, so a drop moves the item only when it
+    /// carries this token: a later, unrelated text drag can never move it.
     var dragging: QueueItemID?
+    @ObservationIgnored var dragToken = ""
 
     func place(_ item: QueueItemID, _ drop: QueueDrop) {
         order.place(item, drop)

@@ -493,9 +493,23 @@ private struct QueueDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        defer { model.dragging = nil; hint = nil }
-        guard let item = model.dragging, let drop = resolve(item, info.location.y) else { return false }
-        withAnimation(.snappy(duration: 0.2)) { model.place(item, drop) }
+        defer { hint = nil }
+        guard let item = model.dragging, let drop = resolve(item, info.location.y),
+              let provider = info.itemProviders(for: [.plainText]).first else {
+            model.dragging = nil
+            return false
+        }
+        let model = model
+        _ = provider.loadObject(ofClass: NSString.self) { text, _ in
+            let token = (text as? NSString).map(String.init)
+            Task { @MainActor in
+                // Only the queue drag that set `dragging` carries its token. Any other text
+                // dropped here finds it left over from a drag that ended outside the queue.
+                let isQueueDrag = token == model.dragToken && model.dragging == item
+                model.dragging = nil
+                if isQueueDrag { withAnimation(.snappy(duration: 0.2)) { model.place(item, drop) } }
+            }
+        }
         return true
     }
 
@@ -549,11 +563,14 @@ private extension ShellRow {
 }
 
 private extension View {
-    /// Starts an in-app drag of a queue item; the model, not the pasteboard, carries what moves.
+    /// Starts an in-app drag of a queue item. The model carries what moves; the pasteboard
+    /// carries a token for this drag, so drops can tell it from any other text.
     func queueDraggable(_ item: QueueItemID, model: AppModel) -> some View {
         onDrag {
+            let token = "shepherdr-queue-item:\(UUID().uuidString)"
             model.dragging = item
-            return NSItemProvider(object: "shepherdr-queue-item" as NSString)
+            model.dragToken = token
+            return NSItemProvider(object: token as NSString)
         }
     }
 
