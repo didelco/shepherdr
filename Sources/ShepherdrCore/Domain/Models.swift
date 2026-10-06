@@ -149,6 +149,8 @@ public struct AgentRow: Identifiable, Equatable, Sendable {
     public let isStale: Bool
     public let lastSuccess: Date?
     public var manualPriority: Int = 0
+    /// The user-defined group holding this session, if any.
+    public var groupID: String?
     public var id: Agent.ID { agent.id }
     public var name: String { agent.name }
     public var workspace: String { agent.workspaceName }

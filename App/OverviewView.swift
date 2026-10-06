@@ -64,7 +64,7 @@ struct OverviewView: View {
     }
 
     @ViewBuilder private var sessions: some View {
-        let rows = model.visibleRows
+        let rows = model.matchingRows
         ConsoleHeader(title: "Sessions by priority", trailing: rows.isEmpty ? nil : "⌘1–⌘9 to jump")
         if rows.isEmpty {
             Text(emptyMessage).font(Theme.mono(12)).foregroundStyle(Theme.dim)

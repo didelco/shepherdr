@@ -4,7 +4,11 @@ Requires macOS 14 or later and Xcode 16 or later, with its license accepted and 
 
 ## Dependencies
 
-The native terminal renderer uses [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm), pinned to 1.10.1 (MIT). Fira Code 6.2 is bundled under the SIL Open Font License 1.1 (`Sources/ShepherdrTerminalUI/Resources/Fonts`). This AppKit version builds without an additional Metal compiler component or binary framework. SwiftPM also resolves SwiftTerm's command-line tooling dependency, ArgumentParser; it is not linked into Shepherdr. No API keys, accounts, or server-side Shepherdr service are required.
+The native terminal renderer uses [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm), pinned to 1.10.1 (MIT). Fira Code 6.2 is bundled under the SIL Open Font License 1.1 (`Sources/ShepherdrTerminalUI/Resources/Fonts`). This AppKit version builds without an additional Metal compiler component or binary framework. SwiftPM also resolves SwiftTerm's command-line tooling dependency, ArgumentParser; it is not linked into Shepherdr.
+
+Dictation uses [FluidAudio](https://github.com/FluidInference/FluidAudio), pinned to 0.13.4 (Apache 2.0), the engine and version [scribe](https://github.com/theam/scribe) uses, so both share one downloaded model. It has no further dependencies or binary frameworks. NVIDIA's Parakeet TDT v3 model (CC BY 4.0) is not bundled: FluidAudio downloads it from Hugging Face into `~/Library/Application Support/FluidAudio` on first use. FluidAudio's license ships in the app. Microphone access needs the `NSMicrophoneUsageDescription` key and, under the hardened runtime, the `com.apple.security.device.audio-input` entitlement in `App/Shepherdr.entitlements`, which the release script signs with. A `swift run` build has no Info.plist, so dictation reports that it is unavailable there instead of starting.
+
+No API keys, accounts, or server-side Shepherdr service are required.
 
 ## Build and run
 
@@ -56,13 +60,14 @@ Use **Settings → Machines** for failure details. A malformed response is **Inc
 ## Architecture
 
 ```text
-App/                              SwiftUI presentation: queue sidebar, work area, composer, settings, theme
+App/                              SwiftUI presentation: queue sidebar, work area, prompt editor, browser, settings, theme
 Sources/ShepherdrCore/
   Transport/                      CLI adapters, executable discovery, bounded process/stream transports
   DTO/                            JSON wire types, validation and domain mapping
   Domain/                         Machine, Workspace, Agent, lifecycle and failure models
-  Store/                          MainActor cluster state, local session priorities and terminal connections
-Sources/ShepherdrTerminalUI/       Embeddable SwiftTerm AppKit terminal surface and palette
+  Store/                          MainActor cluster state, local priorities, groups and holds, terminal connections
+Sources/ShepherdrTerminalUI/       Embeddable SwiftTerm AppKit terminal surface, palette and link handling
+Sources/ShepherdrDictation/        On-device dictation: microphone capture and Parakeet transcription via FluidAudio
 Sources/ShepherdrProbe/            Read-only integration diagnostic
 Tests/ShepherdrCoreTests/          Protocol, transport and store regression tests
 scripts/make-icon.swift            Regenerates App/Assets.xcassets/AppIcon.appiconset from docs/assets/icon.png

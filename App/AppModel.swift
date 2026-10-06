@@ -1,6 +1,8 @@
+import AppKit
 import Foundation
 import Observation
 import ShepherdrCore
+import ShepherdrDictation
 
 enum Destination: Hashable {
     case overview
@@ -31,17 +33,41 @@ struct SessionContext {
     var canConnect: Bool { machine.connection == .online }
 }
 
+/// What a session keeps while you work elsewhere: its prompt editor and its browser tabs.
+@MainActor @Observable
+final class SessionWorkspace {
+    /// The prompt editor is optional; the terminal is where you normally type.
+    var isEditorOpen = false
+    let browser = SessionBrowser()
+}
+
+/// Whether a session on hold can resume: `ready` once none of the sessions it waits for is
+/// still working or needs attention.
+enum WaitState { case waiting, ready }
+
 /// Window-level navigation and composer state. Drafts and prompt history stay in memory only.
 @MainActor @Observable
 final class AppModel {
     let cluster: ClusterStore
     let order: SessionOrderStore
+    let relations: SessionRelationStore
     var selection: Destination = .overview
     var search = ""
     var drafts: [Agent.ID: String] = [:]
     private(set) var history: [Agent.ID: [String]] = [:]
-    /// Incremented to ask the visible composer to take keyboard focus.
+    /// Incremented to ask the visible prompt editor to take keyboard focus.
     var promptFocusRequest = 0
+    /// Incremented to ask the visible terminal to take keyboard focus.
+    var terminalFocusRequest = 0
+    /// Records and transcribes prompts on this Mac.
+    let dictation = Dictation()
+    /// The session a recording is for: its transcript lands in that session's prompt editor.
+    private(set) var dictationTarget: Agent.ID?
+    /// Asks before the one-time speech model download.
+    var asksToDownloadSpeechModel = false
+    @ObservationIgnored private var speechModelDownloadAccepted = false
+    /// Created on first use and kept for the life of the app, so pages survive switching sessions.
+    @ObservationIgnored private var workspaces: [Agent.ID: SessionWorkspace] = [:]
     /// The terminal shown in the work area, for menu commands.
     var activeTerminal: TerminalStore?
 
@@ -54,13 +80,54 @@ final class AppModel {
     /// Messages shown on a session after it was created, such as an agent waiting at a startup prompt.
     var sessionNotices: [Agent.ID: String] = [:]
 
-    init(cluster: ClusterStore = ClusterStore(), order: SessionOrderStore = SessionOrderStore()) {
+    init(cluster: ClusterStore = ClusterStore(), order: SessionOrderStore = SessionOrderStore(),
+         relations: SessionRelationStore = SessionRelationStore()) {
         self.cluster = cluster
         self.order = order
+        self.relations = relations
+    }
+
+    func workspace(for id: Agent.ID) -> SessionWorkspace {
+        if let workspace = workspaces[id] { return workspace }
+        let workspace = SessionWorkspace()
+        workspaces[id] = workspace
+        return workspace
     }
 
     var rankedRows: [AgentRow] { order.ranked(cluster.agents) }
-    var visibleRows: [AgentRow] { rankedRows.filter { $0.matches(search) } }
+    /// Sessions matching the filter, in priority order, whether or not their group is collapsed.
+    var matchingRows: [AgentRow] { rankedRows.filter { $0.matches(search) } }
+
+    /// The queue as the sidebar shows it. While filtering, groups list only their matching
+    /// sessions, unless the group's own name matches.
+    var queue: [QueueItem] {
+        let items = order.layout(cluster.agents)
+        guard !search.isEmpty else { return items }
+        return items.compactMap { item in
+            switch item {
+            case .session(let row):
+                return row.matches(search) ? item : nil
+            case .group(var group):
+                if group.group.name.localizedStandardContains(search) { return item }
+                group.rows = group.rows.filter { $0.matches(search) }
+                return group.rows.isEmpty ? nil : .group(group)
+            }
+        }
+    }
+
+    /// Sessions shown in the sidebar, in order: ⌘1…⌘9 address these. Collapsed groups hide
+    /// theirs, except while filtering.
+    var visibleRows: [AgentRow] {
+        queue.flatMap { item -> [AgentRow] in
+            if case .group(let group) = item, group.group.isCollapsed, search.isEmpty { return [] }
+            return item.rows
+        }
+    }
+
+    /// Items moves are relative to: filtering hides some, collapsing does not.
+    private var movableItems: Set<QueueItemID> {
+        Set(queue.flatMap { [$0.id] + $0.rows.map { QueueItemID.session($0.id) } })
+    }
 
     var shells: [ShellRow] {
         cluster.machines.flatMap { state -> [ShellRow] in
@@ -93,8 +160,85 @@ final class AppModel {
 
     func open(_ id: Agent.ID) {
         selection = .session(id)
-        promptFocusRequest += 1
+        focusInput(of: id)
     }
+
+    /// Keyboard focus goes to the terminal, or to the prompt editor when it is open.
+    private func focusInput(of id: Agent.ID) {
+        if workspace(for: id).isEditorOpen { promptFocusRequest += 1 } else { terminalFocusRequest += 1 }
+    }
+
+    func togglePromptEditor() {
+        guard let id = selectedID else { return }
+        workspace(for: id).isEditorOpen.toggle()
+        focusInput(of: id)
+    }
+
+    func toggleBrowser() {
+        guard let id = selectedID else { return }
+        let browser = workspace(for: id).browser
+        browser.isVisible.toggle()
+        if browser.isVisible && browser.tabs.isEmpty { browser.newTab() }
+    }
+
+    /// Links clicked in a session's terminal open in its browser, or in the default browser.
+    func openLink(_ url: URL, from id: Agent.ID, external: Bool) {
+        if external { NSWorkspace.shared.open(url) } else { workspace(for: id).browser.open(url) }
+    }
+
+    // MARK: Dictation
+
+    /// Starts recording for the selected session, or stops and transcribes into its prompt editor.
+    func toggleDictation() {
+        if dictation.isRecording {
+            Task { await finishDictation() }
+            return
+        }
+        guard let id = selectedID, dictation.isReady else { return }
+        if !Dictation.isModelInstalled && !speechModelDownloadAccepted {
+            asksToDownloadSpeechModel = true
+            return
+        }
+        dictationTarget = id
+        workspace(for: id).isEditorOpen = true
+        Task { await dictation.start() }
+    }
+
+    func acceptSpeechModelDownload() {
+        speechModelDownloadAccepted = true
+        toggleDictation()
+    }
+
+    func cancelDictation() {
+        dictation.cancel()
+        dictationTarget = nil
+    }
+
+    private func finishDictation() async {
+        let target = dictationTarget
+        let text = await dictation.stop()
+        dictationTarget = nil
+        guard let target, let text else { return }
+        let current = drafts[target] ?? ""
+        let separator = current.isEmpty || current.hasSuffix("\n") || current.hasSuffix(" ") ? "" : " "
+        drafts[target] = current + separator + text
+        workspace(for: target).isEditorOpen = true
+        if selectedID == target { promptFocusRequest += 1 }
+    }
+
+    // MARK: Sessions on hold
+
+    func waitState(for id: Agent.ID) -> WaitState? {
+        let awaited = relations.waitingFor(id)
+        guard !awaited.isEmpty else { return nil }
+        let busy = awaited.contains { other in
+            guard let row = cluster.agents.first(where: { $0.id == other }), !row.isStale else { return false }
+            return row.agent.state == .working || row.agent.state == .blocked
+        }
+        return busy ? .waiting : .ready
+    }
+
+    func row(for id: Agent.ID) -> AgentRow? { cluster.agents.first { $0.id == id } }
 
     /// ⌘1…⌘9 address the visible queue by position.
     func open(position: Int) {
@@ -145,6 +289,8 @@ final class AppModel {
             try await cluster.closeSession(paneID: context.paneID, onMachine: id.machineID)
             drafts[id] = nil
             sessionNotices[id] = nil
+            workspaces.removeValue(forKey: id)?.browser.closeAll()
+            relations.forget(id)
         } catch {
             actionFailure = Self.failure(error)
         }
@@ -175,20 +321,72 @@ final class AppModel {
 
     // MARK: Priorities
 
-    func canMove(_ id: Agent.ID?, _ direction: SessionOrderStore.Move) -> Bool {
-        order.canMove(id, direction, visibleIDs: visibleRows.map(\.id))
+    func canMove(_ item: QueueItemID?, _ direction: SessionOrderStore.Move) -> Bool {
+        order.canMove(item, direction, visible: movableItems)
     }
 
-    func move(_ id: Agent.ID, _ direction: SessionOrderStore.Move) {
-        order.move(id, direction, visibleIDs: visibleRows.map(\.id))
+    func move(_ item: QueueItemID, _ direction: SessionOrderStore.Move) {
+        order.move(item, direction, visible: movableItems)
+    }
+
+    func canMove(_ id: Agent.ID?, _ direction: SessionOrderStore.Move) -> Bool {
+        canMove(id.map(QueueItemID.session), direction)
     }
 
     func moveSelection(_ direction: SessionOrderStore.Move) {
-        if let selectedID { move(selectedID, direction) }
+        if let selectedID { move(.session(selectedID), direction) }
     }
 
-    func move(fromOffsets source: IndexSet, toOffset destination: Int) {
-        order.move(fromOffsets: source, toOffset: destination, visibleIDs: visibleRows.map(\.id))
+    /// The session or group being dragged in the queue.
+    var dragging: QueueItemID?
+
+    func place(_ item: QueueItemID, _ drop: QueueDrop) {
+        order.place(item, drop)
+    }
+
+    // MARK: Groups
+
+    struct GroupPrompt: Identifiable {
+        enum Kind { case create(with: Agent.ID?), rename(String) }
+        let id = UUID()
+        let kind: Kind
+        var name: String
+    }
+
+    /// The group being created or renamed, presented as a name prompt.
+    var groupPrompt: GroupPrompt?
+
+    var groups: [SessionGroup] { order.groups }
+
+    func promptNewGroup(with session: Agent.ID? = nil) {
+        groupPrompt = GroupPrompt(kind: .create(with: session), name: "")
+    }
+
+    func promptRename(_ group: SessionGroup) {
+        groupPrompt = GroupPrompt(kind: .rename(group.id), name: group.name)
+    }
+
+    func commitGroupPrompt() {
+        guard let prompt = groupPrompt else { return }
+        groupPrompt = nil
+        let name = prompt.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        switch prompt.kind {
+        case .create(let session): order.createGroup(named: name, with: session)
+        case .rename(let id): order.renameGroup(id, to: name)
+        }
+    }
+
+    func moveToGroup(_ id: Agent.ID, _ groupID: String?) {
+        order.moveToGroup(id, groupID)
+    }
+
+    func toggleCollapsed(_ group: SessionGroup) {
+        order.setCollapsed(group.id, !group.isCollapsed)
+    }
+
+    func ungroup(_ group: SessionGroup) {
+        order.ungroup(group.id)
     }
 
     // MARK: Composer

@@ -14,6 +14,12 @@ Claude Code, Codex, Gemini, opencode… on every [Herdr](https://herdr.dev/) mac
 
 ---
 
+## What's Herdr?
+
+[Herdr](https://herdr.dev) ([source](https://github.com/herdrdev/herdr)) is "the runtime your coding agents live on". It is a single Rust binary that owns the terminals your agents run in: Claude Code, Codex, opencode, Gemini and friends keep working in a background server when you close the client or lose your SSH connection. Every pane is marked working, blocked or idle, local and SSH machines share one agent list, and agents can drive Herdr themselves through its CLI and socket API. Its own client is a keyboard-and-mouse TUI that runs in any terminal.
+
+Shepherdr is another window onto those same sessions: a native macOS app that drives the `herdr` CLI. It doesn't wrap, replace or bundle Herdr.
+
 ## Why another Herdr client?
 
 Why not?
@@ -26,13 +32,15 @@ If it fits the way you work, take it. If it doesn't, fork it and make it yours, 
 
 ## What it does
 
-- **One queue for every agent.** Sessions from all your machines, local and SSH, in your own priority order. Drag to reorder, jump with **⌘1…⌘9**.
-- **The real terminal, embedded.** Pick a session and its live terminal opens right in the window, with a prompt composer underneath.
-- **Watch or drive.** Sessions open live, but Shepherdr never steals input from another client. Taking over is always your explicit call.
+- **One queue for every agent.** Sessions from all your machines, local and SSH, in your own priority order. Drag to reorder, jump with **⌘1…⌘9**, and gather them into groups that you prioritize as one.
+- **The real terminal, embedded.** Pick a session and type straight into its agent's TUI (⇧⏎ for a new line). Open the prompt editor when a prompt deserves more thought, or dictate it and edit the transcript.
+- **A browser per session.** Click a link and it opens next to the terminal, in tabs that stay put while you hop between sessions.
+- **Sessions on hold.** Mark a planner as waiting for its subagents; it gets an hourglass that turns green when they're done.
+- **Drive or just watch.** Sessions open unlocked; one click on the padlock makes them read-only. Shepherdr never steals input from another client: taking over is always your explicit call.
 - **Spawn and dismiss sessions.** **⌘N**: pick a folder and an agent (or just a shell), and off it goes.
 - **Phosphor green, 8-bit soul.** Bundled Fira Code, a pixel-art flock, and a German Shepherd keeping watch.
 
-No accounts, no telemetry, no server. Shepherdr drives the `herdr` CLI you already have (plus `ssh` for remote terminals). Prompts and terminal contents never touch the disk.
+No accounts, no telemetry, no server. Shepherdr drives the `herdr` CLI you already have (plus `ssh` for remote terminals). Prompts, terminal contents and your voice never touch the disk, and dictation runs entirely on your Mac.
 
 ## Get it
 
@@ -42,13 +50,20 @@ No accounts, no telemetry, no server. Shepherdr drives the `herdr` CLI you alrea
 
 Prefer to build it yourself? `open Shepherdr.xcodeproj` and hit **⌘R**. More in [DEVELOPMENT](docs/DEVELOPMENT.md).
 
+## Other similar projects worth exploring
+
+Shepherdr is one take among several. If it isn't yours, these are worth a look:
+
+- [herdrm](https://github.com/missuo/herdrm): a native macOS console for Herdr, with all your coding agents and their live terminals, across devices.
+- [herdr-GPUI](https://github.com/penso/herdr-gpui): a native Herdr client for macOS, Linux and Windows, built with Rust and GPUI, covering terminal sessions, workspaces, Git worktrees and agent activity.
+
 ## The fine print
 
 Shepherdr is a side project started by [Javier Toledo](https://github.com/javiertoledo) (CTO at [The Agile Monkeys](https://www.theagilemonkeys.com)) to scratch his own itch. It's donated under the [MIT License](LICENSE) to anyone who finds it useful.
 
 There are no commercial plans, no roadmap and no promises of maintenance or support. That's what the MIT license is for. Issues and pull requests are welcome, and they'll get an answer whenever the shepherd is off duty.
 
-Shepherdr is an independent project, not affiliated with Herdr. Built on [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (MIT) and [Fira Code](https://github.com/tonsky/FiraCode) (OFL), with its session-first design informed by [herdrm](https://github.com/missuo/herdrm).
+Shepherdr is an independent project, not affiliated with Herdr. Built on [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (MIT), [Fira Code](https://github.com/tonsky/FiraCode) (OFL) and [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache 2.0) running NVIDIA's [Parakeet TDT v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) (CC BY 4.0).
 
 <div align="center">
 

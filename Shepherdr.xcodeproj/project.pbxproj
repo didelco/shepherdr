@@ -5,6 +5,25 @@
 	};
 	objectVersion = 56;
 	objects = {
+		A06B01000000000000000003 = {
+			isa = XCSwiftPackageProductDependency;
+			package = 582681C2EAE02B3F3D399C0C;
+			productName = ShepherdrDictation;
+		};
+		A06B01000000000000000004 = {
+			isa = PBXBuildFile;
+			productRef = A06B01000000000000000003;
+		};
+		A06B01000000000000000001 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/BrowserPanel.swift";
+			sourceTree = "<group>";
+		};
+		A06B01000000000000000002 = {
+			isa = PBXBuildFile;
+			fileRef = A06B01000000000000000001;
+		};
 		EAC9226008044C3EC25CB34A = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -239,6 +258,7 @@
 			isa = "PBXSourcesBuildPhase";
 			buildActionMask = 2147483647;
 			files = (
+				A06B01000000000000000002,
 				"3131AB76C1A133FFC281A5AD",
 				"059B106188D37C87A3B97D0E",
 				"E5D5D65EB23C2677CC3D678E",
@@ -270,6 +290,7 @@
 			isa = "PBXFrameworksBuildPhase";
 			buildActionMask = 2147483647;
 			files = (
+				A06B01000000000000000004,
 				A02D01000000000000000002,
 				"8BC5FA1B3F30BDC4F50E4F0E",
 			);
@@ -354,6 +375,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026 Shepherdr contributors";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Shepherdr listens only while you dictate a prompt, and transcribes it on this Mac.";
+				CODE_SIGN_ENTITLEMENTS = "App/Shepherdr.entitlements";
 				CURRENT_PROJECT_VERSION = "1";
 				MARKETING_VERSION = "0.5.0";
 				ENABLE_APP_SANDBOX = "NO";
@@ -375,6 +398,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026 Shepherdr contributors";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Shepherdr listens only while you dictate a prompt, and transcribes it on this Mac.";
+				CODE_SIGN_ENTITLEMENTS = "App/Shepherdr.entitlements";
 				CURRENT_PROJECT_VERSION = "1";
 				MARKETING_VERSION = "0.5.0";
 				ENABLE_APP_SANDBOX = "NO";
@@ -446,6 +471,7 @@
 			name = "Shepherdr";
 			packageProductDependencies = (
 				A02D01000000000000000001,
+				A06B01000000000000000003,
 				"94A0426E8D3203DA5468CCF0",
 			);
 			productName = "Shepherdr";
@@ -476,6 +502,7 @@
 			isa = "PBXGroup";
 			children = (
 				"E3785987ADB1574119C54188",
+				A06B01000000000000000001,
 				"6D15C7CA423DE64384AAE98E",
 				"1AF48EF43BD67C74CDCE6D96",
 				DD7D176086D6801FE54DFFE9,

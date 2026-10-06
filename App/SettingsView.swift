@@ -30,8 +30,8 @@ private struct GeneralSettings: View {
         Form {
             Section("Sessions") {
                 Picker("Open sessions", selection: $openMode) {
-                    Text("Live — type and send prompts").tag(TerminalMode.control.rawValue)
-                    Text("Watch only").tag(TerminalMode.observe.rawValue)
+                    Text("Unlocked — type and send prompts").tag(TerminalMode.control.rawValue)
+                    Text("Locked — read-only").tag(TerminalMode.observe.rawValue)
                 }
                 Text("Live never takes input from another client. When one is attached, Shepherdr watches and offers Take Over.")
                     .font(.caption).foregroundStyle(.secondary)

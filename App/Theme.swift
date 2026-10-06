@@ -17,6 +17,11 @@ enum Theme {
     static let cyan = Color(hex: 0x5CD6FF)
     static let red = Color(hex: 0xFF5F57)
 
+    /// In-between shades for the pixel-art artwork (app icon, README header): the logo's amber coat
+    /// and the terminal's pinks, filled out so lightness steps stay small. scripts/pixelate.swift reads
+    /// every color in this file, so artwork stays in the app's palette.
+    static let artworkShades: [UInt32] = [0xA16F27, 0xFFC978, 0xFFDEA6, 0xFFA99F, 0xFFC3BB]
+
     /// Interface text uses the bundled Fira Code; the terminal font is configurable in Settings.
     static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         .custom(ConsoleFonts.defaultFamily, size: size).weight(weight == .heavy || weight == .black ? .bold : weight)
