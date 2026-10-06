@@ -385,7 +385,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Shepherdr";
 				ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026 Shepherdr contributors";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026 The Agile Monkeys and Shepherdr contributors";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Shepherdr listens only while you dictate a prompt, and transcribes it on this Mac.";
 				CODE_SIGN_ENTITLEMENTS = "App/Shepherdr.entitlements";
 				CURRENT_PROJECT_VERSION = "1";
@@ -408,7 +408,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Shepherdr";
 				ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026 Shepherdr contributors";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026 The Agile Monkeys and Shepherdr contributors";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Shepherdr listens only while you dictate a prompt, and transcribes it on this Mac.";
 				CODE_SIGN_ENTITLEMENTS = "App/Shepherdr.entitlements";
 				CURRENT_PROJECT_VERSION = "1";

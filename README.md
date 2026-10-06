@@ -64,7 +64,7 @@ Shepherdr is one take among several. Warp and Superset are the ones I used the m
 
 ## The fine print
 
-Shepherdr is a side project started by [Javier Toledo](https://github.com/javiertoledo) (CTO at [The Agile Monkeys](https://www.theagilemonkeys.com)) to scratch his own itch. It's donated under the [MIT License](LICENSE) to anyone who finds it useful.
+Shepherdr is a side project started by [Javier Toledo](https://github.com/javiertoledo) (CTO at [The Agile Monkeys](https://www.theagilemonkeys.com)) to scratch his own itch. The Agile Monkeys donates it under the [MIT License](LICENSE) to anyone who finds it useful.
 
 There are no commercial plans and no promises of maintenance or support. That's what the MIT license is for. Issues and pull requests are welcome, and they'll get an answer whenever the shepherd is off duty.
 
