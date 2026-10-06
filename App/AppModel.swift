@@ -22,6 +22,29 @@ struct ShellRow: Identifiable, Equatable {
     }
 }
 
+/// One entry of an expanded group: a session, or a shell placed in the group.
+enum GroupMember: Identifiable {
+    case session(AgentRow)
+    case shell(ShellRow)
+
+    /// Distinct per kind: a shell and the agent Herdr later detects in it share an `Agent.ID`.
+    enum ID: Hashable { case session(Agent.ID), shell(Agent.ID) }
+
+    var id: ID {
+        switch self {
+        case .session(let row): .session(row.id)
+        case .shell(let shell): .shell(shell.id)
+        }
+    }
+
+    var agentID: Agent.ID {
+        switch self {
+        case .session(let row): row.id
+        case .shell(let shell): shell.id
+        }
+    }
+}
+
 /// Everything the work area needs to present one session.
 struct SessionContext {
     let target: TerminalTarget
@@ -139,20 +162,33 @@ final class AppModel {
         Set(queue.flatMap { [$0.id] + $0.rows.map { QueueItemID.session($0.id) } })
     }
 
-    var shells: [ShellRow] {
+    private var allShells: [ShellRow] {
         cluster.machines.flatMap { state -> [ShellRow] in
             guard let snapshot = state.snapshot else { return [] }
             let agentTerminals = Set(snapshot.agents.map(\.id.terminalID))
             return snapshot.panes.filter { !agentTerminals.contains($0.terminalID) }
                 .map { ShellRow(pane: $0, machine: state.machine, isStale: state.isStale) }
         }
-        .filter { $0.matches(search) }
     }
 
+    /// Shells matching the filter.
+    var shells: [ShellRow] { allShells.filter { $0.matches(search) } }
+
     /// Shells placed in a group, such as a session created there whose agent has not started.
+    /// Like the group's sessions, all of them show while the filter matches the group's name.
     func shells(in group: SessionGroup) -> [ShellRow] {
-        let byID = Dictionary(shells.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let pool = group.name.localizedStandardContains(search) ? allShells : shells
+        let byID = Dictionary(pool.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return group.members.compactMap { byID[$0] }
+    }
+
+    /// A group's sessions and shells, in the group's own order.
+    func members(of group: QueueGroupRow) -> [GroupMember] {
+        let rows = Dictionary(group.rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let shells = Dictionary(shells(in: group.group).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return group.group.members.compactMap { id in
+            rows[id].map(GroupMember.session) ?? shells[id].map(GroupMember.shell)
+        }
     }
 
     /// Shells in no group, listed under Shells.
@@ -168,7 +204,7 @@ final class AppModel {
         queue.flatMap { item -> [Agent.ID] in
             guard case .group(let group) = item else { return item.rows.map(\.id) }
             if group.group.isCollapsed, search.isEmpty { return [] }
-            return group.rows.map(\.id) + shells(in: group.group).map(\.id)
+            return members(of: group).map(\.agentID)
         } + ungroupedShells.map(\.id)
     }
 

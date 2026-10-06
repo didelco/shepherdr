@@ -101,10 +101,14 @@ struct SessionSidebar: View {
                                         containsSelection: model.selectedID.map(group.group.members.contains) == true,
                                         model: model, hint: $dropHint)
                         if expanded {
-                            let shells = model.shells(in: group.group)
-                            ForEach(group.rows) { row in sessionRow(row, in: group) }
-                            ForEach(shells, id: \.listID) { shell in shellRow(shell, grouped: true) }
-                            if group.rows.isEmpty && shells.isEmpty {
+                            let members = model.members(of: group)
+                            ForEach(members) { member in
+                                switch member {
+                                case .session(let row): sessionRow(row, in: group)
+                                case .shell(let shell): shellRow(shell, grouped: true)
+                                }
+                            }
+                            if members.isEmpty {
                                 EmptyGroupView(group: group.group, model: model, hint: $dropHint)
                             }
                         }
