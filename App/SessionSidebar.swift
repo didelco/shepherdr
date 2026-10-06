@@ -387,11 +387,13 @@ private struct TreeLines: View {
     private let elbow: CGFloat = 14, parentBottom: CGFloat = 22
 
     var body: some View {
-        Canvas { context, size in
+        // Read on the main actor: Canvas draws from a nonisolated closure.
+        let indent = SessionRowView.indent
+        return Canvas { context, size in
             // Each level's line runs under the middle of its parent's first column: the priority
             // number at the top of the tree, the state glyph below it.
             func x(_ level: Int) -> CGFloat {
-                leading + CGFloat(level - 1) * SessionRowView.indent + (level == 1 ? 6 : 7)
+                leading + CGFloat(level - 1) * indent + (level == 1 ? 6 : 7)
             }
             var path = Path()
             for (index, passes) in tree.guides.enumerated() where passes {

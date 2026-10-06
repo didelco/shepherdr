@@ -1,5 +1,6 @@
 import AppKit
-import UserNotifications
+// Notification settings and requests predate Sendable; they never leave the main actor here.
+@preconcurrency import UserNotifications
 import ShepherdrCore
 
 /// Posts a macOS notification when an agent finishes or needs you: the session's name, its state
