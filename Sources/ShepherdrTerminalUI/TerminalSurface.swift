@@ -51,19 +51,13 @@ public struct TerminalSurface: NSViewRepresentable {
         apply(palette, to: view)
         context.coordinator.palette = palette
         view.allowMouseReporting = false // Selection and copy remain native; input uses the keyboard.
+        // Option types what the keyboard layout gives it (@, #, €…), as in Terminal; the word-wise
+        // keys that need Meta get it from installInteractions.
+        view.optionAsMetaKey = false
         view.terminalDelegate = context.coordinator
         view.installInteractions()
-        let coordinator = context.coordinator
-        store.display = { [weak view, weak coordinator] frame in
-            guard let view else { return }
-            coordinator?.applyingFrame = true
-            if view.getTerminal().cols != frame.columns || view.getTerminal().rows != frame.rows {
-                view.resize(cols: frame.columns, rows: frame.rows)
-            }
-            view.feed(byteArray: Array(frame.bytes)[...])
-            coordinator?.applyingFrame = false
-        }
-        store.resetDisplay = { [weak view] in view?.feed(text: "\u{1b}c") }
+        store.display = { [weak view] frame in view?.show(frame) }
+        store.resetDisplay = { [weak view] in view?.resetScreen() }
         store.resize(columns: view.getTerminal().cols, rows: view.getTerminal().rows)
         store.open()
         return view
@@ -107,12 +101,11 @@ public struct TerminalSurface: NSViewRepresentable {
 
     @MainActor public final class Coordinator: NSObject, @preconcurrency TerminalViewDelegate {
         let store: TerminalStore
-        var applyingFrame = false
         var palette: TerminalPalette?
         var focusRequest: Int?
         init(store: TerminalStore) { self.store = store }
         public func sizeChanged(source: SwiftTerm.TerminalView, newCols: Int, newRows: Int) {
-            if !applyingFrame { store.resize(columns: newCols, rows: newRows) }
+            if (source as? ConsoleTerminalView)?.applyingFrame != true { store.resize(columns: newCols, rows: newRows) }
         }
         public func send(source: SwiftTerm.TerminalView, data: ArraySlice<UInt8>) { store.send(.bytes(Data(data))) }
         public func setTerminalTitle(source: SwiftTerm.TerminalView, title: String) {}
@@ -130,11 +123,90 @@ public struct TerminalSurface: NSViewRepresentable {
 }
 
 /// SwiftTerm's view with Shepherdr's interactions: clicking a link opens it (⌘-click: in the
-/// default browser), and Shift-Return inserts a new line in agent TUIs instead of submitting.
+/// default browser), Shift-Return inserts a new line in agent TUIs instead of submitting, and
+/// selecting text copies it.
 public final class ConsoleTerminalView: SwiftTerm.TerminalView {
     var openLink: ((_ url: URL, _ external: Bool) -> Void)?
+    /// Set while a Herdr frame resizes the view, so that resize is not reported back as the user's.
+    private(set) var applyingFrame = false
     private var linkTracker: LinkTracker?
     private var keyMonitor: Any?
+    private var mouseMonitor: Any?
+    /// Frames that arrived while the mouse button is down in the terminal. SwiftTerm drops the
+    /// selection whenever output arrives, so a busy agent would otherwise make text impossible to select.
+    private var heldFrames: [TerminalFrame]?
+    private var selectedWithMouse = false
+
+    func show(_ frame: TerminalFrame) {
+        if heldFrames != nil {
+            // A press whose mouse up went elsewhere (another app took it) must not freeze the terminal.
+            if NSEvent.pressedMouseButtons & 1 != 0 { heldFrames?.append(frame); return }
+            endMousePress()
+        }
+        applyingFrame = true
+        if getTerminal().cols != frame.columns || getTerminal().rows != frame.rows {
+            resize(cols: frame.columns, rows: frame.rows)
+        }
+        feed(byteArray: Array(frame.bytes)[...])
+        applyingFrame = false
+        paintChangedRows()
+    }
+
+    func resetScreen() {
+        heldFrames = heldFrames.map { _ in [] }
+        feed(text: "\u{1b}c")
+        paintChangedRows()
+    }
+
+    /// SwiftTerm paints new output a sixtieth of a second after it arrives. Painting the changed rows
+    /// right away saves that wait on every keystroke's echo; SwiftTerm's own pass then finds nothing
+    /// left to paint and only moves the caret.
+    private func paintChangedRows() {
+        let terminal = getTerminal()
+        guard let (first, last) = terminal.getUpdateRange() else { return }
+        terminal.clearUpdateRange()
+        let height = cellSize.height
+        var region = CGRect(x: 0, y: bounds.height - CGFloat(last + 1) * height,
+                            width: bounds.width, height: CGFloat(last - first + 1) * height)
+        // As SwiftTerm does: the last row also repaints the leftover strip below it.
+        if last == terminal.rows - 1 { region = CGRect(x: 0, y: 0, width: bounds.width, height: region.maxY) }
+        setNeedsDisplay(region)
+        NSAccessibility.post(element: self, notification: .valueChanged)
+    }
+
+    /// SwiftTerm's own cell metrics: the width of "W" and the font's line height.
+    private var cellSize: CGSize {
+        CGSize(width: max(1, font.advancement(forGlyph: font.glyph(withName: "W")).width),
+               height: max(1, ceil(CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font))))
+    }
+
+    public override func selectionChanged(source: Terminal) {
+        super.selectionChanged(source: source)
+        if heldFrames != nil { selectedWithMouse = true }
+    }
+
+    /// Mouse down in the terminal holds output; mouse up copies what the mouse selected, then lets output in.
+    private func handleMouse(_ event: NSEvent) {
+        if event.type == .leftMouseDown {
+            guard event.window === window, heldFrames == nil, !isHiddenOrHasHiddenAncestor,
+                  bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+            heldFrames = []
+            selectedWithMouse = false
+        } else if heldFrames != nil {
+            // After SwiftTerm has handled this mouse up.
+            DispatchQueue.main.async { [weak self] in self?.endMousePress() }
+        }
+    }
+
+    private func endMousePress() {
+        guard let frames = heldFrames else { return }
+        if selectedWithMouse, let text = getSelection(), !text.isEmpty {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+        }
+        heldFrames = nil
+        frames.forEach(show)
+    }
 
     /// SwiftTerm's mouse and key handlers are not overridable, so a click recognizer that never
     /// delays events and a local key monitor add these around them; selection keeps working.
@@ -148,28 +220,41 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.activeInKeyWindow, .mouseMoved, .inVisibleRect],
                                        owner: tracker))
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            let flags = event.modifierFlags
             guard let self, event.window === self.window, self.window?.firstResponder === self,
-                  event.keyCode == 36 || event.keyCode == 76, flags.contains(.shift),
-                  flags.isDisjoint(with: [.command, .option, .control]) else { return event }
-            // Claude Code, Codex and Gemini read ESC-Return (Alt-Return) as a new line; Return submits.
-            self.terminalDelegate?.send(source: self, data: [27, 13][...])
+                  let bytes = Self.metaSequence(for: event) else { return event }
+            self.terminalDelegate?.send(source: self, data: bytes[...])
             return nil
+        }
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
+            self?.handleMouse(event)
+            return event
         }
     }
 
     func removeInteractions() {
-        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        for monitor in [keyMonitor, mouseMonitor].compactMap({ $0 }) { NSEvent.removeMonitor(monitor) }
         keyMonitor = nil
+        mouseMonitor = nil
+    }
+
+    /// Keys that send Meta (Escape-prefixed) sequences although Option otherwise types characters.
+    static func metaSequence(for event: NSEvent) -> [UInt8]? {
+        let flags = event.modifierFlags.intersection([.shift, .control, .option, .command])
+        switch (event.keyCode, flags) {
+        // Claude Code, Codex and Gemini read ESC-Return (Alt-Return) as a new line; Return submits.
+        case (36, .shift), (76, .shift), (36, .option), (76, .option): return [27, 13]
+        case (123, .option): return EscapeSequences.emacsBack // a word back
+        case (124, .option): return EscapeSequences.emacsForward // a word forward
+        case (51, .option): return [27, 127] // delete the previous word
+        default: return nil
+        }
     }
 
     /// The web link at a point in this view: one an agent marked up explicitly, or a plain-text URL.
     func link(at point: NSPoint) -> (url: URL, explicit: Bool)? {
         let terminal = getTerminal()
-        // SwiftTerm's own cell metrics: the width of "W" and the font's line height.
-        let width = max(1, font.advancement(forGlyph: font.glyph(withName: "W")).width)
-        let height = max(1, ceil(CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)))
-        let column = Int(point.x / width), row = Int((bounds.height - point.y) / height)
+        let cell = cellSize
+        let column = Int(point.x / cell.width), row = Int((bounds.height - point.y) / cell.height)
         guard point.x >= 0, point.y <= bounds.height, (0..<terminal.cols).contains(column),
               (0..<terminal.rows).contains(row) else { return nil }
         if let payload = terminal.getCharData(col: column, row: row)?.getPayload() as? String {

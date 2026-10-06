@@ -30,6 +30,8 @@ let package = Package(
         .executableTarget(name: "ShepherdrApp", dependencies: ["ShepherdrCore", "ShepherdrTerminalUI", "ShepherdrDictation"], path: "App",
                          exclude: ["Assets.xcassets"]), // The Xcode app target compiles the icon catalog.
         .testTarget(name: "ShepherdrCoreTests", dependencies: ["ShepherdrCore"],
-                    resources: [.copy("Fixtures")])
+                    resources: [.copy("Fixtures")]),
+        .testTarget(name: "ShepherdrTerminalUITests", dependencies: ["ShepherdrCore", "ShepherdrTerminalUI",
+                                                                    .product(name: "SwiftTerm", package: "SwiftTerm")])
     ]
 )

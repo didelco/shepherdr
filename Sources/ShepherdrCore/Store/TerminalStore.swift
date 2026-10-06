@@ -49,9 +49,11 @@ public final class TerminalStore {
                     guard attempt == self.generation, !Task.isCancelled else { return }
                     switch event {
                     case .frame(let frame):
-                        self.status = mode.acceptsInput ? .interactive : .observing
+                        // Written only on change: every write invalidates the views that read it.
+                        let status: Status = mode.acceptsInput ? .interactive : .observing
+                        if self.status != status { self.status = status }
                         // A takeover happens once; later reconnects ask politely again.
-                        if mode == .takeover { self.mode = .control }
+                        if mode == .takeover, self.mode != .control { self.mode = .control }
                         self.display?(frame)
                     case .closed(let reason):
                         let rejected = self.status == .connecting && Self.isControlConflict(reason)
