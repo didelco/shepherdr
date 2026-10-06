@@ -167,6 +167,26 @@ import Testing
         }
     }
 
+    @Test func newSessionsTakeTheirSpotBeforeHerdrReportsThem() async throws {
+        try await withDefaults { defaults in
+            let order = SessionOrderStore(defaults: defaults)
+            order.synchronize(with: [a, b])
+            let group = order.createGroup(named: "Work", with: b)
+            // A shell created in a group, or next to a session, waits there for its agent.
+            order.insert(c, .into(group: group))
+            order.insert(d, .after(.session(a)))
+            #expect(order.entries.map(\.id) == [.session(a), .session(d), .group(group)])
+            #expect(order.groups.first?.members == [b, c])
+            // Once Herdr reports them, discovery leaves them where they are.
+            order.synchronize(with: [d, c, b, a])
+            #expect(SessionOrderStore(defaults: defaults).orderedIDs == [a, d, b, c])
+            // An unknown target leaves the new session at the end.
+            let e = Agent.ID(machineID: "local", terminalID: "e")
+            order.insert(e, .after(.session(Agent.ID(machineID: "gone", terminalID: "x"))))
+            #expect(order.orderedIDs == [a, d, b, c, e])
+        }
+    }
+
     @Test func filteredMovesInsideGroupsPreserveHiddenSlots() async throws {
         try await withDefaults { defaults in
             let order = SessionOrderStore(defaults: defaults)

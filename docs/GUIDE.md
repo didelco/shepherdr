@@ -14,7 +14,7 @@ The sidebar is your prioritized queue of sessions. Pick one and its live termina
 - **Unlocked by default:** sessions open with input enabled. Click the padlock to lock one read-only. If another client controls the terminal, Shepherdr stays locked and offers an explicit **Take Over**.
 - **A browser per session:** click a link in the terminal and it opens in the session's own browser, next to the terminal; its tabs stay put while you work elsewhere. **⌘-click** opens your default browser instead.
 - **Sessions on hold:** mark a session as waiting for others, such as a planner waiting for the subagents it launched. It shows an hourglass, and its related sessions are one click away.
-- **Create and close sessions:** **⌘N** creates a Herdr workspace in a folder and starts Claude Code, Codex, Gemini, opencode or another supported agent (or just a shell). **Close Session…** in a session's context menu ends its pane after confirmation.
+- **Create and close sessions:** **⌘N** creates a Herdr workspace with a shell in a folder; start Claude Code, Codex or any other supported agent in it and it joins the queue. Create one in a group with its **+**, or next to a session with **New Session in Same Folder…**. **Close Session…** in a session's context menu ends its pane after confirmation.
 - Overview with working / needs-you / done / idle counts and session cards; plain shell panes are listed separately.
 - **Machines** in **Settings → Machines** (⌘,): add SSH machines, disable them to stop polling, or remove them from Herdr's catalog.
 - Concurrent queries, independent connection states, and last-known data marked stale after failure.
@@ -42,7 +42,7 @@ Local integration has been verified with CLI 0.9.3 querying an existing, compati
 
 ## Connect Herdr
 
-Start Herdr normally on your Mac. Shepherdr queries the **local default session** and lists the agents that Herdr itself reports. A shell pane is not an agent: panes without one appear under **Shells**. Machine status and failure details are in **Settings → Machines**.
+Start Herdr normally on your Mac. Shepherdr queries the **local default session** and lists the agents that Herdr itself reports. A shell pane is not an agent: panes without one appear under **Shells**, or in their group when created there, and move into the queue as soon as Herdr detects an agent in them. Machine status and failure details are in **Settings → Machines**.
 
 Configure SSH machines in Herdr, then refresh Shepherdr:
 
@@ -77,6 +77,7 @@ Groups gather sessions however you like: a project, a client, personal work. Cre
 - A group is one position in the queue: drag its header, use its ▲▼ controls or its context menu to prioritize it like a session. Inside, its sessions keep their own order with the same controls.
 - Drop a session on a group's header to add it, or between grouped sessions to place it exactly. **Move to Group** and **Remove from Group** in a session's context menu do the same without dragging. Groups do not nest.
 - Click a header to collapse or expand the group. A collapsed group still shows how many of its sessions need you, and its sessions are skipped by **⌘1…⌘9**. Filtering shows matching sessions even inside collapsed groups.
+- Hover a header and click **+** (or use **New Session in Group…** in its context menu) to create a session in the group. Until you start an agent in it, it is listed in the group as a shell.
 - **Rename…** and **Ungroup** are in the header's context menu. Ungrouping leaves the sessions where the group was, in their order; it never closes them.
 
 Numbers run through the whole queue, groups included, so they always reflect overall priority.
@@ -85,7 +86,9 @@ You can reorder while filtering the queue (**⌘F**): movement is relative to th
 
 ## Create and close sessions
 
-**⌘N** (or **+** in the sidebar) opens **New Session**: choose a folder (on the selected machine), an optional name, and an agent. Shepherdr runs `herdr workspace create --cwd … --label …` and then `herdr agent start … --kind …` in its first pane, and opens it. If the agent stops at a startup question, such as trusting the folder, the session opens with a notice so you can answer it in the terminal. **Shell only** skips the agent.
+**⌘N** (or **+** in the sidebar) opens **New Session**: choose a folder (on the selected machine) and an optional name. Shepherdr runs `herdr workspace create --cwd … --label …` and opens its shell. Start an agent there as you would in any terminal: Herdr detects it, and the session joins the queue within one refresh.
+
+On this Mac, **CHOOSE…** always starts in your projects folder, `~/projects` unless you change it in **Settings → General**, and a folder name alone means a folder inside it. **New Session in Same Folder…** in a session's or shell's context menu prefills its folder and machine and places the new session right after it, in the same group. A group header's **+** places it in that group.
 
 **Close Session…** in a session's context menu asks for confirmation, then runs `herdr pane close`. It is deliberately only in the context menu, away from everyday controls. This ends the agent process. When it is the workspace's last pane, Herdr closes the workspace too.
 

@@ -52,7 +52,7 @@ struct SessionSidebar: View {
             }
             .buttonStyle(.plain)
             .help("Overview (⌘0)")
-            Button { model.showsNewSession = true } label: { Text("+").font(Theme.mono(14, .bold)) }
+            Button { model.startNewSession() } label: { Text("+").font(Theme.mono(14, .bold)) }
                 .buttonStyle(ConsoleButtonStyle())
                 .disabled(model.onlineMachines.isEmpty)
                 .help("New session (⌘N)")
@@ -98,11 +98,13 @@ struct SessionSidebar: View {
                     case .group(let group):
                         let expanded = !group.group.isCollapsed || filtering
                         GroupHeaderView(group: group, isExpanded: expanded,
-                                        containsSelection: group.rows.contains { $0.id == model.selectedID },
+                                        containsSelection: model.selectedID.map(group.group.members.contains) == true,
                                         model: model, hint: $dropHint)
                         if expanded {
+                            let shells = model.shells(in: group.group)
                             ForEach(group.rows) { row in sessionRow(row, in: group) }
-                            if group.rows.isEmpty {
+                            ForEach(shells, id: \.listID) { shell in shellRow(shell, grouped: true) }
+                            if group.rows.isEmpty && shells.isEmpty {
                                 EmptyGroupView(group: group.group, model: model, hint: $dropHint)
                             }
                         }
@@ -135,25 +137,35 @@ struct SessionSidebar: View {
     }
 
     @ViewBuilder private var shellsSection: some View {
-        if !model.shells.isEmpty {
+        let shells = model.ungroupedShells
+        if !shells.isEmpty {
             Button { showShells.toggle() } label: {
-                ConsoleHeader(title: "\(showShells ? "▾" : "▸") Shells", trailing: "\(model.shells.count)")
+                ConsoleHeader(title: "\(showShells ? "▾" : "▸") Shells", trailing: "\(shells.count)")
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 4)
             .help("Panes without a detected agent")
             if showShells {
-                ForEach(model.shells) { shell in
-                    ShellRowView(shell: shell, isSelected: model.selectedID == shell.id,
-                                 showsMachine: model.showsMachineNames) { model.open(shell.id) }
-                        .contextMenu {
-                            Button("Open") { model.open(shell.id) }
-                            Button("Close Shell…") { model.requestClose(shell.id) }.disabled(shell.isStale)
-                        }
-                }
+                ForEach(shells, id: \.listID) { shell in shellRow(shell, grouped: false) }
             }
         }
+    }
+
+    private func shellRow(_ shell: ShellRow, grouped: Bool) -> some View {
+        ShellRowView(shell: shell, isGrouped: grouped, isSelected: model.selectedID == shell.id,
+                     showsMachine: model.showsMachineNames) { model.open(shell.id) }
+            .contextMenu {
+                Button("Open") { model.open(shell.id) }
+                Button("New Session in Same Folder…") { model.startNewSession(besides: shell.id) }
+                    .disabled(!model.canStartNewSession(besides: shell.id))
+                if grouped {
+                    Divider()
+                    Button("Remove from Group") { model.moveToGroup(shell.id, nil) }
+                }
+                Divider()
+                Button("Close Shell…") { model.requestClose(shell.id) }.disabled(shell.isStale)
+            }
     }
 
     @ViewBuilder private var emptyQueue: some View {
@@ -268,6 +280,8 @@ private struct SessionRowView: View {
         })
         .contextMenu {
             Button("Open") { model.open(row.id) }
+            Button("New Session in Same Folder…") { model.startNewSession(besides: row.id) }
+                .disabled(!model.canStartNewSession(besides: row.id))
             Divider()
             PriorityMenu(item: item, model: model)
             Divider()
@@ -304,6 +318,9 @@ private struct SessionRowView: View {
 
 /// A group's header: click to collapse or expand, drag to reorder, drop sessions on it to add them.
 private struct GroupHeaderView: View {
+    /// Fixed, so the controls shown on hover never change the row's height.
+    private static let contentHeight: CGFloat = 26
+
     let group: QueueGroupRow
     let isExpanded: Bool
     let containsSelection: Bool
@@ -319,21 +336,32 @@ private struct GroupHeaderView: View {
         let blocked = live.filter { $0.agent.state == .blocked }.count
         let working = live.filter { $0.agent.state == .working }.count
         let receiving = hint == .into(group: group.id)
+        let count = group.rows.count + model.shells(in: group.group).count
         HStack(spacing: 7) {
             Text(isExpanded ? "▾" : "▸").font(Theme.mono(11, .bold))
                 .foregroundStyle(Theme.phosphor.opacity(0.8)).frame(width: 14)
             Text(group.group.name.uppercased()).font(Theme.mono(10.5, .bold)).tracking(1.2).lineLimit(1)
                 .foregroundStyle(containsSelection && !isExpanded ? Theme.phosphor : Theme.text.opacity(0.85))
-            Text("\(group.rows.count)").font(Theme.mono(10)).foregroundStyle(Theme.faint)
+            Text("\(count)").font(Theme.mono(10)).foregroundStyle(Theme.faint)
             Spacer(minLength: 4)
             if blocked > 0 {
                 Text("\(blocked) need you").font(Theme.mono(9.5, .semibold)).foregroundStyle(Theme.amber).lineLimit(1)
             } else if working > 0 {
                 Text("\(working) working").font(Theme.mono(9.5)).foregroundStyle(Theme.dim).lineLimit(1)
             }
-            if hovering { ReorderArrows(item: item, model: model, shortcuts: false) }
+            if hovering {
+                Button { model.startNewSession(in: group.group) } label: {
+                    Text("+").font(Theme.mono(13, .bold)).frame(width: 18, height: Self.contentHeight).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(model.onlineMachines.isEmpty ? Theme.faint.opacity(0.5) : Theme.phosphor)
+                .disabled(model.onlineMachines.isEmpty)
+                .help("New session in \(group.group.name)")
+                ReorderArrows(item: item, model: model, shortcuts: false)
+            }
         }
-        .padding(.leading, 12).padding(.trailing, 8).padding(.top, 9).padding(.bottom, 6)
+        .frame(height: Self.contentHeight)
+        .padding(.leading, 12).padding(.trailing, 8).padding(.top, 5).padding(.bottom, 1)
         .background(receiving ? Theme.phosphor.opacity(0.12) : hovering ? Theme.raised.opacity(0.5) : .clear)
         .overlay { if receiving { Rectangle().strokeBorder(Theme.phosphor.opacity(0.6), lineWidth: 1) } }
         .overlay(alignment: .leading) { Rectangle().fill(Theme.amber).frame(width: 2).opacity(blocked > 0 ? 0.6 : 0) }
@@ -352,6 +380,9 @@ private struct GroupHeaderView: View {
             return .after(item)
         })
         .contextMenu {
+            Button("New Session in Group…") { model.startNewSession(in: group.group) }
+                .disabled(model.onlineMachines.isEmpty)
+            Divider()
             Button("Rename…") { model.promptRename(group.group) }
             Button(group.group.isCollapsed ? "Expand" : "Collapse") { model.toggleCollapsed(group.group) }
             Divider()
@@ -360,7 +391,7 @@ private struct GroupHeaderView: View {
             Button("Ungroup") { model.ungroup(group.group) }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Group \(group.group.name), \(group.rows.count) sessions\(blocked > 0 ? ", \(blocked) need you" : "")")
+        .accessibilityLabel("Group \(group.group.name), \(count) sessions\(blocked > 0 ? ", \(blocked) need you" : "")")
         .accessibilityAddTraits(.isButton)
     }
 }
@@ -472,6 +503,8 @@ private struct QueueDropDelegate: DropDelegate {
 
 private struct ShellRowView: View {
     let shell: ShellRow
+    /// Grouped shells are indented under their group's header, like its sessions.
+    let isGrouped: Bool
     let isSelected: Bool
     let showsMachine: Bool
     let open: () -> Void
@@ -487,8 +520,11 @@ private struct ShellRowView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.leading, 12).padding(.trailing, 8).padding(.vertical, 5)
+        .padding(.leading, isGrouped ? 26 : 12).padding(.trailing, 8).padding(.vertical, 5)
         .background(isSelected ? Theme.raised : .clear)
+        .overlay(alignment: .leading) {
+            if isGrouped { Rectangle().fill(Theme.line).frame(width: 1).padding(.leading, 18) }
+        }
         .overlay(alignment: .leading) { Rectangle().fill(Theme.phosphor).frame(width: 2).opacity(isSelected ? 1 : 0) }
         .opacity(shell.isStale ? 0.6 : 1)
         .contentShape(Rectangle())
@@ -496,6 +532,16 @@ private struct ShellRowView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
     }
+}
+
+/// Lazy stacks need identities unique across the whole list. A shell and the agent Herdr later
+/// detects in it share an `Agent.ID`, and reusing it let the agent's row keep drawing the shell.
+private struct ShellListID: Hashable {
+    let id: Agent.ID
+}
+
+private extension ShellRow {
+    var listID: ShellListID { ShellListID(id: id) }
 }
 
 private extension View {

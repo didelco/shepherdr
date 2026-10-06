@@ -289,6 +289,16 @@ public final class SessionOrderStore {
         save()
     }
 
+    /// Places a session Herdr may not report as an agent yet, such as a shell just created, so
+    /// it takes that spot once it does. Until then it keeps the spot like a missing session.
+    public func insert(_ id: Agent.ID, _ drop: QueueDrop) {
+        if !orderedIDs.contains(id) {
+            entries.append(.session(id))
+            save()
+        }
+        place(.session(id), drop)
+    }
+
     // MARK: Groups
 
     /// A new group takes its first session's place in the queue, or the top when created empty.

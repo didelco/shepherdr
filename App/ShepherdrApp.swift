@@ -21,7 +21,7 @@ struct ShepherdrApp: App {
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("New Session…") { model.showsNewSession = true }
+                Button("New Session…") { model.startNewSession() }
                     .keyboardShortcut("n", modifiers: .command)
                     .disabled(model.onlineMachines.isEmpty)
                 Divider()

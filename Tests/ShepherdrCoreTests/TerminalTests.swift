@@ -82,7 +82,7 @@ struct TerminalTests {
         #expect(Set([target, renamed, remote]).count == 2)
         let snapshot = try Fixture.snapshot()
         #expect(snapshot.panes.count == 5)
-        #expect(snapshot.panes.contains { $0.terminalID == "term-shell" })
+        #expect(snapshot.panes.first { $0.terminalID == "term-shell" }?.directory == "/srv/docs")
     }
 
     @Test func testRealJSONStreamRoundTripAndDisconnect() async throws {

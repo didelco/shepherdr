@@ -30,7 +30,7 @@ struct MainView: View {
         .onChange(of: cluster.agents.map(\.id), initial: true) {
             model.order.synchronize(with: cluster.agents.map(\.id))
         }
-        .sheet(isPresented: $model.showsNewSession) { NewSessionSheet(model: model) }
+        .sheet(item: $model.newSession) { draft in NewSessionSheet(model: model, draft: draft) }
         .alert("Download the speech model?", isPresented: $model.asksToDownloadSpeechModel) {
             Button("Download") { model.acceptSpeechModelDownload() }
             Button("Cancel", role: .cancel) {}

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ShepherdrCore
 import ShepherdrTerminalUI
@@ -24,6 +25,7 @@ private struct GeneralSettings: View {
     @AppStorage("openMode") private var openMode = TerminalMode.control.rawValue
     @AppStorage("terminalFontSize") private var fontSize = 13.0
     @AppStorage("terminalFontFamily") private var fontFamily = ConsoleFonts.defaultFamily
+    @AppStorage(ProjectsFolder.key) private var projectsFolder = ProjectsFolder.defaultPath
     @ViewState<[String]> private var families: [String] = [ConsoleFonts.defaultFamily]
 
     var body: some View {
@@ -42,6 +44,14 @@ private struct GeneralSettings: View {
                     Text("Every minute").tag(60)
                     Text("Paused").tag(0)
                 }
+                LabeledContent("Projects folder") {
+                    HStack(spacing: 8) {
+                        Text(projectsFolder).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+                        Button("Choose…") { chooseProjectsFolder() }
+                    }
+                }
+                Text("New Session's folder picker starts here, and a folder name alone means a folder inside it.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Terminal font") {
                 Picker("Font", selection: $fontFamily) {
@@ -66,6 +76,18 @@ private struct GeneralSettings: View {
         .onAppear {
             families = ConsoleFonts.monospacedFamilies()
             if !families.contains(fontFamily) { fontFamily = ConsoleFonts.defaultFamily }
+        }
+    }
+
+    private func chooseProjectsFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Use Folder"
+        panel.directoryURL = ProjectsFolder.url(projectsFolder)
+        if panel.runModal() == .OK, let url = panel.url {
+            projectsFolder = (url.path as NSString).abbreviatingWithTildeInPath
         }
     }
 }

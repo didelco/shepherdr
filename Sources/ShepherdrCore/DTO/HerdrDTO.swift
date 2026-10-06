@@ -154,7 +154,8 @@ enum HerdrJSON {
                              workspaceID: pane.workspaceId,
                              workspaceName: workspaces[pane.workspaceId]?.label.nonempty ?? pane.workspaceId,
                              title: agents.first { $0.id.terminalID == pane.terminalId }?.name
-                                ?? "\(tabs[pane.tabId]?.label.nonempty ?? pane.tabId) · \(pane.paneId)")
+                                ?? "\(tabs[pane.tabId]?.label.nonempty ?? pane.tabId) · \(pane.paneId)",
+                             directory: pane.foregroundCwd?.nonempty ?? pane.cwd?.nonempty)
             })
     }
 

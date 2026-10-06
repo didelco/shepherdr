@@ -41,6 +41,15 @@ final class SessionWorkspace {
     let browser = SessionBrowser()
 }
 
+/// What the New Session sheet starts from: a folder and machine to prefill, and where the
+/// session takes its place in the queue once Herdr reports its agent.
+struct NewSessionDraft: Identifiable {
+    let id = UUID()
+    var directory: String?
+    var machineID: String?
+    var placement: QueueDrop?
+}
+
 /// Whether a session on hold can resume: `ready` once none of the sessions it waits for is
 /// still working or needs attention.
 enum WaitState { case waiting, ready }
@@ -71,7 +80,8 @@ final class AppModel {
     /// The terminal shown in the work area, for menu commands.
     var activeTerminal: TerminalStore?
 
-    var showsNewSession = false
+    /// The New Session sheet, while it is open.
+    var newSession: NewSessionDraft?
     private(set) var isCreatingSession = false
     /// The session awaiting close confirmation.
     var closingSession: Agent.ID?
@@ -110,7 +120,7 @@ final class AppModel {
             case .group(var group):
                 if group.group.name.localizedStandardContains(search) { return item }
                 group.rows = group.rows.filter { $0.matches(search) }
-                return group.rows.isEmpty ? nil : .group(group)
+                return group.rows.isEmpty && shells(in: group.group).isEmpty ? nil : .group(group)
             }
         }
     }
@@ -139,9 +149,28 @@ final class AppModel {
         .filter { $0.matches(search) }
     }
 
+    /// Shells placed in a group, such as a session created there whose agent has not started.
+    func shells(in group: SessionGroup) -> [ShellRow] {
+        let byID = Dictionary(shells.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return group.members.compactMap { byID[$0] }
+    }
+
+    /// Shells in no group, listed under Shells.
+    var ungroupedShells: [ShellRow] {
+        let grouped = Set(groups.flatMap(\.members))
+        return shells.filter { !grouped.contains($0.id) }
+    }
+
     var showsMachineNames: Bool { cluster.machines.count > 1 }
     var selectedID: Agent.ID? { if case .session(let id) = selection { id } else { nil } }
-    private var navigableIDs: [Agent.ID] { visibleRows.map(\.id) + shells.map(\.id) }
+    /// Sessions and shells in sidebar order, for stepping through them.
+    private var navigableIDs: [Agent.ID] {
+        queue.flatMap { item -> [Agent.ID] in
+            guard case .group(let group) = item else { return item.rows.map(\.id) }
+            if group.group.isCollapsed, search.isEmpty { return [] }
+            return group.rows.map(\.id) + shells(in: group.group).map(\.id)
+        } + ungroupedShells.map(\.id)
+    }
 
     func context(for id: Agent.ID) -> SessionContext? {
         guard let machine = cluster.machines.first(where: { $0.id == id.machineID }) else { return nil }
@@ -260,15 +289,43 @@ final class AppModel {
 
     var onlineMachines: [MachineState] { cluster.machines.filter { $0.connection == .online } }
 
-    /// Creates a workspace (and agent) in Herdr, then opens it. Returns the failure for the sheet to show.
-    func createSession(_ request: NewSessionRequest, onMachine machineID: String) async -> HerdrFailure? {
+    func startNewSession() {
+        newSession = NewSessionDraft()
+    }
+
+    /// A new session that joins this group.
+    func startNewSession(in group: SessionGroup) {
+        newSession = NewSessionDraft(placement: .into(group: group.id))
+    }
+
+    /// A new session in the same folder and machine as this one, placed right after it.
+    func startNewSession(besides id: Agent.ID) {
+        guard let directory = directory(of: id) else { return }
+        newSession = NewSessionDraft(directory: directory, machineID: id.machineID, placement: .after(.session(id)))
+    }
+
+    func canStartNewSession(besides id: Agent.ID) -> Bool {
+        directory(of: id) != nil && onlineMachines.contains { $0.id == id.machineID }
+    }
+
+    /// Where a session or shell is working, as Herdr reports it.
+    func directory(of id: Agent.ID) -> String? {
+        if let row = row(for: id) { return row.agent.directory }
+        return cluster.machines.first { $0.id == id.machineID }?.snapshot?.panes
+            .first { $0.terminalID == id.terminalID }?.directory
+    }
+
+    /// Creates a workspace with a shell in Herdr, then opens it. Returns the failure for the sheet to show.
+    func createSession(_ request: NewSessionRequest, onMachine machineID: String,
+                       placement: QueueDrop? = nil) async -> HerdrFailure? {
         isCreatingSession = true
         defer { isCreatingSession = false }
         do {
             let created = try await cluster.createSession(request, onMachine: machineID)
             let id = Agent.ID(machineID: machineID, terminalID: created.terminalID)
             if let notice = created.notice { sessionNotices[id] = notice }
-            showsNewSession = false
+            if let placement { order.insert(id, placement) }
+            newSession = nil
             open(id)
             return nil
         } catch {

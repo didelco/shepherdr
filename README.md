@@ -37,7 +37,7 @@ If it fits the way you work, take it. If it doesn't, fork it and make it yours, 
 - **A browser per session.** Click a link and it opens next to the terminal, in tabs that stay put while you hop between sessions.
 - **Sessions on hold.** Mark a planner as waiting for its subagents; it gets an hourglass that turns green when they're done.
 - **Drive or just watch.** Sessions open unlocked; one click on the padlock makes them read-only. Shepherdr never steals input from another client: taking over is always your explicit call.
-- **Spawn and dismiss sessions.** **⌘N**: pick a folder and an agent (or just a shell), and off it goes.
+- **Spawn and dismiss sessions.** **⌘N**: pick a folder and get a shell; start any agent in it and the queue picks it up.
 - **Phosphor green, 8-bit soul.** Bundled Fira Code, a pixel-art flock, and a German Shepherd keeping watch.
 
 No accounts, no telemetry, no server. Shepherdr drives the `herdr` CLI you already have (plus `ssh` for remote terminals). Prompts, terminal contents and your voice never touch the disk, and dictation runs entirely on your Mac.
