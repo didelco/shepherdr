@@ -24,8 +24,8 @@ import Testing
             let reopened = SessionOrderStore(defaults: defaults)
             #expect(reopened.orderedIDs == [c, a, b, d])
             let data = try #require(defaults.data(forKey: SessionOrderStore.storageKey))
-            let records = try #require(JSONSerialization.jsonObject(with: data) as? [[String: String]])
-            #expect(records.allSatisfy { Set($0.keys) == ["machineID", "terminalID"] })
+            let records = try #require(JSONSerialization.jsonObject(with: data) as? [[String: [String: String]]])
+            #expect(records.allSatisfy { Set($0.keys) == ["session"] && Set($0["session"]!.keys) == ["machineID", "terminalID"] })
         }
     }
 
@@ -63,22 +63,150 @@ import Testing
         }
     }
 
-    @Test func dragAndDropMovesWithinVisibleSessionsAndPersists() async throws {
+    @Test func droppingPlacesSessionsBeforeAfterAndAtTheEnd() async throws {
         try await withDefaults { defaults in
             let order = SessionOrderStore(defaults: defaults)
             order.synchronize(with: [a, b, c, d])
-            // List semantics: moving row 3 (d) before row 0 (a), with b hidden by a filter.
-            order.move(fromOffsets: [2], toOffset: 0, visibleIDs: [a, c, d])
-            #expect(order.orderedIDs == [d, b, a, c])
-            // Dropping past the end moves to the last visible slot.
-            order.move(fromOffsets: [0], toOffset: 3, visibleIDs: [d, a, c])
-            #expect(order.orderedIDs == [a, b, c, d])
-            order.move(fromOffsets: [0, 1], toOffset: 4, visibleIDs: [a, b, c, d])
-            #expect(order.orderedIDs == [c, d, a, b])
-            // No-op and out-of-range drops leave saved order untouched.
-            order.move(fromOffsets: [1], toOffset: 1, visibleIDs: [c, d, a, b])
-            order.move(fromOffsets: [9], toOffset: 0, visibleIDs: [c, d, a, b])
-            #expect(SessionOrderStore(defaults: defaults).orderedIDs == [c, d, a, b])
+            order.place(.session(d), .before(.session(a)))
+            #expect(order.orderedIDs == [d, a, b, c])
+            order.place(.session(d), .after(.session(b)))
+            #expect(order.orderedIDs == [a, b, d, c])
+            order.place(.session(a), .end)
+            #expect(order.orderedIDs == [b, d, c, a])
+            // Dropping an item onto itself, or naming unknown items, changes nothing.
+            let gone = Agent.ID(machineID: "gone", terminalID: "x")
+            order.place(.session(b), .before(.session(b)))
+            order.place(.session(gone), .before(.session(b)))
+            order.place(.session(b), .before(.session(gone)))
+            #expect(SessionOrderStore(defaults: defaults).orderedIDs == [b, d, c, a])
+        }
+    }
+
+    @Test func groupsHoldSessionsWithTheirOwnOrderAndMoveAsOne() async throws {
+        try await withDefaults { defaults in
+            let order = SessionOrderStore(defaults: defaults)
+            order.synchronize(with: [a, b, c, d])
+            let all: [Agent.ID] = [a, b, c, d]
+            // A new group takes its first session's place.
+            let work = order.createGroup(named: "Work", with: c)
+            #expect(order.entries.map(\.id) == [.session(a), .session(b), .group(work), .session(d)])
+            order.place(.session(a), .into(group: work))
+            #expect(order.groups.first?.members == [c, a])
+            #expect(order.orderedIDs == [b, c, a, d])
+
+            // Inside a group, sessions move among its members only.
+            #expect(!order.canMove(c, .up, visibleIDs: all))
+            order.move(a, .first, visibleIDs: all)
+            #expect(order.groups.first?.members == [a, c])
+            // The group moves as a single position, like a session.
+            order.move(.group(work), .first, visible: order.visibleItems(all))
+            #expect(order.orderedIDs == [a, c, b, d])
+            order.move(b, .first, visibleIDs: all)
+            #expect(order.entries.map(\.id) == [.session(b), .group(work), .session(d)])
+
+            order.setCollapsed(work, true)
+            order.renameGroup(work, to: "Client work")
+            let reopened = SessionOrderStore(defaults: defaults)
+            #expect(reopened.groups == [SessionGroup(id: work, name: "Client work", isCollapsed: true, members: [a, c])])
+            #expect(reopened.orderedIDs == [b, a, c, d])
+
+            // Ungrouping leaves the sessions where the group was, in the group's order.
+            reopened.ungroup(work)
+            #expect(reopened.groups.isEmpty)
+            #expect(reopened.entries == [.session(b), .session(a), .session(c), .session(d)])
+        }
+    }
+
+    @Test func layoutNumbersSessionsAcrossGroupsAndKeepsEmptyGroups() async throws {
+        try await withDefaults { defaults in
+            let client = MockHerdrClient()
+            await client.set(.local, .success(try Fixture.snapshot()))
+            let cluster = ClusterStore(client: client)
+            await cluster.refresh()
+            let ids = cluster.agents.map(\.id)
+            try #require(ids.count >= 3)
+            let order = SessionOrderStore(defaults: defaults)
+            order.synchronize(with: ids)
+            let group = order.createGroup(named: "Grouped", with: ids[2])
+            let empty = order.createGroup(named: "Empty")
+            let items = order.layout(cluster.agents)
+            #expect(items.first?.id == .group(empty))
+            #expect(items.first?.rows.isEmpty == true)
+            #expect(order.ranked(cluster.agents).map(\.manualPriority) == Array(1...ids.count))
+            let grouped = try #require(items.first { $0.id == .group(group) })
+            #expect(grouped.rows.map(\.id) == [ids[2]])
+            #expect(grouped.rows.first?.groupID == group)
+            #expect(order.ranked(cluster.agents).first { $0.id == ids[0] }?.groupID == nil)
+        }
+    }
+
+    @Test func droppingRespectsGroupBoundaries() async throws {
+        try await withDefaults { defaults in
+            let order = SessionOrderStore(defaults: defaults)
+            order.synchronize(with: [a, b, c, d])
+            let first = order.createGroup(named: "First", with: a)
+            let second = order.createGroup(named: "Second", with: c)
+            order.moveToGroup(b, first)
+            #expect(order.groups.map(\.members) == [[a, b], [c]])
+            // Dropping a session next to a grouped session joins that group at that spot.
+            order.place(.session(d), .before(.session(b)))
+            #expect(order.groups.map(\.members) == [[a, d, b], [c]])
+            // Groups never nest: dropped on a group or among its sessions, a group lands beside it.
+            order.place(.group(second), .into(group: first))
+            #expect(order.entries.map(\.id) == [.group(first), .group(second)])
+            order.place(.group(second), .before(.session(a)))
+            #expect(order.entries.map(\.id) == [.group(second), .group(first)])
+            // A group cannot be dropped among its own sessions.
+            order.place(.group(second), .after(.session(c)))
+            #expect(order.entries.map(\.id) == [.group(second), .group(first)])
+            // Removing a session from its group places it right after the group.
+            order.moveToGroup(c, nil)
+            #expect(order.entries.map(\.id) == [.group(second), .session(c), .group(first)])
+            order.place(.session(d), .end)
+            #expect(order.entries.map(\.id) == [.group(second), .session(c), .group(first), .session(d)])
+        }
+    }
+
+    @Test func newSessionsTakeTheirSpotBeforeHerdrReportsThem() async throws {
+        try await withDefaults { defaults in
+            let order = SessionOrderStore(defaults: defaults)
+            order.synchronize(with: [a, b])
+            let group = order.createGroup(named: "Work", with: b)
+            // A shell created in a group, or next to a session, waits there for its agent.
+            order.insert(c, .into(group: group))
+            order.insert(d, .after(.session(a)))
+            #expect(order.entries.map(\.id) == [.session(a), .session(d), .group(group)])
+            #expect(order.groups.first?.members == [b, c])
+            // Once Herdr reports them, discovery leaves them where they are.
+            order.synchronize(with: [d, c, b, a])
+            #expect(SessionOrderStore(defaults: defaults).orderedIDs == [a, d, b, c])
+            // An unknown target leaves the new session at the end.
+            let e = Agent.ID(machineID: "local", terminalID: "e")
+            order.insert(e, .after(.session(Agent.ID(machineID: "gone", terminalID: "x"))))
+            #expect(order.orderedIDs == [a, d, b, c, e])
+        }
+    }
+
+    @Test func filteredMovesInsideGroupsPreserveHiddenSlots() async throws {
+        try await withDefaults { defaults in
+            let order = SessionOrderStore(defaults: defaults)
+            order.synchronize(with: [a, b, c, d])
+            let group = order.createGroup(named: "All", with: a)
+            for id in [b, c, d] { order.moveToGroup(id, group) }
+            // b is hidden by a filter; moving d to the top keeps b in its slot.
+            order.move(d, .first, visibleIDs: [a, c, d])
+            #expect(order.groups.first?.members == [d, b, a, c])
+            #expect(!order.canMove(b, .up, visibleIDs: [a, c, d]))
+        }
+    }
+
+    @Test func ordersSavedByEarlierVersionsAreMigrated() async throws {
+        try await withDefaults { defaults in
+            defaults.set(try JSONEncoder().encode([c, a, b]), forKey: SessionOrderStore.legacyStorageKey)
+            let migrated = SessionOrderStore(defaults: defaults)
+            #expect(migrated.orderedIDs == [c, a, b])
+            migrated.synchronize(with: [d])
+            #expect(SessionOrderStore(defaults: defaults).orderedIDs == [c, a, b, d])
         }
     }
 
@@ -90,7 +218,8 @@ import Testing
             recovered.synchronize(with: [a, a, b])
             #expect(SessionOrderStore(defaults: defaults).orderedIDs == [a, b])
             let malformed = [a, a, Agent.ID(machineID: "", terminalID: ""), b]
-            defaults.set(try JSONEncoder().encode(malformed), forKey: SessionOrderStore.storageKey)
+            defaults.removeObject(forKey: SessionOrderStore.storageKey)
+            defaults.set(try JSONEncoder().encode(malformed), forKey: SessionOrderStore.legacyStorageKey)
             #expect(SessionOrderStore(defaults: defaults).orderedIDs == [a, b])
         }
     }
@@ -126,6 +255,69 @@ import Testing
             reopened.synchronize(with: cluster.agents.map(\.id))
             #expect(reopened.ranked(cluster.agents).map(\.id) == expected)
             #expect(reopened.ranked(cluster.agents).map(\.manualPriority) == Array(1...8))
+        }
+    }
+}
+
+@Suite @MainActor struct SessionRelationTests {
+    private let planner = Agent.ID(machineID: "local", terminalID: "planner")
+    private let research = Agent.ID(machineID: "local", terminalID: "research")
+    private let tests = Agent.ID(machineID: "remote:one", terminalID: "tests")
+
+    private func withDefaults(_ body: @MainActor (UserDefaults) throws -> Void) throws {
+        let suite = "ShepherdrTests.SessionRelations.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        try body(defaults)
+    }
+
+    @Test func sessionsWaitForOthersAndRememberIt() throws {
+        try withDefaults { defaults in
+            let relations = SessionRelationStore(defaults: defaults)
+            relations.setWaiting(planner, for: research, true)
+            relations.setWaiting(planner, for: tests, true)
+            relations.setWaiting(planner, for: research, true) // Already waiting: no duplicate.
+            relations.setWaiting(planner, for: planner, true) // A session cannot wait for itself.
+            #expect(relations.waitingFor(planner) == [research, tests])
+            #expect(relations.waiters(of: tests) == [planner])
+            #expect(relations.isWaiting(planner, for: tests))
+            #expect(!relations.isWaiting(research, for: planner))
+
+            let reopened = SessionRelationStore(defaults: defaults)
+            #expect(reopened.waitingFor(planner) == [research, tests])
+            reopened.setWaiting(planner, for: research, false)
+            #expect(reopened.waitingFor(planner) == [tests])
+            reopened.stopWaiting(planner)
+            #expect(reopened.waits.isEmpty)
+            #expect(SessionRelationStore(defaults: defaults).waits.isEmpty)
+        }
+    }
+
+    @Test func closingASessionForgetsItsRelations() throws {
+        try withDefaults { defaults in
+            let relations = SessionRelationStore(defaults: defaults)
+            relations.setWaiting(planner, for: research, true)
+            relations.setWaiting(tests, for: research, true)
+            relations.setWaiting(tests, for: planner, true)
+            relations.forget(research)
+            #expect(relations.waits == [tests: [planner]])
+            relations.forget(tests)
+            #expect(SessionRelationStore(defaults: defaults).waits.isEmpty)
+        }
+    }
+
+    @Test func invalidOrDuplicatedRecordsAreDropped() throws {
+        try withDefaults { defaults in
+            let json = """
+            [{"session":{"machineID":"local","terminalID":"planner"},
+              "waitingFor":[{"machineID":"local","terminalID":"research"},{"machineID":"local","terminalID":"research"},
+                            {"machineID":"local","terminalID":"planner"},{"machineID":"","terminalID":""}]},
+             {"session":{"machineID":"","terminalID":""},"waitingFor":[{"machineID":"local","terminalID":"research"}]}]
+            """
+            defaults.set(Data(json.utf8), forKey: SessionRelationStore.storageKey)
+            #expect(SessionRelationStore(defaults: defaults).waits == [planner: [research]])
+            defaults.set(Data("not JSON".utf8), forKey: SessionRelationStore.storageKey)
+            #expect(SessionRelationStore(defaults: defaults).waits.isEmpty)
         }
     }
 }

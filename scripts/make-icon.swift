@@ -1,6 +1,7 @@
 #!/usr/bin/env swift
 // Renders Shepherdr's app icon from its pixel art: a German Shepherd in amber, in Matrix digital rain,
-// on the macOS icon grid. The art uses App/Theme.swift's palette, like the in-app PixelFlock logo.
+// on the macOS icon grid. The art is one image pixel per art pixel, in App/Theme.swift's palette (see
+// pixelate.swift); at 206×206 it fills the grid's 824-point body exactly: 4 pixels per art pixel at 1024.
 // Usage: swift scripts/make-icon.swift docs/assets/icon.png App/Assets.xcassets/AppIcon.appiconset
 import AppKit
 import CoreGraphics
@@ -22,8 +23,10 @@ func render(size: Int) -> Data {
     let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
                         space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
     ctx.scaleBy(x: s / 1024, y: s / 1024)
-    // Downscaling pixel art needs smoothing; nearest-neighbour would drop whole rows of art pixels.
-    ctx.interpolationQuality = .high
+    // Where every art pixel covers a whole number of output pixels, keep the edges hard. Smaller
+    // icons average art pixels together instead of dropping some.
+    let pixelsPerArtPixel = 824 * s / 1024 / CGFloat(art.width)
+    ctx.interpolationQuality = pixelsPerArtPixel >= 1 && pixelsPerArtPixel.rounded() == pixelsPerArtPixel ? .none : .high
 
     // macOS icon grid: 824pt body with a soft drop shadow.
     let body = CGRect(x: 100, y: 100, width: 824, height: 824)

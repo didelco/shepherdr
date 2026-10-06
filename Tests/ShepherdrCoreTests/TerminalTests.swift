@@ -82,7 +82,7 @@ struct TerminalTests {
         #expect(Set([target, renamed, remote]).count == 2)
         let snapshot = try Fixture.snapshot()
         #expect(snapshot.panes.count == 5)
-        #expect(snapshot.panes.contains { $0.terminalID == "term-shell" })
+        #expect(snapshot.panes.first { $0.terminalID == "term-shell" }?.directory == "/srv/docs")
     }
 
     @Test func testRealJSONStreamRoundTripAndDisconnect() async throws {
@@ -248,5 +248,49 @@ private actor MockTerminalClient: HerdrTerminalClient {
         try await wait { store.status == .observing }
         #expect(store.isControlledElsewhere)
         #expect(await client.requestedModes() == [.control, .observe, .takeover, .observe])
+    }
+}
+
+@Suite struct TerminalLinkTests {
+    /// Builds a screen from text rows, padded to a fixed number of columns.
+    private func screen(_ lines: [String], columns: Int = 40) -> [[Character]] {
+        lines.map { Array($0.padding(toLength: columns, withPad: " ", startingAt: 0)) }
+    }
+
+    private func column(of text: String, in line: String) -> Int {
+        line.distance(from: line.startIndex, to: line.range(of: text)!.lowerBound)
+    }
+
+    @Test func findsTheLinkUnderTheClickOnly() {
+        let line = "docs: https://herdr.dev/docs/ and more"
+        let rows = screen([line])
+        #expect(TerminalLinks.url(in: rows, row: 0, column: column(of: "herdr", in: line))?.absoluteString == "https://herdr.dev/docs/")
+        #expect(TerminalLinks.url(in: rows, row: 0, column: 1) == nil)
+        #expect(TerminalLinks.url(in: rows, row: 0, column: column(of: "more", in: line)) == nil)
+        #expect(TerminalLinks.url(in: rows, row: 3, column: 0) == nil)
+    }
+
+    @Test func dropsSurroundingPunctuationButKeepsBalancedBrackets() {
+        let prose = "(see https://example.com/a?b=1)."
+        let wiki = "https://en.wikipedia.org/wiki/Shepherd_(dog)"
+        let rows = screen([prose, wiki], columns: 50)
+        #expect(TerminalLinks.url(in: rows, row: 0, column: 10)?.absoluteString == "https://example.com/a?b=1")
+        #expect(TerminalLinks.url(in: rows, row: 0, column: prose.count - 1) == nil)
+        #expect(TerminalLinks.url(in: rows, row: 1, column: 3)?.absoluteString == wiki)
+    }
+
+    @Test func followsLinksThatWrapAcrossRows() {
+        let rows = screen(["https://example.com/a/very/long/", "path/to/report.html is ready"], columns: 32)
+        let expected = "https://example.com/a/very/long/path/to/report.html"
+        #expect(TerminalLinks.url(in: rows, row: 0, column: 3)?.absoluteString == expected)
+        #expect(TerminalLinks.url(in: rows, row: 1, column: 6)?.absoluteString == expected)
+    }
+
+    @Test func decorationAndOtherSchemesAreNotLinks() {
+        let rows = screen(["│https://a.dev/x│", "file:///etc/hosts", "ssh://host", "https:// nothing"])
+        #expect(TerminalLinks.url(in: rows, row: 0, column: 4)?.absoluteString == "https://a.dev/x")
+        #expect(TerminalLinks.url(in: rows, row: 1, column: 4) == nil)
+        #expect(TerminalLinks.url(in: rows, row: 2, column: 4) == nil)
+        #expect(TerminalLinks.url(in: rows, row: 3, column: 2) == nil)
     }
 }

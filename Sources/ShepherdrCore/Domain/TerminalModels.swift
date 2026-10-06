@@ -6,6 +6,8 @@ public struct TerminalPane: Identifiable, Equatable, Sendable {
     public let workspaceID: String
     public let workspaceName: String
     public let title: String
+    /// The pane's foreground working directory, else the one it started in.
+    public let directory: String?
     public var id: String { terminalID }
 }
 

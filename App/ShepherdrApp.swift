@@ -21,12 +21,9 @@ struct ShepherdrApp: App {
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("New Session…") { model.showsNewSession = true }
+                Button("New Session…") { model.startNewSession() }
                     .keyboardShortcut("n", modifiers: .command)
                     .disabled(model.onlineMachines.isEmpty)
-                Button("Close Session…") { model.requestClose(model.selectedID) }
-                    .keyboardShortcut("w", modifiers: [.command, .shift])
-                    .disabled(model.selectedID == nil)
                 Divider()
                 Button("Refresh Sessions") { Task { await model.cluster.refresh() } }
                     .keyboardShortcut("r", modifiers: .command)
@@ -40,10 +37,16 @@ struct ShepherdrApp: App {
                 Button("Previous Session") { model.step(-1) }
                     .keyboardShortcut("[", modifiers: .command)
                 Divider()
-                Button("Focus Prompt") { model.promptFocusRequest += 1 }
+                Button("Prompt Editor") { model.togglePromptEditor() }
                     .keyboardShortcut("l", modifiers: .command)
                     .disabled(model.activeTerminal == nil)
-                Button(model.activeTerminal?.mode == .observe ? "Go Live" : "Watch Only") { model.toggleLive() }
+                Button("Browser") { model.toggleBrowser() }
+                    .keyboardShortcut("b", modifiers: .command)
+                    .disabled(model.selectedID == nil)
+                Button(model.dictation.isRecording ? "Stop Dictation" : "Dictate Prompt") { model.toggleDictation() }
+                    .keyboardShortcut("d", modifiers: [.command, .shift])
+                    .disabled(model.selectedID == nil && !model.dictation.isRecording)
+                Button(model.activeTerminal?.mode == .observe ? "Unlock Session" : "Lock Session (Read-Only)") { model.toggleLive() }
                     .keyboardShortcut("e", modifiers: .command)
                     .disabled(!model.canToggleLive)
                 Button("Send Escape") { model.activeTerminal?.press(.escape) }
@@ -65,6 +68,8 @@ struct ShepherdrApp: App {
                 Button("Move to Top") { model.moveSelection(.first) }
                     .keyboardShortcut(.upArrow, modifiers: [.command, .option, .shift])
                     .disabled(!model.canMove(model.selectedID, .first))
+                Divider()
+                Button("New Group…") { model.promptNewGroup(with: model.selectedID) }
             }
             CommandGroup(replacing: .help) {
                 Link("Herdr Documentation", destination: URL(string: "https://herdr.dev/docs/")!)

@@ -48,8 +48,11 @@ cp LICENSE "$app/Contents/Resources/LICENSE"
 cp Sources/ShepherdrTerminalUI/Resources/SwiftTerm-LICENSE "$app/Contents/Resources/SwiftTerm-LICENSE"
 # The bundled Fira Code fonts are distributed under the SIL Open Font License.
 cp Sources/ShepherdrTerminalUI/Resources/Fonts/FiraCode-OFL.txt "$app/Contents/Resources/FiraCode-OFL.txt"
+# FluidAudio (dictation) is Apache-2.0; its license travels with the binary.
+cp Sources/ShepherdrDictation/Resources/FluidAudio-LICENSE "$app/Contents/Resources/FluidAudio-LICENSE"
 # An ad hoc signature makes the arm64 bundle valid, but does not confer Developer ID trust.
-codesign --force --sign - --options runtime --timestamp=none "$app"
+# The entitlement lets the hardened runtime open the microphone for dictation.
+codesign --force --sign - --options runtime --timestamp=none --entitlements App/Shepherdr.entitlements "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
 
 ditto -c -k --sequesterRsrc --keepParent "$app" "dist/$asset.zip"

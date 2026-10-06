@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import ShepherdrCore
+import ShepherdrDictation
 
 /// Sidebar queue on the left, the selected session's live terminal in the work area.
 struct MainView: View {
@@ -29,7 +30,13 @@ struct MainView: View {
         .onChange(of: cluster.agents.map(\.id), initial: true) {
             model.order.synchronize(with: cluster.agents.map(\.id))
         }
-        .sheet(isPresented: $model.showsNewSession) { NewSessionSheet(model: model) }
+        .sheet(item: $model.newSession) { draft in NewSessionSheet(model: model, draft: draft) }
+        .alert("Download the speech model?", isPresented: $model.asksToDownloadSpeechModel) {
+            Button("Download") { model.acceptSpeechModelDownload() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Dictation transcribes on this Mac with NVIDIA Parakeet v3, the model scribe uses. It needs a one-time download of \(Dictation.modelDownloadSize) from Hugging Face. Your voice never leaves this Mac.")
+        }
         .confirmationDialog(closeTitle, isPresented: Binding { model.closingSession != nil } set: { if !$0 { model.closingSession = nil } },
                             titleVisibility: .visible, presenting: model.closingSession) { id in
             Button("Close Session", role: .destructive) { Task { await model.closeSession(id) } }
