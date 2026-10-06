@@ -70,10 +70,29 @@ Sources/ShepherdrTerminalUI/       Embeddable SwiftTerm AppKit terminal surface,
 Sources/ShepherdrDictation/        On-device dictation: microphone capture and Parakeet transcription via FluidAudio
 Sources/ShepherdrProbe/            Read-only integration diagnostic
 Tests/ShepherdrCoreTests/          Protocol, transport and store regression tests
-scripts/make-icon.swift            Regenerates App/Assets.xcassets/AppIcon.appiconset from docs/assets/icon.png
+scripts/make-artwork.sh            Regenerates the icon, README header and social preview (see Artwork)
+scripts/pixelate.swift             Turns art into strict pixel art in App/Theme.swift's palette
+scripts/make-icon.swift            Renders App/Assets.xcassets/AppIcon.appiconset from docs/assets/icon.png
+scripts/make-header-masks.py       Prepares the header's masks and cleaned art (Python, rarely needed)
 ```
 
 `HerdrClient` exposes domain snapshots and the machine catalog. `HerdrTerminalClient` exposes live terminal connections, frames and input. `CLIHerdrClient` implements both; views never execute commands or decode JSON. Agent identity combines the machine profile and terminal ID, so identical pane IDs and names on different machines remain distinct. Native Unix-socket transport and event subscriptions can replace the CLI behind these boundaries.
 
 See [integration notes](HERDR-INTEGRATION.md) for the inspected contract, compatibility policy, event strategy and limitations.
+
+## Artwork
+
+The app icon, the README header and the social preview are strict pixel art: every art pixel is a square of the same size, in a color from `App/Theme.swift`. `scripts/pixelate.swift` reads every hex color in that file, divides an image into a grid, averages each cell in linear light and picks the theme color nearest in CIE L\*a\*b\*. `Theme.artworkShades` adds in-between shades that only the artwork uses.
+
+```sh
+bash scripts/make-artwork.sh
+```
+
+regenerates everything from `docs/assets/source`:
+
+- **Icon:** `source/icon.png` becomes 206×206 art pixels (`docs/assets/icon.png`). That fills the macOS icon grid's 824-point body exactly, 4 pixels per art pixel at 1024 and 1 at 256, so `make-icon.swift` keeps hard edges down to 256 and smooths only the smaller sizes.
+- **Header:** 480×270 art pixels at 3 px, shown 720 points wide in the README, so each art pixel is exactly 3 pixels on Retina screens. Sheep, title and code stay in the phosphor greens. Regions recolor the dog into the logo's amber shepherd and the tongue into the terminal's pinks, matched by lightness, and turn the glowing outlines into single lines, brown around the dog and green elsewhere. Lone high-contrast flecks inside the dog are cleaned, and `touchups.txt` holds hand edits in art pixels, such as the fangs.
+- **Social preview:** the header at 2 px on a 1280×640 canvas. Upload `docs/assets/social-preview.png` in the repository's **Settings → General → Social preview**.
+
+The header's masks and `clean.png`, the original with the code digits erased from the dog's coat, come from `scripts/make-header-masks.py` and are committed. Rerun it (it needs Pillow and NumPy) only after changing the hand-placed regions in `docs/assets/source/header/regions.json`: the dog's outline, eyes, tongue, the title's ascender between the paws and the columns of digits, in the original's pixels.
 

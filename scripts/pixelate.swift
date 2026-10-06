@@ -9,10 +9,17 @@
 //   --cells    the grid, in art pixels
 //   --scale    output pixels per art pixel
 //   --only     restricts the palette to these theme colors (RRGGBB,RRGGBB,…)
+//   --except   leaves these theme colors out of the palette
 //   --region   a mask image (white = inside) whose cells use their own theme colors, matched by
 //              lightness alone: --region MASK --region-only RRGGBB,… recolors a subject, such as
 //              the header's green dog into the amber shepherd of the app's logo. Repeatable; where
-//              regions overlap, the last one wins.
+//              regions overlap, the last one wins. --region-coverage F (default 0.5) is how much of a cell
+//              a region must cover to claim it; lower values keep thin lines, like outlines, unbroken.
+//   --despeckle MASK  inside the mask, a lone art pixel that no neighbor shares, with a clear majority
+//              around it (5 of 8) at least --despeckle-contrast (default 25) lighter or darker in L*,
+//              takes that majority color: stray flecks go, the texture of close shades stays
+//   --touchup FILE  hand edits applied last, one "x y RRGGBB" per line in art pixels (# comments);
+//              colors must come from the theme
 //   --opacity  cells less covered than this become transparent; the rest are opaque
 //   --canvas   centers the result on a solid canvas of this size (for social previews)
 import AppKit
@@ -24,7 +31,11 @@ struct Options {
     var canvas: (width: Int, height: Int)?
     var background: UInt32?
     var only: Set<UInt32>?
-    var regions: [(mask: String, only: Set<UInt32>?)] = []
+    var except: Set<UInt32> = []
+    var regions: [(mask: String, only: Set<UInt32>?, coverage: Double)] = []
+    var despeckle: String?
+    var despeckleContrast = 25.0
+    var touchup: String?
 }
 
 func size(_ text: String) -> (width: Int, height: Int)? {
@@ -49,7 +60,14 @@ func parse() -> Options {
         case "--canvas": options.canvas = size(value())
         case "--background": options.background = UInt32(value(), radix: 16)
         case "--only": options.only = Set(value().split(separator: ",").compactMap { UInt32($0, radix: 16) })
-        case "--region": options.regions.append((value(), nil))
+        case "--except": options.except = Set(value().split(separator: ",").compactMap { UInt32($0, radix: 16) })
+        case "--despeckle": options.despeckle = value()
+        case "--despeckle-contrast": options.despeckleContrast = Double(value()) ?? 25
+        case "--touchup": options.touchup = value()
+        case "--region": options.regions.append((value(), nil, 0.5))
+        case "--region-coverage":
+            guard !options.regions.isEmpty, let coverage = Double(value()) else { fatalError("--region-coverage must follow --region") }
+            options.regions[options.regions.count - 1].coverage = coverage
         case "--region-only":
             guard !options.regions.isEmpty else { fatalError("--region-only must follow --region") }
             options.regions[options.regions.count - 1].only = Set(value().split(separator: ",").compactMap { UInt32($0, radix: 16) })
@@ -119,7 +137,7 @@ func subset(_ only: Set<UInt32>?) -> [PaletteColor] {
     }
     return theme.filter { only.contains($0.hex) }
 }
-let colors = subset(options.only)
+let colors = subset(options.only).filter { !options.except.contains($0.hex) }
 let regionColors = options.regions.map { subset($0.only) }
 guard let image = NSImage(contentsOfFile: options.input)?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
     fatalError("Cannot read \(options.input)")
@@ -168,10 +186,67 @@ for row in 0..<rows {
         }
         let count = Double((bottom - top) * (right - left))
         guard coverage / count >= options.opacity else { continue }
-        let region = inside.indices.last { Double(inside[$0]) / count >= 0.5 }
+        let region = inside.indices.last { Double(inside[$0]) / count >= options.regions[$0].coverage }
         cells[row * columns + column] = nearest(toLab(red / coverage, green / coverage, blue / coverage),
                                                 in: region.map { regionColors[$0] } ?? colors, lightnessOnly: region != nil)
     }
+}
+
+// MARK: Cleanup and hand edits
+
+/// The share of each cell inside a mask image.
+func coverage(of path: String) -> [Double] {
+    guard let image = NSImage(contentsOfFile: path)?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        fatalError("Cannot read \(path)")
+    }
+    let mask = pixels(of: image)
+    var shares = [Double](repeating: 0, count: columns * rows)
+    for row in 0..<rows {
+        let top = row * height / rows, bottom = max(top + 1, (row + 1) * height / rows)
+        for column in 0..<columns {
+            let left = column * width / columns, right = max(left + 1, (column + 1) * width / columns)
+            var inside = 0
+            for y in top..<bottom { for x in left..<right where mask[(y * width + x) * 4] > 127 { inside += 1 } }
+            shares[row * columns + column] = Double(inside) / Double((bottom - top) * (right - left))
+        }
+    }
+    return shares
+}
+
+let lightness = Dictionary(uniqueKeysWithValues: theme.map { ($0.hex, $0.lab.0) })
+if let path = options.despeckle {
+    let inside = coverage(of: path)
+    let before = cells
+    var cleaned = 0
+    for row in 1..<(rows - 1) {
+        for column in 1..<(columns - 1) {
+            let index = row * columns + column
+            guard inside[index] >= 0.5, let color = before[index] else { continue }
+            let around = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
+                .compactMap { before[(row + $0.1) * columns + column + $0.0] }
+            guard around.count == 8, !around.contains(color) else { continue }
+            let counts = Dictionary(around.map { ($0, 1) }, uniquingKeysWith: +)
+            guard let (majority, count) = counts.max(by: { $0.value < $1.value }), count >= 5,
+                  abs((lightness[majority] ?? 0) - (lightness[color] ?? 0)) >= options.despeckleContrast else { continue }
+            cells[index] = majority
+            cleaned += 1
+        }
+    }
+    print("despeckle: \(cleaned) stray art pixels")
+}
+if let path = options.touchup {
+    guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { fatalError("Cannot read \(path)") }
+    var edits = 0
+    for line in text.split(separator: "\n") {
+        let fields = line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0].split(separator: " ")
+        guard !fields.isEmpty else { continue }
+        guard fields.count == 3, let x = Int(fields[0]), let y = Int(fields[1]), let hex = UInt32(fields[2], radix: 16),
+              (0..<columns).contains(x), (0..<rows).contains(y) else { fatalError("Bad touch-up line: \(line)") }
+        guard lightness[hex] != nil else { fatalError("Touch-up color \(fields[2]) is not in \(options.palette)") }
+        cells[y * columns + x] = hex
+        edits += 1
+    }
+    print("touch-up: \(edits) art pixels")
 }
 
 // MARK: Output

@@ -1,0 +1,17 @@
+# Header hand edits, in art pixels (480×270). Colors come from App/Theme.swift.
+# Upper canines at the tongue's top corners: the outer column on the mouth's dark edge, the inner one
+# overlapping the tongue's outline (columns 229 and 249), mirrored around the tongue's center (239).
+228 86 FFF4D6
+229 86 FFF4D6
+228 87 FFF4D6
+229 87 FFF4D6
+228 88 FFF4D6
+229 88 FFDEA6
+229 89 FFDEA6
+250 86 FFF4D6
+249 86 FFF4D6
+250 87 FFF4D6
+249 87 FFF4D6
+250 88 FFF4D6
+249 88 FFDEA6
+249 89 FFDEA6
