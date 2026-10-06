@@ -31,7 +31,7 @@ struct SessionView: View {
             header
             Rectangle().fill(Theme.line).frame(height: 1)
             RelationsPanel(id: id, model: model)
-            HSplitView {
+            BrowserSplit(showsBrowser: workspace.browser.isVisible) {
                 VStack(spacing: 0) {
                     banners
                     if context.canConnect {
@@ -49,11 +49,8 @@ struct SessionView: View {
                     if workspace.isEditorOpen { editor }
                     bottomBar
                 }
-                .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
-                if workspace.browser.isVisible {
-                    BrowserPanel(browser: workspace.browser)
-                        .frame(minWidth: 320, idealWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
-                }
+            } browser: {
+                BrowserPanel(browser: workspace.browser)
             }
         }
         .background(Theme.background)
@@ -487,5 +484,59 @@ struct DictationButton: View {
     private static func elapsed(from start: Date, to now: Date) -> String {
         let seconds = max(0, Int(now.timeIntervalSince(start)))
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+/// The terminal beside its browser. The browser opens at half the width (an HSplitView would open it
+/// at its minimum), and the divider between them can be dragged.
+private struct BrowserSplit<Terminal: View, Browser: View>: View {
+    let showsBrowser: Bool
+    @ViewBuilder let terminal: Terminal
+    @ViewBuilder let browser: Browser
+    /// The browser's share of the width; every opening starts again from half.
+    @ViewState private var fraction: CGFloat = 0.5
+    private static var terminalMin: CGFloat { 380 }
+    private static var browserMin: CGFloat { 320 }
+    private static var dividerWidth: CGFloat { 5 }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let total = proxy.size.width
+            HStack(spacing: 0) {
+                terminal.frame(maxWidth: .infinity, maxHeight: .infinity)
+                if showsBrowser {
+                    divider(total: total)
+                    browser.frame(width: browserWidth(in: total)).frame(maxHeight: .infinity)
+                }
+            }
+        }
+        .coordinateSpace(name: Self.space)
+        .onChange(of: showsBrowser) { _, shown in if shown { fraction = 0.5 } }
+    }
+
+    private static var space: String { "browserSplit" }
+
+    private func browserWidth(in total: CGFloat, fraction: CGFloat? = nil) -> CGFloat {
+        let available = total - Self.dividerWidth, upper = available - Self.terminalMin
+        // Too narrow for both minimums: share it evenly.
+        guard upper > Self.browserMin else { return max(available / 2, 0) }
+        return min(max(available * (fraction ?? self.fraction), Self.browserMin), upper)
+    }
+
+    /// A strip of its own rather than an overlay, so the terminal and the web view never take its clicks.
+    private func divider(total: CGFloat) -> some View {
+        Theme.background
+            .overlay { Rectangle().fill(Theme.line).frame(width: 1) }
+            .frame(width: Self.dividerWidth)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .onHover { inside in inside ? NSCursor.resizeLeftRight.push() : NSCursor.pop() }
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.space)).onChanged { drag in
+                let available = total - Self.dividerWidth
+                guard available > 0 else { return }
+                let width = total - drag.location.x - Self.dividerWidth / 2
+                fraction = browserWidth(in: total, fraction: width / available) / available
+            })
+            .accessibilityHidden(true)
     }
 }

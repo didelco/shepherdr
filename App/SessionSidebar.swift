@@ -89,7 +89,9 @@ struct SessionSidebar: View {
     private var queue: some View {
         let filtering = !model.search.isEmpty
         return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
+            // A plain stack: the queue is short, and a lazy stack whose rows measure themselves
+            // could loop on layout and freeze the window.
+            VStack(alignment: .leading, spacing: 0) {
                 queueHeader
                 ForEach(model.queue) { item in
                     switch item {
@@ -216,7 +218,7 @@ private struct SessionRowView: View {
     let model: AppModel
     @Binding var hint: QueueDrop?
     @ViewState<Bool> private var hovering = false
-    @ViewState<CGFloat> private var height: CGFloat = 44
+    @ViewState private var height = RowHeight(44)
 
     private var item: QueueItemID { .session(row.id) }
 
@@ -263,14 +265,14 @@ private struct SessionRowView: View {
         .dropLine(.top, hint == .before(item))
         .dropLine(.bottom, hint == .after(item) || (isLast && group.map { hint == .after(.group($0.id)) } == true))
         .opacity(row.isStale ? 0.6 : 1)
-        .measuringHeight($height)
+        .measuringHeight(height)
         .contentShape(Rectangle())
         .onTapGesture { model.open(row.id) }
         .onHover { hovering = $0 }
         .help("\(row.agent.kind) · \(row.project)")
         .queueDraggable(item, model: model)
         .onDrop(of: [.plainText], delegate: QueueDropDelegate(model: model, hint: $hint) { dragged, y in
-            let upper = y < height / 2
+            let upper = y < height.value / 2
             switch dragged {
             case .session(let id):
                 guard id != row.id else { return nil }
@@ -331,7 +333,7 @@ private struct GroupHeaderView: View {
     let model: AppModel
     @Binding var hint: QueueDrop?
     @ViewState<Bool> private var hovering = false
-    @ViewState<CGFloat> private var height: CGFloat = 32
+    @ViewState private var height = RowHeight(32)
 
     private var item: QueueItemID { .group(group.id) }
 
@@ -371,7 +373,7 @@ private struct GroupHeaderView: View {
         .overlay(alignment: .leading) { Rectangle().fill(Theme.amber).frame(width: 2).opacity(blocked > 0 ? 0.6 : 0) }
         .dropLine(.top, hint == .before(item))
         .dropLine(.bottom, hint == .after(item) && !isExpanded)
-        .measuringHeight($height)
+        .measuringHeight(height)
         .contentShape(Rectangle())
         .onTapGesture { withAnimation(.snappy(duration: 0.18)) { model.toggleCollapsed(group.group) } }
         .onHover { hovering = $0 }
@@ -379,7 +381,7 @@ private struct GroupHeaderView: View {
         .queueDraggable(item, model: model)
         .onDrop(of: [.plainText], delegate: QueueDropDelegate(model: model, hint: $hint) { dragged, y in
             if dragged == item { return nil }
-            if y < height * 0.4 { return .before(item) }
+            if y < height.value * 0.4 { return .before(item) }
             if case .session = dragged { return .into(group: group.id) }
             return .after(item)
         })
@@ -585,13 +587,20 @@ private extension View {
     }
 
     /// Keeps `height` equal to the view's height, so drop targets can split rows into halves.
-    func measuringHeight(_ height: Binding<CGFloat>) -> some View {
+    func measuringHeight(_ height: RowHeight) -> some View {
         background {
             GeometryReader { proxy in
                 Color.clear
-                    .onAppear { height.wrappedValue = proxy.size.height }
-                    .onChange(of: proxy.size.height) { _, new in height.wrappedValue = new }
+                    .onAppear { height.value = proxy.size.height }
+                    .onChange(of: proxy.size.height) { _, new in height.value = new }
             }
         }
     }
+}
+
+/// A row's measured height, read only when something is dropped on it. A plain reference rather
+/// than view state, so measuring never invalidates the view and can never feed a layout loop.
+@MainActor final class RowHeight {
+    var value: CGFloat
+    init(_ value: CGFloat) { self.value = value }
 }
