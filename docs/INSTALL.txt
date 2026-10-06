@@ -21,5 +21,5 @@ prompt. Switching sessions or quitting only detaches; Herdr keeps them running.
 Interactive terminals require compatible Herdr terminal session commands
 (verified with CLI/server 0.9.3). Xcode is not required to run Shepherdr.
 
-Downloads and source: https://github.com/javiertoledo/shepherdr
+Downloads and source: https://github.com/theam/shepherdr
 Shepherdr is an independent client, not an official Herdr application.

@@ -7,7 +7,7 @@ import Darwin
 final class CLITerminalConnection: HerdrTerminalConnection, @unchecked Sendable {
     let events: AsyncThrowingStream<TerminalEvent, Error>
     private let continuation: AsyncThrowingStream<TerminalEvent, Error>.Continuation
-    private let ioQueue = DispatchQueue(label: "io.github.javiertoledo.shepherdr.terminal-stream")
+    private let ioQueue = DispatchQueue(label: "com.theagilemonkeys.shepherdr.terminal-stream")
     private let process = Process()
     private let input = Pipe()
     private let output = Pipe()

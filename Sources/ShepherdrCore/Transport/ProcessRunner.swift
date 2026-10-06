@@ -31,7 +31,7 @@ struct ProcessRunner: CommandRunning {
 /// Foundation callbacks are bridged into one serial queue. All mutable state is queue-confined.
 /// Both pipes are drained concurrently; neither waitUntilExit nor blocking reads run on an actor.
 private final class ProcessOperation: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "io.github.javiertoledo.shepherdr.process")
+    private let queue = DispatchQueue(label: "com.theagilemonkeys.shepherdr.process")
     private let process = Process()
     private let stdout = Pipe()
     private let stderr = Pipe()

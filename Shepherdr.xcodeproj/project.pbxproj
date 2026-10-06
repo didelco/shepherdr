@@ -379,7 +379,7 @@
 			isa = "XCBuildConfiguration";
 			name = "Debug";
 			buildSettings = {
-				PRODUCT_BUNDLE_IDENTIFIER = "io.github.javiertoledo.Shepherdr";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.theagilemonkeys.Shepherdr";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				GENERATE_INFOPLIST_FILE = "YES";
 				INFOPLIST_KEY_CFBundleDisplayName = "Shepherdr";
@@ -402,7 +402,7 @@
 			isa = "XCBuildConfiguration";
 			name = "Release";
 			buildSettings = {
-				PRODUCT_BUNDLE_IDENTIFIER = "io.github.javiertoledo.Shepherdr";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.theagilemonkeys.Shepherdr";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				GENERATE_INFOPLIST_FILE = "YES";
 				INFOPLIST_KEY_CFBundleDisplayName = "Shepherdr";
@@ -434,7 +434,7 @@
 			isa = "XCBuildConfiguration";
 			name = "Debug";
 			buildSettings = {
-				PRODUCT_BUNDLE_IDENTIFIER = "io.github.javiertoledo.ShepherdrTests";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.theagilemonkeys.ShepherdrTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				GENERATE_INFOPLIST_FILE = "YES";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -448,7 +448,7 @@
 			isa = "XCBuildConfiguration";
 			name = "Release";
 			buildSettings = {
-				PRODUCT_BUNDLE_IDENTIFIER = "io.github.javiertoledo.ShepherdrTests";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.theagilemonkeys.ShepherdrTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				GENERATE_INFOPLIST_FILE = "YES";
 				LD_RUNPATH_SEARCH_PATHS = (
