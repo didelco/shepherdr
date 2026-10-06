@@ -13,7 +13,8 @@ The sidebar is your prioritized queue of sessions. Pick one and its live termina
 - **Dictation:** record a prompt (**⇧⌘D**); it is transcribed on this Mac and lands in the prompt editor for you to review.
 - **Unlocked by default:** sessions open with input enabled. Click the padlock to lock one read-only. If another client controls the terminal, Shepherdr stays locked and offers an explicit **Take Over**.
 - **A browser per session:** click a link in the terminal and it opens in the session's own browser, next to the terminal; its tabs stay put while you work elsewhere. **⌘-click** opens your default browser instead.
-- **Sessions on hold:** mark a session as waiting for others, such as a planner waiting for the subagents it launched. It shows an hourglass, and its related sessions are one click away.
+- **Notifications:** a macOS notification tells you when an agent finishes or needs you, with what it last said. Click it to open the session.
+- **Sessions on hold:** mark a session as waiting for others, such as a planner waiting for the subagents it launched. It shows an hourglass, and the sessions it waits for are listed under it, in a tree you can collapse.
 - **Create and close sessions:** **⌘N** creates a Herdr workspace with a shell in a folder; start Claude Code, Codex or any other supported agent in it and it joins the queue. Create one in a group with its **+**, or next to a session with **New Session in Same Folder…**. **Close Session…** in a session's context menu ends its pane after confirmation.
 - Overview with working / needs-you / done / idle counts and session cards; plain shell panes are listed separately.
 - **Machines** in **Settings → Machines** (⌘,): add SSH machines, disable them to stop polling, or remove them from Herdr's catalog.
@@ -99,7 +100,8 @@ On this Mac, **CHOOSE…** always starts in your projects folder, `~/projects` u
 3. For longer prompts, open the prompt editor with **✎ PROMPT** in the bottom bar or **⌘L**. It is closed by default and keeps its draft while closed (the button shows a •). **⏎** or **SEND** sends the prompt as a bracketed paste followed by a separate Return, so agents receive it verbatim, then closes the editor and returns to the terminal.
 4. Click the padlock (or press **⌘E**) to lock the session read-only; click it again to unlock. A locked session's editor still takes drafts. **⌘⎋** sends Escape, which interrupts most agents.
 5. Click a web link in the terminal to open it in the session's browser, or **⌘-click** it to open your default browser. Links agents mark up explicitly and plain-text `http(s)://` URLs both work, including URLs that wrap across lines; the pointer turns into a hand over them.
-6. Selecting another session, quitting Shepherdr or pressing ↻ only detaches this client. Herdr keeps the pane and its process running.
+6. To have one agent message another, use the session's Herdr pane ID, shown in the header as **pane w3:p1**: click it to copy it, or right-click it (or the session in the queue) for **Copy Reference for Agents**. That copies the pane ID with the command an agent runs to prompt it, `herdr agent prompt w3:p1 "<message>"`, ready to paste into a prompt such as "report your progress to the coordinator (…)". Agents in the same Herdr session can run it as is.
+7. Selecting another session, quitting Shepherdr or pressing ↻ only detaches this client. Herdr keeps the pane and its process running.
 
 Shepherdr never takes input away from another client implicitly. If one is attached, the session stays locked with a notice; **Take Over** is an explicit choice that uses Herdr's `--takeover`. If another client later takes over, Shepherdr locks the session again. Terminal resizing uses Herdr's supported viewport/resize messages. Mouse reporting and browsing Herdr's historical scrollback are not implemented; native text selection, copying and keyboard/paste input are supported. Selecting text with the mouse copies it; while the button is down, new output waits so the selection holds still. **Option** types what your keyboard layout gives it (such as **⌥2** for @ on a Spanish keyboard), as in Terminal; **⌥←/⌥→**, **⌥⌫** and **⌥⏎** still send the Meta sequences TUIs and shells use to move by word, delete a word and add a line. Drafts and prompt history are kept in memory per session and are never written to disk.
 
@@ -115,9 +117,19 @@ Sign-ins are shared by every session's browser and persist across launches, in W
 
 The model is about 460 MB. The first time, Shepherdr asks before downloading it from Hugging Face; if scribe already downloaded it, Shepherdr reuses that copy. It loads into memory while you speak the first time after each launch. Your voice is kept in memory only while recording and never leaves the Mac. Shepherdr asks for microphone access the first time you dictate.
 
+## Notifications
+
+When an agent stops working, because it finished or because it needs you (a permission prompt, a question), Shepherdr posts a macOS notification with the session's name, its state and agent, and the first paragraph of the agent's last message, read from its terminal; when there is none, Herdr's summary of the session. Click a notification to open the session. The session you are looking at in the front window never notifies, and agents that go idle don't either. Shepherdr notices state changes when it refreshes the queue (**Settings → General → Refresh sessions**), so a notification can take that long to arrive; while refreshing is paused, none arrive.
+
+macOS asks for permission the first time one is due. Turn them off in **Settings → General → Notifications**, or change their style in **System Settings → Notifications → Shepherdr**.
+
 ## Sessions on hold
 
 When one session has to wait for others, such as a planner that launched subagents, choose **Wait For** in its context menu and tick the sessions it waits for. The session shows an hourglass in the queue instead of its state: blue while any of them is still working or needs you, green once they have all finished.
+
+The sessions it waits for move under it in the queue, joined by tree lines, and move with it. Click **▾** with their count to hide them and **▸** to show them again; while hidden, the count turns amber if one of them needs you. A session waited for by several others is listed under the first of them. Filtering shows matching sessions even when hidden. To take one out of the tree, choose **Stop … Waiting for This** in its context menu.
+
+In the tree, the sessions it waits for don't show their priority number: they follow the session waiting for them.
 
 Opening a session on hold shows a panel above its terminal with the sessions it waits for and their state. Click one to open it, **×** to stop waiting for it, **+** to add more, or **RESUME** to take the session off hold. Sessions that others are waiting for list them under **WAITED ON BY**. Holds are saved on this Mac with your priorities and only contain session identifiers. Closing a session from Shepherdr removes its holds.
 

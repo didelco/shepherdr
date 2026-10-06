@@ -91,7 +91,12 @@ struct SessionView: View {
                     Text("›").font(Theme.mono(13)).foregroundStyle(Theme.faint)
                     Text(context.title).font(Theme.mono(13)).foregroundStyle(Theme.text.opacity(0.75)).lineLimit(1)
                 }
-                Text(locationLine).font(Theme.mono(10)).foregroundStyle(Theme.faint).lineLimit(1).truncationMode(.middle)
+                HStack(spacing: 6) {
+                    Text(locationLine).font(Theme.mono(10)).foregroundStyle(Theme.faint).lineLimit(1).truncationMode(.middle)
+                    Text("·").font(Theme.mono(10)).foregroundStyle(Theme.faint)
+                    PaneIDButton(paneID: context.paneID, workspace: context.target.workspace, machine: context.machine.machine)
+                        .layoutPriority(1)
+                }
             }
             Spacer(minLength: 8)
             if let agent = context.agent { StateTag(state: agent.agent.state, stale: agent.isStale) }

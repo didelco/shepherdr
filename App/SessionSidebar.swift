@@ -88,6 +88,8 @@ struct SessionSidebar: View {
 
     private var queue: some View {
         let filtering = !model.search.isEmpty
+        // Sessions on hold list the sessions they wait for under them, instead of in their own place.
+        let forest = model.waitForest
         return ScrollView {
             // A plain stack: the queue is short, and a lazy stack whose rows measure themselves
             // could loop on layout and freeze the window.
@@ -96,7 +98,9 @@ struct SessionSidebar: View {
                 ForEach(model.queue) { item in
                     switch item {
                     case .session(let row):
-                        sessionRow(row, in: nil)
+                        if !forest.isNested(row.id) {
+                            ForEach(forest.rows(from: row)) { tree in sessionRow(tree, in: nil, isFirst: false, isLast: false) }
+                        }
                     case .group(let group):
                         let expanded = !group.group.isCollapsed || filtering
                         GroupHeaderView(group: group, isExpanded: expanded,
@@ -104,9 +108,19 @@ struct SessionSidebar: View {
                                         model: model, hint: $dropHint)
                         if expanded {
                             let members = model.members(of: group)
+                            let listed = members.flatMap { member -> [TreeRow] in
+                                guard case .session(let row) = member, !forest.isNested(row.id) else { return [] }
+                                return forest.rows(from: row)
+                            }
                             ForEach(members) { member in
                                 switch member {
-                                case .session(let row): sessionRow(row, in: group)
+                                case .session(let row):
+                                    if !forest.isNested(row.id) {
+                                        ForEach(forest.rows(from: row)) { tree in
+                                            sessionRow(tree, in: group, isFirst: tree.id == listed.first?.id,
+                                                       isLast: tree.id == listed.last?.id)
+                                        }
+                                    }
                                 case .shell(let shell): shellRow(shell, grouped: true)
                                 }
                             }
@@ -135,10 +149,9 @@ struct SessionSidebar: View {
         .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 4)
     }
 
-    private func sessionRow(_ row: AgentRow, in group: QueueGroupRow?) -> some View {
-        SessionRowView(row: row, group: group?.group,
-                       isFirst: group?.rows.first?.id == row.id, isLast: group?.rows.last?.id == row.id,
-                       isSelected: model.selectedID == row.id, showsMachine: model.showsMachineNames,
+    private func sessionRow(_ tree: TreeRow, in group: QueueGroupRow?, isFirst: Bool, isLast: Bool) -> some View {
+        SessionRowView(tree: tree, group: group?.group, isFirst: isFirst, isLast: isLast,
+                       isSelected: model.selectedID == tree.id, showsMachine: model.showsMachineNames,
                        model: model, hint: $dropHint)
     }
 
@@ -208,8 +221,11 @@ struct SessionSidebar: View {
 }
 
 private struct SessionRowView: View {
-    let row: AgentRow
-    /// The group holding this session, if any; grouped rows are indented under its header.
+    /// How far each level of sessions on hold is indented.
+    static let indent: CGFloat = 16
+
+    let tree: TreeRow
+    /// The group this row is listed in, if any; grouped rows are indented under its header.
     let group: SessionGroup?
     let isFirst: Bool
     let isLast: Bool
@@ -220,15 +236,22 @@ private struct SessionRowView: View {
     @ViewState<Bool> private var hovering = false
     @ViewState private var height = RowHeight(44)
 
+    private var row: AgentRow { tree.row }
     private var item: QueueItemID { .session(row.id) }
+    /// Listed under the session waiting for it: it moves with that session, never on its own.
+    private var isNested: Bool { tree.depth > 0 }
+    private var leading: CGFloat { group == nil ? 12 : 26 }
 
     var body: some View {
         let accent = row.agent.state == .blocked && !row.isStale ? Theme.amber : Theme.phosphor
         HStack(alignment: .top, spacing: 8) {
-            Text(String(format: "%02d", row.manualPriority))
-                .font(Theme.mono(10, .semibold))
-                .foregroundStyle(isSelected ? accent : Theme.faint)
-                .padding(.top, 1)
+            // Nested sessions move with the session waiting for them, so their own priority is not shown.
+            if !isNested {
+                Text(String(format: "%02d", row.manualPriority))
+                    .font(Theme.mono(10, .semibold))
+                    .foregroundStyle(isSelected ? accent : Theme.faint)
+                    .padding(.top, 1)
+            }
             if let wait = model.waitState(for: row.id) {
                 // On hold: an hourglass replaces the agent's state until the session resumes.
                 Image(systemName: wait == .ready ? "hourglass.bottomhalf.filled" : "hourglass")
@@ -251,35 +274,44 @@ private struct SessionRowView: View {
                 Text(row.title).font(Theme.mono(10.5)).foregroundStyle(Theme.dim).lineLimit(1)
             }
             Spacer(minLength: 0)
-            if hovering || isSelected { ReorderArrows(item: item, model: model, shortcuts: true) }
+            if tree.nestedCount > 0 { nestedToggle }
+            if (hovering || isSelected) && !isNested { ReorderArrows(item: item, model: model, shortcuts: true) }
         }
-        .padding(.leading, group == nil ? 12 : 26).padding(.trailing, 8).padding(.vertical, 7)
+        .padding(.leading, leading + CGFloat(tree.depth) * Self.indent).padding(.trailing, 8).padding(.vertical, 7)
         .background(isSelected ? Theme.raised : hovering ? Theme.raised.opacity(0.5) : .clear)
         .overlay(alignment: .leading) {
             if group != nil { Rectangle().fill(Theme.line).frame(width: 1).padding(.leading, 18) }
+        }
+        .overlay {
+            if isNested || (tree.nestedCount > 0 && !tree.isCollapsed) { TreeLines(tree: tree, leading: leading) }
         }
         .overlay(alignment: .leading) {
             Rectangle().fill(accent).frame(width: 2).opacity(isSelected ? 1 : row.agent.state == .blocked && !row.isStale ? 0.6 : 0)
                 .shadow(color: accent, radius: isSelected ? 4 : 0)
         }
         .dropLine(.top, hint == .before(item))
-        .dropLine(.bottom, hint == .after(item) || (isLast && group.map { hint == .after(.group($0.id)) } == true))
+        // A drop after a session with nested ones lands after all of them, so its line is drawn there.
+        .dropLine(.bottom, tree.closes.contains { hint == .after(.session($0)) }
+                  || (isLast && group.map { hint == .after(.group($0.id)) } == true))
         .opacity(row.isStale ? 0.6 : 1)
         .measuringHeight(height)
         .contentShape(Rectangle())
         .onTapGesture { model.open(row.id) }
         .onHover { hovering = $0 }
         .help("\(row.agent.kind) · \(row.project)")
-        .queueDraggable(item, model: model)
+        .queueDraggable(item, model: model, enabled: !isNested)
         .onDrop(of: [.plainText], delegate: QueueDropDelegate(model: model, hint: $hint) { dragged, y in
             let upper = y < height.value / 2
+            let root = QueueItemID.session(tree.root)
             switch dragged {
             case .session(let id):
                 guard id != row.id else { return nil }
+                // Over a nested session, anything lands after the whole tree.
+                if isNested { return dragged == root ? nil : .after(root) }
                 return upper ? .before(item) : .after(item)
             case .group(let draggedGroup):
                 // Groups never nest: over a grouped session, a group lands next to that group.
-                guard let group else { return upper ? .before(item) : .after(item) }
+                guard let group else { return isNested ? .after(root) : upper ? .before(item) : .after(item) }
                 guard group.id != draggedGroup else { return nil }
                 return upper && isFirst ? .before(.group(group.id)) : .after(.group(group.id))
             }
@@ -313,12 +345,69 @@ private struct SessionRowView: View {
             if !model.relations.waitingFor(row.id).isEmpty {
                 Button("Resume (Stop Waiting)") { model.relations.stopWaiting(row.id) }
             }
+            if tree.nestedCount > 0 {
+                Button(tree.isCollapsed ? "Show Awaited Sessions" : "Hide Awaited Sessions") {
+                    model.toggleNestedSessions(of: row.id)
+                }
+            }
+            if isNested, let parent = model.waitForest.parents[row.id], let waiter = model.row(for: parent) {
+                Button("Stop \(waiter.workspace) Waiting for This") { model.relations.setWaiting(parent, for: row.id, false) }
+            }
+            Divider()
+            CopyPaneMenu(paneID: row.agent.paneID, workspace: row.workspace, machine: model.machine(for: row.id))
             Divider()
             Button("Close Session…") { model.requestClose(row.id) }.disabled(row.isStale)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Priority \(row.manualPriority), \(row.workspace), \(row.title), \(row.agent.state.title)")
+        .accessibilityLabel((isNested ? "" : "Priority \(row.manualPriority), ") + "\(row.workspace), \(row.title), \(row.agent.state.title)"
+                            + (tree.nestedCount > 0 ? ", waits for \(tree.nestedCount)\(tree.isCollapsed ? ", hidden" : "")" : ""))
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    /// Shows or hides the sessions nested under this one. Amber while a hidden one needs you.
+    private var nestedToggle: some View {
+        Button { withAnimation(.snappy(duration: 0.18)) { model.toggleNestedSessions(of: row.id) } } label: {
+            Text("\(tree.isCollapsed ? "▸" : "▾")\(tree.nestedCount)")
+                .font(Theme.mono(10, .semibold))
+                .foregroundStyle(tree.hiddenBlocked > 0 ? Theme.amber : tree.hidesSelection ? Theme.phosphor : Theme.dim)
+                .padding(.top, 1)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(tree.isCollapsed ? "Show the sessions this one waits for" : "Hide the sessions this one waits for")
+    }
+}
+
+/// The lines tying sessions on hold to the sessions they wait for: ├ and └ in the console's line color.
+private struct TreeLines: View {
+    let tree: TreeRow
+    /// Where the row's level-0 content starts.
+    let leading: CGFloat
+    /// Below the middle of the first line of text, and below the parent's number or state glyph.
+    private let elbow: CGFloat = 14, parentBottom: CGFloat = 22
+
+    var body: some View {
+        Canvas { context, size in
+            // Each level's line runs under the middle of its parent's first column: the priority
+            // number at the top of the tree, the state glyph below it.
+            func x(_ level: Int) -> CGFloat {
+                leading + CGFloat(level - 1) * SessionRowView.indent + (level == 1 ? 6 : 7)
+            }
+            var path = Path()
+            for (index, passes) in tree.guides.enumerated() where passes {
+                path.addRect(CGRect(x: x(index + 1), y: 0, width: 1, height: size.height))
+            }
+            if tree.depth > 0 {
+                let own = x(tree.depth)
+                path.addRect(CGRect(x: own, y: 0, width: 1, height: tree.isLastSibling ? elbow + 1 : size.height))
+                path.addRect(CGRect(x: own, y: elbow, width: 7, height: 1))
+            }
+            if tree.nestedCount > 0 && !tree.isCollapsed {
+                path.addRect(CGRect(x: x(tree.depth + 1), y: parentBottom, width: 1, height: max(0, size.height - parentBottom)))
+            }
+            context.fill(path, with: .color(Theme.faint.opacity(0.6)))
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -567,12 +656,16 @@ private extension ShellRow {
 private extension View {
     /// Starts an in-app drag of a queue item. The model carries what moves; the pasteboard
     /// carries a token for this drag, so drops can tell it from any other text.
-    func queueDraggable(_ item: QueueItemID, model: AppModel) -> some View {
-        onDrag {
-            let token = "shepherdr-queue-item:\(UUID().uuidString)"
-            model.dragging = item
-            model.dragToken = token
-            return NSItemProvider(object: token as NSString)
+    @ViewBuilder func queueDraggable(_ item: QueueItemID, model: AppModel, enabled: Bool = true) -> some View {
+        if enabled {
+            onDrag {
+                let token = "shepherdr-queue-item:\(UUID().uuidString)"
+                model.dragging = item
+                model.dragToken = token
+                return NSItemProvider(object: token as NSString)
+            }
+        } else {
+            self
         }
     }
 

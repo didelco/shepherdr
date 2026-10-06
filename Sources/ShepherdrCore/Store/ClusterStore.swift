@@ -27,6 +27,12 @@ public final class ClusterStore {
 
     public var onlineCount: Int { machines.filter { $0.connection == .online }.count }
 
+    /// What an agent printed last, such as its final message; nil when Herdr cannot tell.
+    public func recentOutput(of row: AgentRow, lines: Int = 60) async -> String? {
+        guard let machine = machines.first(where: { $0.id == row.id.machineID })?.machine else { return nil }
+        return try? await client.recentOutput(paneID: row.agent.paneID, on: machine, lines: lines)
+    }
+
     /// Local querying and catalog discovery start together. Every machine publishes as it finishes.
     /// A slow remote never delays display of a healthy machine. Overlapping refreshes are coalesced.
     public func refresh() async {

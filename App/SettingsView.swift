@@ -26,6 +26,7 @@ private struct GeneralSettings: View {
     @AppStorage("terminalFontSize") private var fontSize = 13.0
     @AppStorage("terminalFontFamily") private var fontFamily = ConsoleFonts.defaultFamily
     @AppStorage(ProjectsFolder.key) private var projectsFolder = ProjectsFolder.defaultPath
+    @AppStorage(SessionNotifier.enabledKey) private var notifies = true
     @ViewState<[String]> private var families: [String] = [ConsoleFonts.defaultFamily]
 
     var body: some View {
@@ -51,6 +52,11 @@ private struct GeneralSettings: View {
                     }
                 }
                 Text("New Session's folder picker starts here, and a folder name alone means a folder inside it.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Notifications") {
+                Toggle("Notify when an agent finishes or needs you", isOn: $notifies)
+                Text("Shows the session, its state and what the agent last said. Click one to open the session. The session you are looking at never notifies.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Terminal font") {

@@ -306,6 +306,42 @@ import Testing
         }
     }
 
+    @Test func awaitedSessionsNestUnderTheFirstSessionWaitingForThem() throws {
+        try withDefaults { defaults in
+            let relations = SessionRelationStore(defaults: defaults)
+            let review = Agent.ID(machineID: "local", terminalID: "review")
+            relations.setWaiting(planner, for: research, true)
+            relations.setWaiting(planner, for: tests, true)
+            relations.setWaiting(review, for: tests, true) // Already nested under the planner, listed first.
+            relations.setWaiting(research, for: review, true) // Nests one level deeper.
+            #expect(relations.parents(in: [planner, research, tests, review])
+                    == [research: planner, tests: planner, review: research])
+            // Only listed sessions nest: the planner hidden by a filter leaves its sessions in place.
+            #expect(relations.parents(in: [research, tests, review]) == [review: research, tests: review])
+            // A loop keeps the session listed first at the top.
+            relations.setWaiting(research, for: planner, true)
+            #expect(relations.parents(in: [planner, research])[planner] == nil)
+            #expect(relations.parents(in: [research, planner]) == [planner: research])
+        }
+    }
+
+    @Test func collapsedWaitsAreRememberedUntilTheWaitEnds() throws {
+        try withDefaults { defaults in
+            let relations = SessionRelationStore(defaults: defaults)
+            relations.setCollapsed(planner, true) // Not waiting yet: nothing to collapse.
+            #expect(relations.collapsed.isEmpty)
+            relations.setWaiting(planner, for: research, true)
+            relations.setWaiting(tests, for: research, true)
+            relations.setCollapsed(planner, true)
+            relations.setCollapsed(tests, true)
+            #expect(SessionRelationStore(defaults: defaults).collapsed == [planner, tests])
+            relations.setWaiting(planner, for: research, false)
+            relations.forget(research)
+            #expect(relations.collapsed.isEmpty)
+            #expect(SessionRelationStore(defaults: defaults).collapsed.isEmpty)
+        }
+    }
+
     @Test func invalidOrDuplicatedRecordsAreDropped() throws {
         try withDefaults { defaults in
             let json = """

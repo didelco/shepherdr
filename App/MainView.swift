@@ -30,6 +30,7 @@ struct MainView: View {
         .onChange(of: cluster.agents.map(\.id), initial: true) {
             model.order.synchronize(with: cluster.agents.map(\.id))
         }
+        .onChange(of: cluster.agents, initial: true) { model.notifier.observe(cluster.agents) }
         .sheet(item: $model.newSession) { draft in NewSessionSheet(model: model, draft: draft) }
         .alert("Download the speech model?", isPresented: $model.asksToDownloadSpeechModel) {
             Button("Download") { model.acceptSpeechModelDownload() }

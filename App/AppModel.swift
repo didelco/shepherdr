@@ -45,6 +45,66 @@ enum GroupMember: Identifiable {
     }
 }
 
+/// A session as the sidebar lists it: in its own place, or nested under a session waiting for it.
+struct TreeRow: Identifiable {
+    let row: AgentRow
+    /// 0 in its own place; an awaited session sits one level below the session waiting for it.
+    let depth: Int
+    /// The session at the top of this row's tree. Drops on nested rows land relative to it.
+    let root: Agent.ID
+    /// Sessions nested directly under this one, shown or not.
+    let nestedCount: Int
+    let isCollapsed: Bool
+    /// Hidden nested sessions, at any depth, that need attention.
+    let hiddenBlocked: Int
+    /// Whether the selected session is among the hidden ones.
+    let hidesSelection: Bool
+    /// Tree lines: for each level between the top and this row, whether a line passes by.
+    let guides: [Bool]
+    /// The last session nested under its parent ends the parent's line.
+    let isLastSibling: Bool
+    /// The sessions whose listed tree ends with this row: a drop after them is drawn below it.
+    var closes: [Agent.ID] = []
+    var id: Agent.ID { row.id }
+}
+
+/// How the sidebar nests sessions on hold: each awaited session under the session waiting for it.
+struct WaitForest {
+    let parents: [Agent.ID: Agent.ID]
+    let children: [Agent.ID: [AgentRow]]
+    /// Sessions whose nested sessions are hidden; none while filtering.
+    let collapsed: Set<Agent.ID>
+    let selected: Agent.ID?
+
+    func isNested(_ id: Agent.ID) -> Bool { parents[id] != nil }
+
+    /// A session in its own place and, unless collapsed, the sessions nested under it, depth first.
+    func rows(from row: AgentRow) -> [TreeRow] { rows(from: row, root: row.id, depth: 0, guides: [], isLast: true) }
+
+    private func rows(from row: AgentRow, root: Agent.ID, depth: Int, guides: [Bool], isLast: Bool) -> [TreeRow] {
+        let nested = children[row.id] ?? []
+        let isCollapsed = !nested.isEmpty && collapsed.contains(row.id)
+        let hidden = isCollapsed ? descendants(of: row.id) : []
+        var result = [TreeRow(row: row, depth: depth, root: root, nestedCount: nested.count, isCollapsed: isCollapsed,
+                              hiddenBlocked: hidden.filter { $0.agent.state == .blocked && !$0.isStale }.count,
+                              hidesSelection: hidden.contains { $0.id == selected },
+                              guides: guides, isLastSibling: isLast)]
+        if !isCollapsed {
+            // A nested row's own line continues past its children unless it was the last one.
+            let childGuides = depth == 0 ? [] : guides + [!isLast]
+            for (index, child) in nested.enumerated() {
+                result += rows(from: child, root: root, depth: depth + 1, guides: childGuides, isLast: index == nested.count - 1)
+            }
+        }
+        result[result.count - 1].closes.append(row.id)
+        return result
+    }
+
+    private func descendants(of id: Agent.ID) -> [AgentRow] {
+        (children[id] ?? []).flatMap { [$0] + descendants(of: $0.id) }
+    }
+}
+
 /// Everything the work area needs to present one session.
 struct SessionContext {
     let target: TerminalTarget
@@ -112,12 +172,15 @@ final class AppModel {
     var actionFailure: HerdrFailure?
     /// Messages shown on a session after it was created, such as an agent waiting at a startup prompt.
     var sessionNotices: [Agent.ID: String] = [:]
+    /// macOS notifications for agents that finish or need you.
+    @ObservationIgnored let notifier = SessionNotifier()
 
     init(cluster: ClusterStore = ClusterStore(), order: SessionOrderStore = SessionOrderStore(),
          relations: SessionRelationStore = SessionRelationStore()) {
         self.cluster = cluster
         self.order = order
         self.relations = relations
+        notifier.model = self
     }
 
     func workspace(for id: Agent.ID) -> SessionWorkspace {
@@ -148,18 +211,39 @@ final class AppModel {
         }
     }
 
-    /// Sessions shown in the sidebar, in order: ⌘1…⌘9 address these. Collapsed groups hide
-    /// theirs, except while filtering.
+    /// Sessions shown in the sidebar, in order: ⌘1…⌘9 address these. Collapsed groups and
+    /// sessions hide theirs, except while filtering.
     var visibleRows: [AgentRow] {
-        queue.flatMap { item -> [AgentRow] in
+        let forest = waitForest
+        return queue.flatMap { item -> [AgentRow] in
             if case .group(let group) = item, group.group.isCollapsed, search.isEmpty { return [] }
-            return item.rows
+            return item.rows.filter { !forest.isNested($0.id) }.flatMap { forest.rows(from: $0).map(\.row) }
         }
     }
 
-    /// Items moves are relative to: filtering hides some, collapsing does not.
+    /// The sidebar's nesting of sessions on hold, for the queue as listed now.
+    var waitForest: WaitForest {
+        let listed = queue.flatMap(\.rows)
+        let parents = relations.parents(in: listed.map(\.id))
+        let byID = Dictionary(listed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var children: [Agent.ID: [AgentRow]] = [:]
+        for (waiter, awaited) in relations.waits {
+            let nested = awaited.filter { parents[$0] == waiter }.compactMap { byID[$0] }
+            if !nested.isEmpty { children[waiter] = nested }
+        }
+        return WaitForest(parents: parents, children: children,
+                          collapsed: search.isEmpty ? relations.collapsed : [], selected: selectedID)
+    }
+
+    func toggleNestedSessions(of id: Agent.ID) {
+        relations.setCollapsed(id, !relations.isCollapsed(id))
+    }
+
+    /// Items moves are relative to: filtering hides some, collapsing does not. Nested sessions
+    /// keep their slot but move with the session they are nested under.
     private var movableItems: Set<QueueItemID> {
-        Set(queue.flatMap { [$0.id] + $0.rows.map { QueueItemID.session($0.id) } })
+        let forest = waitForest
+        return Set(queue.flatMap { [$0.id] + $0.rows.filter { !forest.isNested($0.id) }.map { QueueItemID.session($0.id) } })
     }
 
     private var allShells: [ShellRow] {
@@ -201,10 +285,15 @@ final class AppModel {
     var selectedID: Agent.ID? { if case .session(let id) = selection { id } else { nil } }
     /// Sessions and shells in sidebar order, for stepping through them.
     private var navigableIDs: [Agent.ID] {
-        queue.flatMap { item -> [Agent.ID] in
-            guard case .group(let group) = item else { return item.rows.map(\.id) }
+        let forest = waitForest
+        let tree = { (row: AgentRow) -> [Agent.ID] in forest.isNested(row.id) ? [] : forest.rows(from: row).map(\.id) }
+        return queue.flatMap { item -> [Agent.ID] in
+            guard case .group(let group) = item else { return item.rows.flatMap(tree) }
             if group.group.isCollapsed, search.isEmpty { return [] }
-            return members(of: group).map(\.agentID)
+            return members(of: group).flatMap { member -> [Agent.ID] in
+                if case .session(let row) = member { return tree(row) }
+                return [member.agentID]
+            }
         } + ungroupedShells.map(\.id)
     }
 
@@ -313,6 +402,10 @@ final class AppModel {
     }
 
     func row(for id: Agent.ID) -> AgentRow? { cluster.agents.first { $0.id == id } }
+
+    func machine(for id: Agent.ID) -> Machine {
+        cluster.machines.first { $0.id == id.machineID }?.machine ?? .local
+    }
 
     /// ⌘1…⌘9 address the visible queue by position.
     func open(position: Int) {

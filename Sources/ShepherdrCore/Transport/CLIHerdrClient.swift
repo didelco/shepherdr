@@ -91,6 +91,15 @@ public struct CLIHerdrClient: HerdrClient, HerdrTerminalClient {
         try validate(try await execute(prefix + ["pane", "close", paneID]), machine: machine)
     }
 
+    public func recentOutput(paneID: String, on machine: Machine, lines: Int) async throws -> String {
+        try requireArgument(paneID, "pane")
+        let prefix = machine.profileID.map { ["--machine", $0] } ?? []
+        let output = try await execute(prefix + ["agent", "read", paneID, "--source", "recent",
+                                                 "--lines", String(lines), "--format", "text"])
+        try validate(output, machine: machine)
+        return String(decoding: output.stdout, as: UTF8.self)
+    }
+
     public func addMachine(_ request: NewMachineRequest) async throws {
         let target = request.sshTarget.trimmingCharacters(in: .whitespacesAndNewlines)
         try requireArgument(target, "SSH target")
