@@ -21,17 +21,21 @@ final class SessionNotifier: NSObject {
 
     /// Called with every refresh of the sessions.
     func observe(_ rows: [AgentRow]) {
-        let stopped = tracker.stoppedWorking(rows)
-        guard UserDefaults.standard.object(forKey: Self.enabledKey) as? Bool ?? true else { return }
-        // The session on screen needs no notification.
-        for row in stopped where !(NSApp.isActive && model?.selectedID == row.id) {
-            Task { await post(row) }
+        for row in tracker.stoppedWorking(rows) {
+            Task {
+                // What the agent printed also feeds the session's resources.
+                let output = await model?.cluster.recentOutput(paneID: row.agent.paneID, onMachine: row.id.machineID, lines: 200)
+                if let output { model?.collectResources(SessionResources.find(in: output), for: row.id) }
+                // The session on screen needs no notification.
+                guard UserDefaults.standard.object(forKey: Self.enabledKey) as? Bool ?? true,
+                      !(NSApp.isActive && model?.selectedID == row.id) else { return }
+                await post(row, output: output)
+            }
         }
     }
 
-    private func post(_ row: AgentRow) async {
+    private func post(_ row: AgentRow, output: String?) async {
         guard let center, await isAuthorized(center) else { return }
-        let output = await model?.cluster.recentOutput(of: row)
         let content = UNMutableNotificationContent()
         content.title = row.workspace
         let place = (model?.showsMachineNames ?? false) ? "@\(row.machineName)" : nil
@@ -66,7 +70,9 @@ extension SessionNotifier: UNUserNotificationCenterDelegate {
         if let machineID = info["machineID"] as? String, let terminalID = info["terminalID"] as? String {
             let id = Agent.ID(machineID: machineID, terminalID: terminalID)
             Task { @MainActor in
+                // Into the one main window, reopened if it was closed: never a second window.
                 NSApp.activate(ignoringOtherApps: true)
+                self.model?.showMainWindow?()
                 self.model?.open(id)
             }
         }

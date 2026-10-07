@@ -116,12 +116,48 @@ struct SessionContext {
     var canConnect: Bool { machine.connection == .online }
 }
 
-/// What a session keeps while you work elsewhere: its prompt editor and its browser tabs.
+/// What a session keeps while you work elsewhere, and across restarts: its prompt editor, its
+/// browser tabs and the links collected from it.
 @MainActor @Observable
 final class SessionWorkspace {
     /// The prompt editor is optional; the terminal is where you normally type.
-    var isEditorOpen = false
+    var isEditorOpen = false { didSet { if isEditorOpen != oldValue { save() } } }
     let browser = SessionBrowser()
+    /// Pull requests, issues and Claude artifacts the session linked to, newest first.
+    private(set) var resources: [SessionResource] = []
+    @ObservationIgnored private var persist: ((SessionStateStore.State) -> Void)?
+
+    init(restoring state: SessionStateStore.State = .init(), persist: ((SessionStateStore.State) -> Void)? = nil) {
+        isEditorOpen = state.showsEditor
+        resources = state.resources
+        browser.restore(state.tabs, selected: state.selectedTab, visible: state.showsBrowser)
+        self.persist = persist
+        browser.onChange = { [weak self] in self?.save() }
+    }
+
+    func collect(_ found: [SessionResource]) {
+        let merged = SessionResources.merge(found, into: resources)
+        guard merged != resources else { return }
+        resources = merged
+        save()
+    }
+
+    func remove(_ resource: SessionResource) {
+        resources.removeAll { $0.url == resource.url }
+        save()
+    }
+
+    private func save() {
+        var state = SessionStateStore.State()
+        // Blank tabs have nothing to bring back.
+        let kept = browser.tabs.filter { $0.url.map { $0.scheme != "about" } ?? false }
+        state.tabs = kept.compactMap(\.url)
+        state.selectedTab = kept.firstIndex { $0.id == browser.selected?.id }
+        state.showsBrowser = browser.isVisible
+        state.showsEditor = isEditorOpen
+        state.resources = resources
+        persist?(state)
+    }
 }
 
 /// What the New Session sheet starts from: a folder and machine to prefill, and where the
@@ -143,7 +179,16 @@ final class AppModel {
     let cluster: ClusterStore
     let order: SessionOrderStore
     let relations: SessionRelationStore
-    var selection: Destination = .overview
+    let sessionStates: SessionStateStore
+    var selection: Destination = .overview {
+        didSet { sessionStates.lastSelection = selectedID }
+    }
+    /// Until the session open at the last quit is back, or known to be gone.
+    @ObservationIgnored private var isRestoringSelection = true
+    /// Brings the main window back, for a notification clicked after it was closed.
+    @ObservationIgnored var showMainWindow: (() -> Void)?
+    /// The session being renamed, presented as a name prompt.
+    var renaming: RenamePrompt?
     var search = ""
     var drafts: [Agent.ID: String] = [:]
     private(set) var history: [Agent.ID: [String]] = [:]
@@ -176,18 +221,37 @@ final class AppModel {
     @ObservationIgnored let notifier = SessionNotifier()
 
     init(cluster: ClusterStore = ClusterStore(), order: SessionOrderStore = SessionOrderStore(),
-         relations: SessionRelationStore = SessionRelationStore()) {
+         relations: SessionRelationStore = SessionRelationStore(), sessionStates: SessionStateStore = SessionStateStore()) {
         self.cluster = cluster
         self.order = order
         self.relations = relations
+        self.sessionStates = sessionStates
         notifier.model = self
     }
 
     func workspace(for id: Agent.ID) -> SessionWorkspace {
         if let workspace = workspaces[id] { return workspace }
-        let workspace = SessionWorkspace()
+        let workspace = SessionWorkspace(restoring: sessionStates.state(for: id)) { [weak self] state in
+            self?.sessionStates.set(state, for: id)
+        }
         workspaces[id] = workspace
         return workspace
+    }
+
+    /// Opens the session that was open when Shepherdr quit, once Herdr reports it; gives up once its
+    /// machine answered without it.
+    func restoreSelection() {
+        guard isRestoringSelection else { return }
+        guard let id = sessionStates.lastSelection, selection == .overview else {
+            isRestoringSelection = false
+            return
+        }
+        if context(for: id) != nil {
+            isRestoringSelection = false
+            open(id)
+        } else if cluster.machines.first(where: { $0.id == id.machineID })?.snapshot != nil {
+            isRestoringSelection = false
+        }
     }
 
     var rankedRows: [AgentRow] { order.ranked(cluster.agents) }
@@ -335,9 +399,67 @@ final class AppModel {
         if browser.isVisible && browser.tabs.isEmpty { browser.newTab() }
     }
 
-    /// Links clicked in a session's terminal open in its browser, or in the default browser.
+    /// Links clicked in a session's terminal open in its browser, or in the default browser. Local
+    /// Markdown and HTML files open in its browser too; other files in their default app.
     func openLink(_ url: URL, from id: Agent.ID, external: Bool) {
-        if external { NSWorkspace.shared.open(url) } else { workspace(for: id).browser.open(url) }
+        if external || (url.isFileURL && LocalPage(url) == nil) { NSWorkspace.shared.open(url) }
+        else { workspace(for: id).browser.open(url) }
+    }
+
+    /// The local file a path printed in a session names, if it exists: absolute, under ~, or relative
+    /// to the session's folder. Files on other machines are not on this Mac.
+    func file(at path: String, for id: Agent.ID) -> URL? {
+        guard let context = context(for: id), context.machine.machine.isLocal else { return nil }
+        let expanded = (path as NSString).expandingTildeInPath
+        let base = context.agent?.agent.directory
+            ?? context.machine.snapshot?.panes.first { $0.terminalID == id.terminalID }?.directory
+        let full: String
+        if expanded.hasPrefix("/") { full = expanded }
+        else if let base { full = (base as NSString).appendingPathComponent(expanded) }
+        else { return nil }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: full, isDirectory: &isDirectory), !isDirectory.boolValue else { return nil }
+        return URL(fileURLWithPath: full).standardizedFileURL
+    }
+
+    // MARK: Resources
+
+    func collectResources(_ found: [SessionResource], for id: Agent.ID) {
+        guard !found.isEmpty else { return }
+        workspace(for: id).collect(found)
+    }
+
+    /// Gathers the links a session printed before Shepherdr was watching it.
+    func harvestResources(for id: Agent.ID) async {
+        guard let context = context(for: id), context.canConnect,
+              let text = await cluster.recentOutput(paneID: context.paneID, onMachine: id.machineID, lines: 3_000) else { return }
+        collectResources(SessionResources.find(in: text), for: id)
+    }
+
+    // MARK: Renaming
+
+    struct RenamePrompt: Identifiable {
+        let id = UUID()
+        let session: Agent.ID
+        let workspaceID: String
+        var name: String
+    }
+
+    func promptRename(_ id: Agent.ID) {
+        guard let context = context(for: id) else { return }
+        let workspaceID = context.agent?.agent.workspaceID
+            ?? context.machine.snapshot?.panes.first { $0.terminalID == id.terminalID }?.workspaceID
+        guard let workspaceID else { return }
+        renaming = RenamePrompt(session: id, workspaceID: workspaceID, name: context.target.workspace)
+    }
+
+    func commitRename() async {
+        guard let prompt = renaming else { return }
+        renaming = nil
+        let name = prompt.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != context(for: prompt.session)?.target.workspace else { return }
+        do { try await cluster.renameWorkspace(prompt.workspaceID, to: name, onMachine: prompt.session.machineID) }
+        catch { actionFailure = Self.failure(error) }
     }
 
     // MARK: Dictation
@@ -486,6 +608,7 @@ final class AppModel {
             drafts[id] = nil
             sessionNotices[id] = nil
             workspaces.removeValue(forKey: id)?.browser.closeAll()
+            sessionStates.forget(id)
             relations.forget(id)
         } catch {
             actionFailure = Self.failure(error)

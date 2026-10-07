@@ -19,7 +19,7 @@ let package = Package(
         .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.13.4")
     ],
     targets: [
-        .target(name: "ShepherdrCore"),
+        .target(name: "ShepherdrCore", resources: [.copy("Resources/Markdown")]),
         .target(name: "ShepherdrTerminalUI",
                 dependencies: ["ShepherdrCore", .product(name: "SwiftTerm", package: "SwiftTerm")],
                 resources: [.copy("Resources/SwiftTerm-LICENSE"), .copy("Resources/Fonts")]),

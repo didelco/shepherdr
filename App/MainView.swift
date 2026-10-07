@@ -8,6 +8,7 @@ struct MainView: View {
     @Bindable var model: AppModel
     @AppStorage("refreshSeconds") private var refreshSeconds = 5
     @AppStorage("openMode") private var openMode = TerminalMode.control.rawValue
+    @Environment(\.openWindow) private var openWindow
 
     private var cluster: ClusterStore { model.cluster }
 
@@ -31,6 +32,15 @@ struct MainView: View {
             model.order.synchronize(with: cluster.agents.map(\.id))
         }
         .onChange(of: cluster.agents, initial: true) { model.notifier.observe(cluster.agents) }
+        .onChange(of: cluster.lastRefresh, initial: true) { model.restoreSelection() }
+        .onAppear { model.showMainWindow = { [openWindow] in openWindow(id: "main") } }
+        .alert("Rename Session", isPresented: Binding { model.renaming != nil } set: { if !$0 { model.renaming = nil } }) {
+            TextField("Name", text: Binding { model.renaming?.name ?? "" } set: { model.renaming?.name = $0 })
+            Button("Rename") { Task { await model.commitRename() } }
+            Button("Cancel", role: .cancel) { model.renaming = nil }
+        } message: {
+            Text("Renames its Herdr workspace. Other panes in the same workspace share the name.")
+        }
         .sheet(item: $model.newSession) { draft in NewSessionSheet(model: model, draft: draft) }
         .alert("Download the speech model?", isPresented: $model.asksToDownloadSpeechModel) {
             Button("Download") { model.acceptSpeechModelDownload() }

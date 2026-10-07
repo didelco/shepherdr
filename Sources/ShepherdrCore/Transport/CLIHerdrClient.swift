@@ -94,10 +94,18 @@ public struct CLIHerdrClient: HerdrClient, HerdrTerminalClient {
     public func recentOutput(paneID: String, on machine: Machine, lines: Int) async throws -> String {
         try requireArgument(paneID, "pane")
         let prefix = machine.profileID.map { ["--machine", $0] } ?? []
-        let output = try await execute(prefix + ["agent", "read", paneID, "--source", "recent",
+        let output = try await execute(prefix + ["pane", "read", paneID, "--source", "recent-unwrapped",
                                                  "--lines", String(lines), "--format", "text"])
         try validate(output, machine: machine)
         return String(decoding: output.stdout, as: UTF8.self)
+    }
+
+    public func renameWorkspace(_ workspaceID: String, to name: String, on machine: Machine) async throws {
+        try requireArgument(workspaceID, "workspace")
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        try requireArgument(name, "session name")
+        let prefix = machine.profileID.map { ["--machine", $0] } ?? []
+        try validate(try await execute(prefix + ["workspace", "rename", workspaceID, name]), machine: machine)
     }
 
     public func addMachine(_ request: NewMachineRequest) async throws {

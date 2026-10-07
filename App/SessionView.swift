@@ -15,6 +15,7 @@ struct SessionView: View {
     @ViewState<CGFloat> private var editorHeight: CGFloat = 60
     @AppStorage("terminalFontSize") private var fontSize = 13.0
     @AppStorage("terminalFontFamily") private var fontFamily = ConsoleFonts.defaultFamily
+    @AppStorage("showsResources") private var showsResources = true
 
     init(context: SessionContext, model: AppModel, mode: TerminalMode) {
         self.context = context
@@ -31,33 +32,53 @@ struct SessionView: View {
             header
             Rectangle().fill(Theme.line).frame(height: 1)
             RelationsPanel(id: id, model: model)
-            BrowserSplit(showsBrowser: workspace.browser.isVisible) {
-                VStack(spacing: 0) {
-                    banners
-                    if context.canConnect {
-                        TerminalSurface(store: terminal, palette: Theme.terminal,
-                                        font: ConsoleFonts.font(family: fontFamily, size: fontSize),
-                                        focusRequest: model.terminalFocusRequest) { [model, id] url, external in
-                            model.openLink(url, from: id, external: external)
-                        }
-                        .padding(.leading, 10).padding(.top, 6)
-                        .background(Theme.background)
-                        .overlay { if terminal.status == .connecting { connecting } }
-                    } else {
-                        offline
-                    }
-                    if workspace.isEditorOpen { editor }
-                    bottomBar
+            HStack(spacing: 0) {
+                workArea
+                if showsResources && !workspace.resources.isEmpty {
+                    Rectangle().fill(Theme.line).frame(width: 1)
+                    ResourcesPanel(workspace: workspace).frame(width: 230)
                 }
-            } browser: {
-                BrowserPanel(browser: workspace.browser)
             }
         }
         .background(Theme.background)
         .onAppear { model.activeTerminal = terminal }
         .onDisappear { if model.activeTerminal === terminal { model.activeTerminal = nil } }
+        .task(id: id) {
+            // Once the terminal is attached: Herdr refuses an attach while a read of the pane runs.
+            for _ in 0..<50 where terminal.status == .connecting || terminal.status == .disconnected {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            await model.harvestResources(for: id)
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             terminal.disconnect()
+        }
+    }
+
+    private var workArea: some View {
+        BrowserSplit(showsBrowser: workspace.browser.isVisible) {
+            VStack(spacing: 0) {
+                banners
+                if context.canConnect {
+                    TerminalSurface(store: terminal, palette: Theme.terminal,
+                                    font: ConsoleFonts.font(family: fontFamily, size: fontSize),
+                                    focusRequest: model.terminalFocusRequest,
+                                    resolveFile: { [model, id] path in model.file(at: path, for: id) },
+                                    onResources: { [model, id] found in model.collectResources(found, for: id) }
+                    ) { [model, id] url, external in
+                        model.openLink(url, from: id, external: external)
+                    }
+                    .padding(.leading, 10).padding(.top, 6)
+                    .background(Theme.background)
+                    .overlay { if terminal.status == .connecting { connecting } }
+                } else {
+                    offline
+                }
+                if workspace.isEditorOpen { editor }
+                bottomBar
+            }
+        } browser: {
+            BrowserPanel(browser: workspace.browser)
         }
     }
 
@@ -258,6 +279,14 @@ struct SessionView: View {
                     .font(Theme.mono(9.5)).foregroundStyle(Theme.faint).lineLimit(1).truncationMode(.head)
                     .layoutPriority(-1)
             }
+            let links = workspace.resources.count
+            barToggle(compact ? (links > 0 ? "≡ \(links)" : "≡") : (links > 0 ? "≡ RESOURCES \(links)" : "≡ RESOURCES"),
+                      active: showsResources && links > 0,
+                      help: links > 0 ? "Pull requests, issues and Claude artifacts this session linked to"
+                                      : "Pull requests, issues and Claude artifacts this session links to gather here") {
+                showsResources.toggle()
+            }
+            .disabled(links == 0)
             let tabs = workspace.browser.tabs.count
             barToggle(compact ? (tabs > 0 ? "◫ \(tabs)" : "◫") : (tabs > 0 ? "◫ BROWSER \(tabs)" : "◫ BROWSER"),
                       active: workspace.browser.isVisible,

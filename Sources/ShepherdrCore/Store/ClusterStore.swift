@@ -27,10 +27,15 @@ public final class ClusterStore {
 
     public var onlineCount: Int { machines.filter { $0.connection == .online }.count }
 
-    /// What an agent printed last, such as its final message; nil when Herdr cannot tell.
-    public func recentOutput(of row: AgentRow, lines: Int = 60) async -> String? {
-        guard let machine = machines.first(where: { $0.id == row.id.machineID })?.machine else { return nil }
-        return try? await client.recentOutput(paneID: row.agent.paneID, on: machine, lines: lines)
+    /// What a pane printed last, such as an agent's final message; nil when Herdr cannot tell.
+    public func recentOutput(paneID: String, onMachine id: String, lines: Int = 60) async -> String? {
+        guard let machine = try? machine(id) else { return nil }
+        return try? await client.recentOutput(paneID: paneID, on: machine, lines: lines)
+    }
+
+    public func renameWorkspace(_ workspaceID: String, to name: String, onMachine id: String) async throws {
+        try await client.renameWorkspace(workspaceID, to: name, on: try machine(id))
+        await refreshAfterChange()
     }
 
     /// Local querying and catalog discovery start together. Every machine publishes as it finishes.

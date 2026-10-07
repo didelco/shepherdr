@@ -13,8 +13,10 @@ public protocol HerdrClient: Sendable {
     func removeMachine(profileID: String) async throws
     func setMachine(profileID: String, enabled: Bool) async throws
 
-    /// The last lines an agent's pane printed, as plain text.
+    /// The last lines a pane printed, as plain text with wrapped lines joined.
     func recentOutput(paneID: String, on machine: Machine, lines: Int) async throws -> String
+
+    func renameWorkspace(_ workspaceID: String, to name: String, on machine: Machine) async throws
 }
 
 extension HerdrClient {
@@ -25,6 +27,7 @@ extension HerdrClient {
     public func removeMachine(profileID: String) async throws { throw unsupported }
     public func setMachine(profileID: String, enabled: Bool) async throws { throw unsupported }
     public func recentOutput(paneID: String, on machine: Machine, lines: Int) async throws -> String { throw unsupported }
+    public func renameWorkspace(_ workspaceID: String, to name: String, on machine: Machine) async throws { throw unsupported }
 }
 
 public struct ExecutableLocator: Sendable {

@@ -64,7 +64,7 @@ struct SessionSidebar: View {
         let live = cluster.agents.filter { !$0.isStale }
         let working = live.filter { $0.agent.state == .working }.count
         let blocked = live.filter { $0.agent.state == .blocked }.count
-        return blocked > 0 ? "\(blocked) need you · \(working) working" : "\(live.count) agents · \(working) working"
+        return blocked > 0 ? "\(blocked) need you · \(working) working" : "\(live.count) agent\(live.count == 1 ? "" : "s") · \(working) working"
     }
 
     private var searchField: some View {
@@ -176,6 +176,7 @@ struct SessionSidebar: View {
                      showsMachine: model.showsMachineNames) { model.open(shell.id) }
             .contextMenu {
                 Button("Open") { model.open(shell.id) }
+                Button("Rename…") { model.promptRename(shell.id) }.disabled(shell.isStale)
                 Button("New Session in Same Folder…") { model.startNewSession(besides: shell.id) }
                     .disabled(!model.canStartNewSession(besides: shell.id))
                 if grouped {
@@ -318,6 +319,7 @@ private struct SessionRowView: View {
         })
         .contextMenu {
             Button("Open") { model.open(row.id) }
+            Button("Rename…") { model.promptRename(row.id) }.disabled(row.isStale)
             Button("New Session in Same Folder…") { model.startNewSession(besides: row.id) }
                 .disabled(!model.canStartNewSession(besides: row.id))
             Divider()

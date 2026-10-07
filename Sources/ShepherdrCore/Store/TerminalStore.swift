@@ -18,6 +18,8 @@ public final class TerminalStore {
     @ObservationIgnored private var resizeTask: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var inputTask: Task<Void, Never>?
+    /// Attaches Herdr refused because something was reading the pane, such as Shepherdr collecting links.
+    @ObservationIgnored private var busyRetries = 0
 
     /// Another client already controls this terminal; Shepherdr fell back to observing it.
     public private(set) var isControlledElsewhere = false
@@ -49,6 +51,7 @@ public final class TerminalStore {
                     guard attempt == self.generation, !Task.isCancelled else { return }
                     switch event {
                     case .frame(let frame):
+                        self.busyRetries = 0
                         // Written only on change: every write invalidates the views that read it.
                         let status: Status = mode.acceptsInput ? .interactive : .observing
                         if self.status != status { self.status = status }
@@ -56,6 +59,17 @@ public final class TerminalStore {
                         if mode == .takeover, self.mode != .control { self.mode = .control }
                         self.display?(frame)
                     case .closed(let reason):
+                        if self.status == .connecting, Self.isBusy(reason), self.busyRetries < 5 {
+                            // Herdr asks to retry an attach while a read of the pane is in progress.
+                            self.busyRetries += 1
+                            let delay = Duration.milliseconds(250 * self.busyRetries)
+                            Task { [weak self] in
+                                try? await Task.sleep(for: delay)
+                                guard let self, attempt == self.generation else { return }
+                                self.open(mode: mode)
+                            }
+                            return
+                        }
                         let rejected = self.status == .connecting && Self.isControlConflict(reason)
                         if mode.acceptsInput, rejected || Self.wasTakenOver(reason) {
                             // Never steal input implicitly: keep watching and let the user decide.
@@ -146,6 +160,10 @@ public final class TerminalStore {
 
     nonisolated static func wasTakenOver(_ reason: String) -> Bool {
         reason.localizedCaseInsensitiveContains("taken over")
+    }
+
+    nonisolated static func isBusy(_ reason: String) -> Bool {
+        reason.localizedCaseInsensitiveContains("in progress; retry")
     }
 
     nonisolated static func isControlConflict(_ reason: String) -> Bool {

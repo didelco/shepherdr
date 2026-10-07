@@ -1,14 +1,17 @@
 import AppKit
 import SwiftUI
 import WebKit
+import ShepherdrCore
 
 /// A session's own browser. Its tabs stay open, scrolled and signed in while you move between
 /// sessions. Links clicked in the terminal open here; ⌘-click opens the default browser instead.
 @MainActor @Observable
 final class SessionBrowser {
     private(set) var tabs: [BrowserTab] = []
-    var selectedID: BrowserTab.ID?
-    var isVisible = false
+    var selectedID: BrowserTab.ID? { didSet { if selectedID != oldValue { changed() } } }
+    var isVisible = false { didSet { if isVisible != oldValue { changed() } } }
+    /// Called whenever the tabs, their pages, the selection or the visibility change, to save them.
+    @ObservationIgnored var onChange: (() -> Void)?
 
     var selected: BrowserTab? { tabs.first { $0.id == selectedID } ?? tabs.last }
 
@@ -30,6 +33,15 @@ final class SessionBrowser {
     func add(_ tab: BrowserTab) {
         tabs.append(tab)
         selectedID = tab.id
+        changed()
+    }
+
+    /// Brings back the tabs saved when Shepherdr quit. Each page loads the first time it is shown.
+    func restore(_ urls: [URL], selected: Int?, visible: Bool) {
+        guard tabs.isEmpty else { return }
+        tabs = urls.map { BrowserTab(url: $0, browser: self, loadsNow: false) }
+        selectedID = selected.flatMap { tabs.indices.contains($0) ? tabs[$0].id : nil } ?? tabs.last?.id
+        isVisible = visible && !tabs.isEmpty
     }
 
     func close(_ tab: BrowserTab) {
@@ -38,12 +50,29 @@ final class SessionBrowser {
         tabs.remove(at: index)
         if selectedID == tab.id { selectedID = tabs.indices.contains(index) ? tabs[index].id : tabs.last?.id }
         if tabs.isEmpty { isVisible = false }
+        changed()
     }
 
     func closeAll() {
         tabs.forEach { $0.tearDown() }
         tabs = []
         isVisible = false
+        changed()
+    }
+
+    fileprivate func changed() { onChange?() }
+}
+
+/// Local files the browser shows itself; any other file opens in its default app.
+enum LocalPage {
+    case markdown, html
+
+    init?(_ url: URL) {
+        guard url.isFileURL else { return nil }
+        let pathExtension = url.pathExtension.lowercased()
+        if MarkdownRenderer.extensions.contains(pathExtension) { self = .markdown }
+        else if ["html", "htm", "xhtml"].contains(pathExtension) { self = .html }
+        else { return nil }
     }
 }
 
@@ -54,6 +83,8 @@ final class BrowserTab: NSObject, Identifiable, WKNavigationDelegate, WKUIDelega
     private(set) var title = ""
     private(set) var url: URL?
     private(set) var isLoading = false
+    /// A restored page waiting to be shown before it loads.
+    @ObservationIgnored private var pending: URL?
     private(set) var canGoBack = false
     private(set) var canGoForward = false
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
@@ -69,7 +100,7 @@ final class BrowserTab: NSObject, Identifiable, WKNavigationDelegate, WKUIDelega
         return configuration
     }()
 
-    init(url: URL?, browser: SessionBrowser, configuration: WKWebViewConfiguration = BrowserTab.configuration) {
+    init(url: URL?, browser: SessionBrowser, configuration: WKWebViewConfiguration = BrowserTab.configuration, loadsNow: Bool = true) {
         webView = WKWebView(frame: .zero, configuration: configuration)
         self.browser = browser
         self.url = url
@@ -80,22 +111,52 @@ final class BrowserTab: NSObject, Identifiable, WKNavigationDelegate, WKUIDelega
         webView.allowsMagnification = true
         observations = [
             webView.observe(\.title) { [weak self] view, _ in MainActor.assumeIsolated { self?.title = view.title ?? "" } },
-            webView.observe(\.url) { [weak self] view, _ in MainActor.assumeIsolated { if let url = view.url { self?.url = url } } },
+            webView.observe(\.url) { [weak self] view, _ in
+                MainActor.assumeIsolated {
+                    guard let self, let url = view.url, url != self.url else { return }
+                    self.url = url
+                    self.browser?.changed()
+                }
+            },
             webView.observe(\.isLoading) { [weak self] view, _ in MainActor.assumeIsolated { self?.isLoading = view.isLoading } },
             webView.observe(\.canGoBack) { [weak self] view, _ in MainActor.assumeIsolated { self?.canGoBack = view.canGoBack } },
             webView.observe(\.canGoForward) { [weak self] view, _ in MainActor.assumeIsolated { self?.canGoForward = view.canGoForward } },
         ]
-        if let url { webView.load(URLRequest(url: url)) }
+        if let url { if loadsNow { load(url) } else { pending = url } }
     }
 
     var displayTitle: String {
         if !title.isEmpty { return title }
+        if url?.isFileURL == true { return url?.lastPathComponent ?? "File" }
         return url?.host() ?? "New Tab"
     }
 
+    /// Loads a restored page the first time its tab is shown.
+    func activate() {
+        guard let pending else { return }
+        self.pending = nil
+        load(pending)
+    }
+
+    /// Web pages load as usual. Markdown files are rendered, and HTML files may read their folder.
     func load(_ url: URL) {
         self.url = url
-        webView.load(URLRequest(url: url))
+        pending = nil
+        switch LocalPage(url) {
+        case .markdown:
+            let text = (try? String(contentsOf: url, encoding: .utf8)) ?? "*Could not read \(url.lastPathComponent).*"
+            // The base URL lets relative images and links resolve, and WebKit read that folder.
+            webView.loadHTMLString(MarkdownRenderer.page(markdown: text, file: url), baseURL: url)
+        case .html:
+            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        case nil:
+            webView.load(URLRequest(url: url))
+        }
+    }
+
+    /// Markdown is rendered again from the file, so edits show up.
+    func reload() {
+        if let url, LocalPage(url) == .markdown { load(url) } else { webView.reload() }
     }
 
     func tearDown() {
@@ -119,12 +180,24 @@ final class BrowserTab: NSObject, Identifiable, WKNavigationDelegate, WKUIDelega
         browser?.close(self)
     }
 
-    // Mail, app and other non-web links go to the system.
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-        guard let url = navigationAction.request.url, let scheme = url.scheme?.lowercased(),
-              !["http", "https", "about", "blob", "data", "file"].contains(scheme) else { return .allow }
-        NSWorkspace.shared.open(url)
-        return .cancel
+    // Mail, app and other non-web links go to the system. Rendered Markdown runs no scripts, and a
+    // link from it to another local file opens that file the way a terminal click would.
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 preferences: WKWebpagePreferences) async -> (WKNavigationActionPolicy, WKWebpagePreferences) {
+        guard let url = navigationAction.request.url, let scheme = url.scheme?.lowercased() else { return (.allow, preferences) }
+        if url.isFileURL, navigationAction.navigationType == .linkActivated, navigationAction.targetFrame?.isMainFrame != false {
+            let file = url.removingFragment
+            if LocalPage(file) != nil, file != self.url?.removingFragment { load(file) }
+            else if LocalPage(file) == nil { NSWorkspace.shared.open(file) }
+            else { return (.allow, preferences) } // An anchor in the same page.
+            return (.cancel, preferences)
+        }
+        if url.isFileURL, LocalPage(url) == .markdown { preferences.allowsContentJavaScript = false }
+        guard ["http", "https", "about", "blob", "data", "file"].contains(scheme) else {
+            NSWorkspace.shared.open(url)
+            return (.cancel, preferences)
+        }
+        return (.allow, preferences)
     }
 }
 
@@ -140,7 +213,7 @@ struct BrowserPanel: View {
             toolbar
             Rectangle().fill(Theme.line).frame(height: 1)
             if let tab = browser.selected {
-                WebViewHost(webView: tab.webView)
+                WebViewHost(webView: tab.webView).onAppear { tab.activate() }.id(tab.id)
             } else {
                 Text("no pages open").font(Theme.mono(11)).foregroundStyle(Theme.faint)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -201,7 +274,7 @@ struct BrowserPanel: View {
             if tab?.isLoading == true {
                 navButton("×", help: "Stop", enabled: true) { tab?.webView.stopLoading() }
             } else {
-                navButton("↻", help: "Reload", enabled: tab != nil) { tab?.webView.reload() }
+                navButton("↻", help: "Reload", enabled: tab != nil) { tab?.reload() }
             }
             TextField("address", text: $address)
                 .textFieldStyle(.plain).font(Theme.mono(11)).foregroundStyle(Theme.text)
@@ -258,5 +331,13 @@ private struct WebViewHost: NSViewRepresentable {
 
     static func dismantleNSView(_ container: NSView, coordinator: ()) {
         container.subviews.forEach { $0.removeFromSuperview() }
+    }
+}
+
+private extension URL {
+    var removingFragment: URL {
+        guard var components = URLComponents(url: self, resolvingAgainstBaseURL: false) else { return self }
+        components.fragment = nil
+        return components.url ?? self
     }
 }

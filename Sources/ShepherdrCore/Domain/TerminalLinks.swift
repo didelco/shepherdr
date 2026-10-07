@@ -6,7 +6,7 @@ public enum TerminalLinks {
     /// Characters RFC 3986 allows in a URL. Box drawing and other decoration end a link.
     private static let urlCharacters = CharacterSet(
         charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?#[]@!$&'()*+,;=%")
-    private static let pattern = try! NSRegularExpression(
+    static let pattern = try! NSRegularExpression(
         pattern: #"https?://[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+"#, options: [.caseInsensitive])
     /// Lines a wrapped link may span in either direction from the clicked one.
     private static let wrapLimit = 8
@@ -41,12 +41,28 @@ public enum TerminalLinks {
         return url
     }
 
+    /// Every web link on a screen, in reading order and once each, including links that wrap across rows.
+    public static func urls(in rows: [[Character]]) -> [URL] {
+        var found: [URL] = []
+        for (index, row) in rows.enumerated() {
+            let line = String(row)
+            for match in starts.matches(in: line, range: NSRange(line.startIndex..., in: line)) {
+                guard let start = Range(match.range, in: line)?.lowerBound else { continue }
+                let column = line.distance(from: line.startIndex, to: start)
+                if let url = url(in: rows, row: index, column: column), !found.contains(url) { found.append(url) }
+            }
+        }
+        return found
+    }
+
+    private static let starts = try! NSRegularExpression(pattern: "https?://", options: [.caseInsensitive])
+
     private static func isURLCharacter(_ character: Character) -> Bool {
         character.unicodeScalars.count == 1 && urlCharacters.contains(character.unicodeScalars.first!)
     }
 
     /// Drops sentence punctuation and unbalanced closing brackets that prose wraps around links.
-    private static func trimmed(_ link: String) -> String {
+    static func trimmed(_ link: String) -> String {
         var link = link
         while let last = link.last {
             if ".,;:!?'\"*".contains(last) {

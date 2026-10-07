@@ -142,14 +142,21 @@ private actor MockTerminalClient: HerdrTerminalClient {
     var modes: [TerminalMode] = []
     /// Connections opened in these modes report a control conflict instead of a frame.
     var conflicted: Set<TerminalMode> = []
-    init(_ connections: [MockTerminalConnection], conflicted: Set<TerminalMode> = []) {
+    /// How many attaches find a read of the pane in progress first.
+    var busy: Int
+    init(_ connections: [MockTerminalConnection], conflicted: Set<TerminalMode> = [], busy: Int = 0) {
         self.connections = connections
         self.conflicted = conflicted
+        self.busy = busy
     }
     func connect(to target: TerminalTarget, mode: TerminalMode, size: TerminalSize) async throws -> any HerdrTerminalConnection {
         modes.append(mode)
         let connection = connections.removeFirst()
-        if conflicted.contains(mode) {
+        if busy > 0 {
+            busy -= 1
+            connection.continuation.yield(.closed("terminal attach failed: terminal \(target.terminalID) has a read in progress; retry"))
+            connection.continuation.finish()
+        } else if conflicted.contains(mode) {
             connection.continuation.yield(.closed("terminal attach failed: terminal \(target.terminalID) already has an attached client; retry with --takeover"))
             connection.continuation.finish()
         } else { connection.frame() }
@@ -165,6 +172,19 @@ private actor MockTerminalClient: HerdrTerminalClient {
             try await Task.sleep(for: .milliseconds(10))
         }
         Issue.record("Terminal state did not settle within one second")
+    }
+
+    @Test func attachRefusedDuringAReadIsRetried() async throws {
+        let connections = [MockTerminalConnection(), MockTerminalConnection(), MockTerminalConnection()]
+        let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
+        let client = MockTerminalClient(connections, busy: 2)
+        let store = TerminalStore(target: target, mode: .control, client: client)
+        defer { store.disconnect() }
+        store.open()
+        for _ in 0..<200 where store.status != .interactive { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(store.status == .interactive)
+        #expect(store.message == nil)
+        #expect(await client.requestedModes() == [.control, .control, .control])
     }
 
     @Test func testObservationNeverSendsInputAndModeSwitchDetachesOnlyItsConnection() async throws {

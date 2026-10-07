@@ -71,6 +71,6 @@ struct SessionEventTests {
         let remote = Machine(profileID: "moon", name: "Moonbase", target: "moon.local", session: "default", isEnabled: true)
         #expect(try await client.recentOutput(paneID: "w2:p1", on: remote, lines: 60) == "⏺ Hello\n")
         #expect(await runner.recordedArguments()
-                == [["--machine", "moon", "agent", "read", "w2:p1", "--source", "recent", "--lines", "60", "--format", "text"]])
+                == [["--machine", "moon", "pane", "read", "w2:p1", "--source", "recent-unwrapped", "--lines", "60", "--format", "text"]])
     }
 }
