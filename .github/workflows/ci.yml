@@ -13,5 +13,8 @@ jobs:
           persist-credentials: false
       - name: Core tests
         run: swift test
+      # Release builds are what people run; an optimizer once broke a check that passed in Debug.
+      - name: Core tests, optimized
+        run: swift test -c release
       - name: Build and test native app
         run: xcodebuild -project Shepherdr.xcodeproj -scheme Shepherdr -configuration Debug -destination 'platform=macOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO test

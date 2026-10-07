@@ -131,7 +131,7 @@ public struct CLIHerdrClient: HerdrClient, HerdrTerminalClient {
     /// Values become separate arguments, never shell text; still refuse anything Herdr could read as an option.
     private func requireArgument(_ value: String, _ name: String) throws {
         guard !value.isEmpty, !value.hasPrefix("-"),
-              !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
+              value.rangeOfCharacter(from: .controlCharacters) == nil else {
             throw HerdrFailure(.incompatible, "Enter a valid \(name).")
         }
     }

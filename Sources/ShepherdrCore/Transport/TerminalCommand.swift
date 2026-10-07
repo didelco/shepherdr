@@ -10,8 +10,8 @@ struct TerminalCommand: Sendable {
         guard target.machine.isEnabled, !target.terminalID.isEmpty,
               !target.terminalID.hasPrefix("-"), !target.machine.session.isEmpty,
               !target.machine.session.hasPrefix("-"),
-              !target.terminalID.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
-              !target.machine.session.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
+              target.terminalID.rangeOfCharacter(from: .controlCharacters) == nil,
+              target.machine.session.rangeOfCharacter(from: .controlCharacters) == nil else {
             throw HerdrFailure(.incompatible, "The terminal target is unavailable or invalid.")
         }
         var clean = environment
@@ -27,7 +27,7 @@ struct TerminalCommand: Sendable {
             return Self(executable: try executable ?? ExecutableLocator().locate(), arguments: arguments, environment: clean)
         }
         guard let sshTarget = target.machine.target, !sshTarget.isEmpty, !sshTarget.hasPrefix("-"),
-              !sshTarget.unicodeScalars.contains(where: CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains) else {
+              sshTarget.rangeOfCharacter(from: CharacterSet.whitespacesAndNewlines.union(.controlCharacters)) == nil else {
             throw HerdrFailure(.incompatible, "The saved SSH target is invalid.")
         }
         // --machine cannot forward terminal session streams. Run the same installed Herdr CLI
