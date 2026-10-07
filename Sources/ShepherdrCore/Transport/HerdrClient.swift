@@ -17,6 +17,10 @@ public protocol HerdrClient: Sendable {
     func recentOutput(paneID: String, on machine: Machine, lines: Int) async throws -> String
 
     func renameWorkspace(_ workspaceID: String, to name: String, on machine: Machine) async throws
+
+    /// The checkouts of the repository a workspace works in, by the workspace that has each open;
+    /// empty outside a Git repository.
+    func checkouts(around workspaceID: String, on machine: Machine) async throws -> [String: WorkspaceCheckout]
 }
 
 extension HerdrClient {
@@ -28,6 +32,7 @@ extension HerdrClient {
     public func setMachine(profileID: String, enabled: Bool) async throws { throw unsupported }
     public func recentOutput(paneID: String, on machine: Machine, lines: Int) async throws -> String { throw unsupported }
     public func renameWorkspace(_ workspaceID: String, to name: String, on machine: Machine) async throws { throw unsupported }
+    public func checkouts(around workspaceID: String, on machine: Machine) async throws -> [String: WorkspaceCheckout] { throw unsupported }
 }
 
 public struct ExecutableLocator: Sendable {

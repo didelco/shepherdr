@@ -71,6 +71,25 @@ public struct Agent: Identifiable, Equatable, Sendable {
     public let isLaunchPending: Bool
 }
 
+/// The Git checkout a workspace works in, as Herdr reports it: the repository's main checkout or
+/// one of its linked worktrees.
+public struct WorkspaceCheckout: Equatable, Sendable {
+    public let repository: String
+    public let branch: String?
+    public let isLinkedWorktree: Bool
+    public let path: String
+
+    public init(repository: String, branch: String?, isLinkedWorktree: Bool, path: String) {
+        self.repository = repository
+        self.branch = branch
+        self.isLinkedWorktree = isLinkedWorktree
+        self.path = path
+    }
+
+    /// The folder in the main checkout, the project in a worktree.
+    public var name: String { isLinkedWorktree ? repository : (path as NSString).lastPathComponent }
+}
+
 public struct Workspace: Identifiable, Equatable, Sendable {
     public let id: String
     public let name: String

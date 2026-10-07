@@ -1,17 +1,16 @@
 Native macOS console for herding your coding agents across your Herdr machines: one prioritized queue, the real terminal of every session, a browser per session, and a notification when it's your turn.
 
-### What's new in 0.7
+### What's new in 0.8
 
-- **Resources at hand.** The pull requests and issues (GitHub, GitLab, Bitbucket, Linear, Jira) and Claude artifacts a session links to gather in a panel on the right, newest first. Click one to open it in the session's browser.
-- **Local files open with a click.** Click a path an agent prints: Markdown opens rendered in the session's browser (tables, task lists, images, no scripts), HTML opens as a page, and any other file in its default app. **⌘-click** always uses the default app.
-- **Click to choose.** Click an option of an agent's numbered menu, such as a permission prompt in Claude Code or Codex, to select it; double-click to confirm.
-- **Picks up where you left off.** After a restart, the session you had open comes back, and every session keeps its browser tabs, prompt editor and resources. Closing a tab forgets it.
-- **Rename sessions** from their context menu; Shepherdr renames the Herdr workspace.
+- **Drop files and images on the terminal.** Their paths are pasted into the agent's prompt, escaped as other macOS terminals do, so Claude Code and Codex attach dropped images. An image without a file, from a web page say, is saved as a PNG first. In a session on another machine, each file is copied there over SSH first.
+- **Pull request checks.** While you look at a session, its GitHub pull requests show their CI checks: ● running, ✓ passed, ✗ failed. One query covers them all, every 15 seconds while checks run and every 2 minutes after; a notification tells you when they finish. Needs the GitHub CLI, signed in.
+- **Resources you can trust.** Each new resource is checked once: links agents write as examples leave the panel, and the rest show their page's title. A GitHub number is listed once, as the pull request or issue it really is. Each kind shows its ten most relevant first, the most opened and mentioned.
+- **More in the queue.** Each session shows where it works, its folder or, in cyan, the project of its Git worktree, and its pull request; click it to open the session with the pull request, or with all of them in tabs.
+- **Know when to close the lid.** The foot of the sidebar tells you whether it's safe to close the lid, or whether agents are working on this Mac.
 
 ### Fixed
 
-- Terminals could fail to connect in optimized builds: a check that newer Swift compilers optimize wrongly rejected valid sessions. CI now also runs the tests optimized.
-- Clicking a notification opens its session in the main window, reopening the window if it was closed, never a second one.
+- Clicking a notification could open a second window. Shepherdr now keeps a single window.
 
 ### Download and install
 

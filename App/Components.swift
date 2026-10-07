@@ -79,3 +79,17 @@ struct PaneIDButton: View {
     }
 }
 
+/// A pull request's CI checks at a glance: running in amber, passed, or failed in red.
+struct ChecksMark: View {
+    let state: PullRequestChecks.State?
+
+    var body: some View {
+        switch state {
+        case .running: Text("●").foregroundStyle(Theme.amber)
+        case .passed: Text("✓").foregroundStyle(Theme.phosphor)
+        case .failed: Text("✗").foregroundStyle(Theme.red)
+        case .some(.none), nil: EmptyView()
+        }
+    }
+}
+

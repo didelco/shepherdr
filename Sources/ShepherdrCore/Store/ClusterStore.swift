@@ -10,6 +10,11 @@ public final class ClusterStore {
     public var automaticRefresh = true
     public var refreshInterval: TimeInterval = 5
     @ObservationIgnored private let client: any HerdrClient
+    /// The Git checkout of each workspace, by machine and workspace ID; learned once per workspace.
+    public private(set) var checkouts: [String: WorkspaceCheckout] = [:]
+    /// Workspaces asked about, including those outside a repository.
+    @ObservationIgnored private var knownWorkspaces = Set<String>()
+    @ObservationIgnored private var learning: Task<Void, Never>?
 
     public init(client: any HerdrClient = CLIHerdrClient()) { self.client = client }
 
@@ -26,6 +31,38 @@ public final class ClusterStore {
     }
 
     public var onlineCount: Int { machines.filter { $0.connection == .online }.count }
+
+    public func checkout(machineID: String, workspaceID: String) -> WorkspaceCheckout? {
+        checkouts["\(machineID)/\(workspaceID)"]
+    }
+
+    /// Asks Herdr, one repository at a time, which checkout each new workspace works in. Whether a
+    /// folder is a worktree doesn't change, so each workspace is asked about once.
+    private func learnCheckouts() {
+        guard learning == nil else { return }
+        let pending = agents.map { (machine: $0.id.machineID, workspace: $0.agent.workspaceID) }
+            .filter { !$0.workspace.isEmpty && !knownWorkspaces.contains("\($0.machine)/\($0.workspace)") }
+        guard !pending.isEmpty else { return }
+        learning = Task { [weak self, client] in
+            defer { self?.learning = nil }
+            for item in pending {
+                guard let self, !Task.isCancelled else { return }
+                let key = "\(item.machine)/\(item.workspace)"
+                // An earlier answer about the same repository may have covered it.
+                guard !self.knownWorkspaces.contains(key), let machine = try? self.machine(item.machine) else { continue }
+                self.knownWorkspaces.insert(key)
+                // A machine that didn't answer is asked again on a later refresh.
+                guard let found = try? await client.checkouts(around: item.workspace, on: machine) else {
+                    self.knownWorkspaces.remove(key)
+                    continue
+                }
+                for (workspace, checkout) in found {
+                    self.knownWorkspaces.insert("\(item.machine)/\(workspace)")
+                    self.checkouts["\(item.machine)/\(workspace)"] = checkout
+                }
+            }
+        }
+    }
 
     /// What a pane printed last, such as an agent's final message; nil when Herdr cannot tell.
     public func recentOutput(paneID: String, onMachine id: String, lines: Int = 60) async -> String? {
@@ -120,7 +157,10 @@ public final class ClusterStore {
                 }
             }
         }
-        if !Task.isCancelled { lastRefresh = Date() }
+        if !Task.isCancelled {
+            lastRefresh = Date()
+            learnCheckouts()
+        }
     }
 
     // MARK: Changes requested by the user

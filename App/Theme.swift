@@ -150,6 +150,71 @@ struct PixelFlock: View {
     }
 }
 
+/// A pixel-art face for the lid status: a smile when this Mac may sleep, and gritted teeth with a
+/// falling bead of sweat while its agents work.
+struct PixelFace: View {
+    enum Mood { case happy, working }
+    let mood: Mood
+    var pixel: CGFloat = 1.5
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let happy = [
+        "..GGGGG..",
+        ".GGGGGGG.",
+        "GGkGGGkGG",
+        "GGkGGGkGG",
+        "GGGGGGGGG",
+        "GkGGGGGkG",
+        "GGkkkkkGG",
+        ".GGGGGGG.",
+        "..GGGGG..",
+    ]
+    private static let working = [
+        "..AAAAA..",
+        ".AAAAAAA.",
+        "AkkAAAkkA",
+        "AAkAAAkAA",
+        "AAAAAAAAA",
+        "AkkkkkkkA",
+        "AkWkWkWkA",
+        ".AkkkkkA.",
+        "..AAAAA..",
+    ]
+    private static let colors: [Character: Color] = [
+        "G": Theme.phosphor, "A": Theme.amber, "k": Theme.background, "W": Color(hex: 0xFFF4D6),
+    ]
+
+    var body: some View {
+        if mood == .working && !reduceMotion {
+            TimelineView(.periodic(from: .now, by: 0.35)) { timeline in
+                face(drop: Int(timeline.date.timeIntervalSinceReferenceDate / 0.35) % 3)
+            }
+        } else {
+            face(drop: mood == .working ? 0 : nil)
+        }
+    }
+
+    /// The bead of sweat runs down the side of the face, a row per step.
+    private func face(drop: Int?) -> some View {
+        let sprite = mood == .happy ? Self.happy : Self.working
+        return Canvas { context, _ in
+            for (row, line) in sprite.enumerated() {
+                for (column, character) in line.enumerated() {
+                    guard let color = Self.colors[character] else { continue }
+                    context.fill(Path(CGRect(x: CGFloat(column) * pixel, y: CGFloat(row) * pixel, width: pixel, height: pixel)),
+                                 with: .color(color))
+                }
+            }
+            if let drop {
+                let top = CGFloat(1 + drop * 2) * pixel
+                context.fill(Path(CGRect(x: 10 * pixel, y: top, width: pixel, height: pixel * 2)), with: .color(Theme.cyan))
+            }
+        }
+        .frame(width: 11 * pixel, height: 9 * pixel)
+        .accessibilityHidden(true)
+    }
+}
+
 /// A TUI-style lifecycle glyph: a braille spinner while working, a blinking alert when blocked.
 struct StateGlyph: View {
     let state: AgentState

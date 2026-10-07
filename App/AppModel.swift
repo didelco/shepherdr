@@ -129,7 +129,8 @@ final class SessionWorkspace {
 
     init(restoring state: SessionStateStore.State = .init(), persist: ((SessionStateStore.State) -> Void)? = nil) {
         isEditorOpen = state.showsEditor
-        resources = state.resources
+        // Older versions could keep a GitHub number twice, as a pull request and as an issue.
+        resources = SessionResources.merge([], into: state.resources)
         browser.restore(state.tabs, selected: state.selectedTab, visible: state.showsBrowser)
         self.persist = persist
         browser.onChange = { [weak self] in self?.save() }
@@ -143,7 +144,32 @@ final class SessionWorkspace {
     }
 
     func remove(_ resource: SessionResource) {
-        resources.removeAll { $0.url == resource.url }
+        resources.removeAll { $0.key == resource.key }
+        save()
+    }
+
+    /// Opens a resource in the session's browser and counts the visit.
+    func open(_ resource: SessionResource) {
+        browser.open(resource.url)
+        countOpen(of: resource.url)
+    }
+
+    /// Counts a visit to a link if it is one of the session's resources.
+    func countOpen(of url: URL) {
+        guard let key = SessionResource(url: url)?.key, let index = resources.firstIndex(where: { $0.key == key }) else { return }
+        resources[index].opens += 1
+        save()
+    }
+
+    /// Resources whose pages may exist: the ones the panel lists.
+    var visibleResources: [SessionResource] { resources.filter { !$0.isMissing } }
+
+    /// Records what a check found out about a resource.
+    func update(_ key: String, _ change: (SessionResource) -> SessionResource) {
+        guard let index = resources.firstIndex(where: { $0.key == key }) else { return }
+        let updated = change(resources[index])
+        guard updated != resources[index] else { return }
+        resources[index] = updated
         save()
     }
 
@@ -181,7 +207,10 @@ final class AppModel {
     let relations: SessionRelationStore
     let sessionStates: SessionStateStore
     var selection: Destination = .overview {
-        didSet { sessionStates.lastSelection = selectedID }
+        didSet {
+            sessionStates.lastSelection = selectedID
+            checksMonitor.watch(selectedID)
+        }
     }
     /// Until the session open at the last quit is back, or known to be gone.
     @ObservationIgnored private var isRestoringSelection = true
@@ -221,6 +250,8 @@ final class AppModel {
     var sessionNotices: [Agent.ID: String] = [:]
     /// macOS notifications for agents that finish or need you.
     @ObservationIgnored let notifier = SessionNotifier()
+    /// CI checks of the pull requests of the session on screen.
+    let checksMonitor = ChecksMonitor()
 
     init(cluster: ClusterStore = ClusterStore(), order: SessionOrderStore = SessionOrderStore(),
          relations: SessionRelationStore = SessionRelationStore(), sessionStates: SessionStateStore = SessionStateStore()) {
@@ -229,6 +260,7 @@ final class AppModel {
         self.relations = relations
         self.sessionStates = sessionStates
         notifier.model = self
+        checksMonitor.model = self
     }
 
     /// Whether `window` is Shepherdr's one window. Any other window closes in favor of it.
@@ -429,6 +461,7 @@ final class AppModel {
     func openLink(_ url: URL, from id: Agent.ID, external: Bool) {
         if external || (url.isFileURL && LocalPage(url) == nil) { NSWorkspace.shared.open(url) }
         else { workspace(for: id).browser.open(url) }
+        workspace(for: id).countOpen(of: url)
     }
 
     /// The local file a path printed in a session names, if it exists: absolute, under ~, or relative
@@ -447,15 +480,123 @@ final class AppModel {
         return URL(fileURLWithPath: full).standardizedFileURL
     }
 
+    // MARK: Dropped files
+
+    /// Files dropped on a session's terminal: their paths are typed into its prompt, so agents such as
+    /// Claude Code and Codex attach dropped images. On another machine each file is copied there first.
+    func drop(_ files: [URL], into id: Agent.ID, terminal: TerminalStore) {
+        guard terminal.status == .interactive else {
+            sessionNotices[id] = "Unlock the session (⌘E) to drop files into it."
+            return
+        }
+        guard let machine = context(for: id)?.machine.machine else { return }
+        guard !machine.isLocal else {
+            terminal.send(.bytes(FileDrop.paste(files.map(\.path))))
+            return
+        }
+        let names = files.map(\.lastPathComponent).joined(separator: ", ")
+        sessionNotices[id] = "Copying \(names) to \(machine.name)…"
+        Task {
+            do {
+                var paths: [String] = []
+                for file in files { paths.append(try await FileDrop.upload(file, to: machine)) }
+                if sessionNotices[id]?.hasPrefix("Copying") == true { sessionNotices[id] = nil }
+                terminal.send(.bytes(FileDrop.paste(paths)))
+            } catch {
+                let failure = Self.failure(error)
+                sessionNotices[id] = [failure.message, failure.detail].compactMap { $0 }.joined(separator: " ")
+            }
+        }
+    }
+
     // MARK: Resources
+
+    /// A session's resources, without opening its workspace: the queue shows them for every session.
+    func resources(for id: Agent.ID) -> [SessionResource] {
+        workspaces[id]?.resources ?? SessionResources.merge([], into: sessionStates.state(for: id).resources)
+    }
+
+    /// The session's pull requests, most relevant first.
+    func pullRequests(of id: Agent.ID) -> [SessionResource] {
+        SessionResources.ranked(resources(for: id), kind: .pullRequest)
+    }
+
+    /// Opens the session with one of its links in its browser, such as a pull request a notification is about.
+    func openLink(_ url: URL, in id: Agent.ID) {
+        open(id)
+        openLink(url, from: id, external: false)
+    }
+
+    /// Opens the session with its pull request in its browser, or the ten most relevant, each in a tab.
+    func openPullRequests(of id: Agent.ID) {
+        let pulls = pullRequests(of: id)
+        open(id)
+        if pulls.count == 1 { workspace(for: id).open(pulls[0]) }
+        else { workspace(for: id).browser.open(all: pulls.prefix(10).map(\.url)) }
+    }
 
     func collectResources(_ found: [SessionResource], for id: Agent.ID) {
         guard !found.isEmpty else { return }
         workspace(for: id).collect(found)
+        checkResources(for: id)
+    }
+
+    @ObservationIgnored private let gitHub = GitHubLookup()
+    @ObservationIgnored private lazy var pageProbe = PageProbe()
+    /// Resources checked this launch: each is checked once, even when the answer was unclear.
+    @ObservationIgnored private var checkedThisLaunch = Set<String>()
+    @ObservationIgnored private var checkQueue: Task<Void, Never>?
+
+    /// Checks, one at a time, that the session's resources exist and fetches their titles: a link an
+    /// agent wrote as an example points nowhere. Settled answers are saved; unclear ones, such as a
+    /// sign-in page, are asked again next launch.
+    private func checkResources(for id: Agent.ID) {
+        let pending = workspace(for: id).resources.filter { !$0.isChecked && checkedThisLaunch.insert($0.key).inserted }
+        guard !pending.isEmpty else { return }
+        let previous = checkQueue
+        checkQueue = Task { [weak self] in
+            await previous?.value
+            for resource in pending { await self?.check(resource, for: id) }
+        }
+    }
+
+    private func check(_ resource: SessionResource, for id: Agent.ID) async {
+        let workspace = workspace(for: id)
+        // GitHub's CLI answers for private repositories too, and says whether it's a pull request.
+        if let github = resource.github, gitHub.isAvailable {
+            switch await gitHub.look(owner: github.owner, repository: github.repository, number: github.number) {
+            case .found(let isPullRequest, let title):
+                workspace.update(resource.key) { $0.verified(isPullRequest: isPullRequest).found(title: title) }
+                return
+            case .missing:
+                workspace.update(resource.key) { $0.missing() }
+                return
+            case .unknown:
+                break
+            }
+        }
+        let page = await pageProbe.load(resource.url)
+        if page.hostMissing || page.status == 404 || page.status == 410 || page.title.map(ResourceTitles.isNotFoundPage) == true {
+            // GitHub answers 404 for private repositories to visitors who aren't signed in.
+            if resource.github != nil, !(await PageProbe.isSignedIntoGitHub()) { return }
+            workspace.update(resource.key) { $0.missing() }
+            return
+        }
+        // A sign-in page or an error is no answer.
+        guard let status = page.status, (200..<400).contains(status), let landed = page.url.flatMap(SessionResource.init(url:)),
+              landed.key == resource.key else { return }
+        let title = page.title.flatMap { ResourceTitles.clean($0, for: resource) }
+        workspace.update(resource.key) { current in
+            // Following GitHub's redirect tells a pull request from an issue.
+            let settled = current.github != nil ? current.verified(isPullRequest: landed.kind == .pullRequest) : current
+            return settled.found(title: title)
+        }
     }
 
     /// Gathers the links a session printed before Shepherdr was watching it.
     func harvestResources(for id: Agent.ID) async {
+        // Resources saved earlier are checked too, even when nothing new turns up.
+        defer { checkResources(for: id) }
         guard let context = context(for: id), context.canConnect,
               let text = await cluster.recentOutput(paneID: context.paneID, onMachine: id.machineID, lines: 3_000) else { return }
         collectResources(SessionResources.find(in: text), for: id)

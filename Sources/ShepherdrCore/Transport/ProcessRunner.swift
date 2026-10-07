@@ -15,11 +15,16 @@ enum CommandError: Error, Sendable { case timedOut, outputTooLarge, launch(Strin
 
 struct ProcessRunner: CommandRunning {
     func run(executable: URL, arguments: [String], timeout: TimeInterval) async throws -> CommandOutput {
+        try await run(executable: executable, arguments: arguments, timeout: timeout, input: nil)
+    }
+
+    /// Runs with a file as its standard input.
+    func run(executable: URL, arguments: [String], timeout: TimeInterval, input: URL?) async throws -> CommandOutput {
         let operation = ProcessOperation()
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
-                operation.start(executable: executable, arguments: arguments,
+                operation.start(executable: executable, arguments: arguments, input: input,
                                 timeout: timeout, continuation: continuation)
             }
         } onCancel: {
@@ -46,14 +51,14 @@ private final class ProcessOperation: @unchecked Sendable {
     private var deadline: DispatchWorkItem?
     private let outputLimit = 8 * 1_024 * 1_024
 
-    func start(executable: URL, arguments: [String], timeout: TimeInterval,
+    func start(executable: URL, arguments: [String], input: URL? = nil, timeout: TimeInterval,
                continuation: CheckedContinuation<CommandOutput, Error>) {
         queue.async { [self] in
             self.continuation = continuation
             guard !self.cancelled else { self.finish(.failure(CancellationError())); return }
             self.process.executableURL = executable
             self.process.arguments = arguments
-            self.process.standardInput = FileHandle.nullDevice
+            self.process.standardInput = input.flatMap { try? FileHandle(forReadingFrom: $0) } ?? FileHandle.nullDevice
             self.process.standardOutput = self.stdout
             self.process.standardError = self.stderr
             var environment = ProcessInfo.processInfo.environment

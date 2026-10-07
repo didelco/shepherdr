@@ -26,6 +26,8 @@ final class SessionNotifier: NSObject {
                 // What the agent printed also feeds the session's resources.
                 let output = await model?.cluster.recentOutput(paneID: row.agent.paneID, onMachine: row.id.machineID, lines: 200)
                 if let output { model?.collectResources(SessionResources.find(in: output), for: row.id) }
+                // A finished turn may have pushed: its pull requests' checks start over.
+                model?.checksMonitor.refresh(row.id)
                 // The session on screen needs no notification.
                 guard UserDefaults.standard.object(forKey: Self.enabledKey) as? Bool ?? true,
                       !(NSApp.isActive && model?.selectedID == row.id) else { return }
@@ -50,6 +52,25 @@ final class SessionNotifier: NSObject {
         try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
+    /// Tells you a pull request's checks finished: passed, or how many failed.
+    func checksFinished(_ pull: SessionResource, _ checks: PullRequestChecks, in id: Agent.ID) {
+        guard UserDefaults.standard.object(forKey: Self.enabledKey) as? Bool ?? true,
+              !(NSApp.isActive && model?.selectedID == id) else { return }
+        Task {
+            guard let center, await isAuthorized(center) else { return }
+            let content = UNMutableNotificationContent()
+            content.title = checks.state == .passed ? "✓ Checks passed" : "✗ \(checks.failed) check\(checks.failed == 1 ? "" : "s") failed"
+            let session = model?.row(for: id)?.workspace
+            content.subtitle = [pull.name, session].compactMap { $0 }.joined(separator: " · ")
+            content.body = [pull.title, checks.summary].compactMap { $0 }.joined(separator: "\n")
+            content.sound = .default
+            content.threadIdentifier = pull.key
+            content.targetContentIdentifier = "main"
+            content.userInfo = ["machineID": id.machineID, "terminalID": id.terminalID, "link": pull.url.absoluteString]
+            try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        }
+    }
+
     /// Asks the first time a notification is due; later answers come from System Settings.
     private func isAuthorized(_ center: UNUserNotificationCenter) async -> Bool {
         switch await center.notificationSettings().authorizationStatus {
@@ -71,11 +92,13 @@ extension SessionNotifier: UNUserNotificationCenterDelegate {
         let info = response.notification.request.content.userInfo
         if let machineID = info["machineID"] as? String, let terminalID = info["terminalID"] as? String {
             let id = Agent.ID(machineID: machineID, terminalID: terminalID)
+            let link = (info["link"] as? String).flatMap(URL.init(string:))
             Task { @MainActor in
                 // Into the one main window, reopened if it was closed: never a second window.
                 NSApp.activate(ignoringOtherApps: true)
                 self.model?.showMainWindow()
-                self.model?.open(id)
+                // A pull request's checks open the pull request too.
+                if let link { self.model?.openLink(link, in: id) } else { self.model?.open(id) }
             }
         }
         completionHandler()

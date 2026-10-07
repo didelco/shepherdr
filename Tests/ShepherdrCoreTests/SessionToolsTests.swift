@@ -35,6 +35,97 @@ struct SessionResourceTests {
     }
 }
 
+struct ResourceRelevanceTests {
+    private func resource(_ link: String) -> SessionResource { SessionResource(url: URL(string: link)!)! }
+
+    @Test func mentionsAreCountedPerReadWithoutDoubleCounting() {
+        let text = "PR https://github.com/a/b/pull/2, again https://github.com/a/b/pull/2 and issue https://github.com/a/b/issues/1"
+        let found = SessionResources.find(in: text)
+        #expect(found.map(\.mentions) == [2, 1])
+        // Reading the same output again finds the same mentions; they don't add up.
+        let merged = SessionResources.merge(found, into: SessionResources.merge(found, into: []))
+        #expect(merged.first { $0.name == "a/b#2" }?.mentions == 2)
+    }
+
+    @Test func aGitHubNumberIsOneResourceWhateverTheLinkSays() {
+        // An agent linked issue 944 both ways; GitHub redirects between them.
+        let both = SessionResources.find(in: "https://github.com/theam/tam-os/issues/944 then https://github.com/theam/tam-os/pull/944")
+        #expect(both.count == 1)
+        #expect(both[0].kind == .issue && both[0].mentions == 2)
+        // Duplicates saved by older versions merge too, and GitHub's answer wins.
+        let saved = [resource("https://github.com/theam/tam-os/pull/944"), resource("https://github.com/theam/tam-os/issues/944")]
+        let settled = SessionResources.merge([], into: saved)[0].verified(isPullRequest: false)
+        #expect(settled.kind == .issue && settled.isVerified)
+        #expect(settled.url.absoluteString == "https://github.com/theam/tam-os/issues/944")
+        let merged = SessionResources.merge([resource("https://github.com/theam/tam-os/pull/944")], into: [settled])
+        #expect(merged.count == 1 && merged[0].kind == .issue)
+        // GitLab numbers merge requests and issues separately: those stay apart.
+        #expect(SessionResources.find(in: "https://gitlab.com/a/b/-/merge_requests/3 https://gitlab.com/a/b/-/issues/3").count == 2)
+    }
+
+    @Test func openedAndMentionedResourcesComeFirst() {
+        var quiet = resource("https://github.com/a/b/pull/1")
+        var opened = resource("https://github.com/a/b/pull/2")
+        var mentioned = resource("https://github.com/a/b/pull/3")
+        let newest = resource("https://github.com/a/b/pull/4")
+        quiet.mentions = 1
+        opened.opens = 1
+        mentioned.mentions = 3
+        let ranked = SessionResources.ranked([newest, quiet, opened, mentioned], kind: .pullRequest).map(\.name)
+        #expect(ranked == ["a/b#2", "a/b#3", "a/b#4", "a/b#1"])
+    }
+
+    @Test func resourcesSavedBeforeCountingStillLoad() throws {
+        let json = #"[{"url":"https:\/\/github.com\/a\/b\/pull\/2","kind":"pullRequest","name":"a\/b#2"}]"#
+        let decoded = try JSONDecoder().decode([SessionResource].self, from: Data(json.utf8))
+        #expect(decoded[0].mentions == 1 && decoded[0].opens == 0 && !decoded[0].isVerified)
+    }
+
+    @Test func gitHubSaysWhetherANumberExistsAndWhatItIs() async {
+        let runner = RecordingRunner([output("false\tQuarter close report\n"), output("true\tFix · the | build\n"),
+                                      output("", stderr: "gh: Not Found (HTTP 404)", code: 1),
+                                      output("", stderr: "error connecting to api.github.com", code: 1)])
+        let lookup = GitHubLookup(runner: runner, executable: URL(fileURLWithPath: "/usr/bin/true"))
+        #expect(await lookup.look(owner: "theam", repository: "tam-os", number: 944) == .found(isPullRequest: false, title: "Quarter close report"))
+        #expect(await lookup.look(owner: "theam", repository: "tam-os", number: 2300) == .found(isPullRequest: true, title: "Fix · the | build"))
+        #expect(await lookup.look(owner: "a", repository: "b", number: 3) == .missing)
+        #expect(await lookup.look(owner: "a", repository: "b", number: 4) == .unknown)
+        #expect(await runner.recordedArguments().first == ["api", "repos/theam/tam-os/issues/944", "--jq", "[(.pull_request != null), .title] | @tsv"])
+        #expect(await GitHubLookup(runner: runner, executable: nil).look(owner: "a", repository: "b", number: 1) == .unknown)
+    }
+
+    @Test func missingResourcesAreHiddenAndCheckedOnesKeepTheirTitle() {
+        let fake = resource("https://github.com/a/b/pull/3").missing()
+        let real = resource("https://github.com/theam/tam-os/pull/2300").found(title: "Seat-based distribution")
+        #expect(SessionResources.ranked([fake, real], kind: .pullRequest).map(\.name) == ["theam/tam-os#2300"])
+        // Seeing it again later doesn't forget what the check found.
+        let merged = SessionResources.merge(SessionResources.find(in: "https://github.com/theam/tam-os/pull/2300"), into: [real])
+        #expect(merged[0].title == "Seat-based distribution" && merged[0].isChecked)
+    }
+
+    @Test func pageTitlesLoseTheSitesDecoration() {
+        let pull = resource("https://github.com/theam/shepherdr/pull/12")
+        #expect(ResourceTitles.clean("Fix login redirect by javier · Pull Request #12 · theam/shepherdr", for: pull) == "Fix login redirect by javier")
+        #expect(ResourceTitles.clean("Page not found · GitHub", for: pull) == nil)
+        #expect(ResourceTitles.clean("GitHub", for: pull) == nil)
+        let gitlab = resource("https://gitlab.com/acme/api/-/merge_requests/31")
+        #expect(ResourceTitles.clean("Cache tokens (!31) · Merge requests · acme / api · GitLab", for: gitlab) == "Cache tokens")
+        let jira = resource("https://acme.atlassian.net/browse/OPS-9")
+        #expect(ResourceTitles.clean("[OPS-9] Rotate the keys - Jira", for: jira) == "Rotate the keys")
+        let linear = resource("https://linear.app/acme/issue/ENG-42/fix-login")
+        #expect(ResourceTitles.clean("ENG-42 Fix login", for: linear) == "Fix login")
+        #expect(ResourceTitles.clean("Log in", for: linear) == nil)
+        let artifact = resource("https://claude.ai/code/artifact/3f450b55")
+        #expect(ResourceTitles.clean("Release plan | Claude", for: artifact) == "Release plan")
+        #expect(ResourceTitles.clean("Claude", for: artifact) == nil)
+        // Claude answers a missing artifact normally, in your language, and says so in the title only.
+        #expect(ResourceTitles.isNotFoundPage("Página no encontrada – Claude"))
+        #expect(ResourceTitles.isNotFoundPage("Page not found · GitHub · GitHub"))
+        #expect(!ResourceTitles.isNotFoundPage("Fix page not found on login · Issue #3 · a/b"))
+        #expect(ResourceTitles.clean("Página no encontrada – Claude", for: artifact) == nil)
+    }
+}
+
 struct TerminalPathTests {
     private func path(_ line: String, at fragment: String) -> String? {
         let row = Array(line)

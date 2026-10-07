@@ -35,7 +35,7 @@ If it fits the way you work, take it. If it doesn't, fork it and make it yours, 
 ## What it does
 
 - **One queue for every agent.** Sessions from all your machines, local and SSH, in your own priority order. Drag to reorder, jump with **⌘1…⌘9**, and gather them into groups that you prioritize as one.
-- **The real terminal, embedded.** Pick a session and type straight into its agent's TUI (⇧⏎ for a new line). Open the prompt editor when a prompt deserves more thought, or dictate it and edit the transcript.
+- **The real terminal, embedded.** Pick a session and type straight into its agent's TUI (⇧⏎ for a new line), or drop files and images on it for the agent to pick up, even on remote machines. Open the prompt editor when a prompt deserves more thought, or dictate it and edit the transcript.
 - **A browser per session.** Click a link and it opens next to the terminal, in tabs that stay put while you hop between sessions and come back after a restart. Paths to local files open too: Markdown rendered, HTML as a page.
 - **Resources at hand.** The pull requests, issues and Claude artifacts each session links to gather in a side panel, one click away.
 - **Know when it's your turn.** A notification tells you when an agent finishes or needs you, with what it last said.

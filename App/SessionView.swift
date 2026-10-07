@@ -34,9 +34,9 @@ struct SessionView: View {
             RelationsPanel(id: id, model: model)
             HStack(spacing: 0) {
                 workArea
-                if showsResources && !workspace.resources.isEmpty {
+                if showsResources && !workspace.visibleResources.isEmpty {
                     Rectangle().fill(Theme.line).frame(width: 1)
-                    ResourcesPanel(workspace: workspace).frame(width: 230)
+                    ResourcesPanel(workspace: workspace, checks: model.checksMonitor).frame(width: 230)
                 }
             }
         }
@@ -64,7 +64,8 @@ struct SessionView: View {
                                     font: ConsoleFonts.font(family: fontFamily, size: fontSize),
                                     focusRequest: model.terminalFocusRequest,
                                     resolveFile: { [model, id] path in model.file(at: path, for: id) },
-                                    onResources: { [model, id] found in model.collectResources(found, for: id) }
+                                    onResources: { [model, id] found in model.collectResources(found, for: id) },
+                                    onDropFiles: { [model, id, terminal] files in model.drop(files, into: id, terminal: terminal) }
                     ) { [model, id] url, external in
                         model.openLink(url, from: id, external: external)
                     }
@@ -279,7 +280,7 @@ struct SessionView: View {
                     .font(Theme.mono(9.5)).foregroundStyle(Theme.faint).lineLimit(1).truncationMode(.head)
                     .layoutPriority(-1)
             }
-            let links = workspace.resources.count
+            let links = workspace.visibleResources.count
             barToggle(compact ? (links > 0 ? "≡ \(links)" : "≡") : (links > 0 ? "≡ RESOURCES \(links)" : "≡ RESOURCES"),
                       active: showsResources && links > 0,
                       help: links > 0 ? "Pull requests, issues and Claude artifacts this session linked to"

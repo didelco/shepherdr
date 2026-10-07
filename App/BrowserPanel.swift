@@ -25,6 +25,18 @@ final class SessionBrowser {
         }
     }
 
+    /// Opens several links at once, each in its own tab unless one already shows it, and shows the
+    /// first. The others load when you look at them.
+    func open(all urls: [URL]) {
+        guard let first = urls.first else { return }
+        for url in urls where !tabs.contains(where: { $0.url == url }) {
+            tabs.append(BrowserTab(url: url, browser: self, loadsNow: false))
+        }
+        isVisible = true
+        selectedID = tabs.first { $0.url == first }?.id
+        changed()
+    }
+
     func newTab() {
         isVisible = true
         add(BrowserTab(url: nil, browser: self))
@@ -198,6 +210,79 @@ final class BrowserTab: NSObject, Identifiable, WKNavigationDelegate, WKUIDelega
             return (.cancel, preferences)
         }
         return (.allow, preferences)
+    }
+}
+
+/// Loads pages out of sight with the session browsers' sign-ins, to tell whether a link exists and
+/// read its title. One page at a time.
+@MainActor
+final class PageProbe: NSObject, WKNavigationDelegate {
+    struct Page {
+        /// The main page's HTTP status, if it answered.
+        let status: Int?
+        /// Where it ended up after redirects, such as a sign-in page.
+        let url: URL?
+        let title: String?
+        /// The host doesn't exist: the link is made up.
+        let hostMissing: Bool
+    }
+
+    private lazy var webView: WKWebView = {
+        let view = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800), configuration: BrowserTab.configuration)
+        view.navigationDelegate = self
+        return view
+    }()
+    private var status: Int?
+    private var waiting: CheckedContinuation<Page, Never>?
+    private var deadline: Task<Void, Never>?
+
+    func load(_ url: URL) async -> Page {
+        await withCheckedContinuation { continuation in
+            waiting = continuation
+            status = nil
+            webView.load(URLRequest(url: url))
+            deadline = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(20))
+                self?.finish(nil)
+            }
+        }
+    }
+
+    /// Whether the browsers are signed in to GitHub, which hides private repositories from visitors.
+    static func isSignedIntoGitHub() async -> Bool {
+        await BrowserTab.configuration.websiteDataStore.httpCookieStore.allCookies()
+            .contains { $0.name == "logged_in" && $0.value == "yes" && $0.domain.hasSuffix("github.com") }
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+        if navigationResponse.isForMainFrame, let response = navigationResponse.response as? HTTPURLResponse {
+            status = response.statusCode
+        }
+        return .allow
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // Single-page apps set their titles, or move to a sign-in page, just after loading.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            self?.finish(nil)
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { finish(error) }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        finish(error)
+    }
+
+    private func finish(_ error: Error?) {
+        guard let waiting else { return }
+        self.waiting = nil
+        deadline?.cancel()
+        let code = (error as NSError?)?.code
+        waiting.resume(returning: Page(status: status, url: webView.url, title: webView.title,
+                                       hostMissing: code == NSURLErrorCannotFindHost || code == NSURLErrorDNSLookupFailed))
+        webView.stopLoading()
     }
 }
 

@@ -108,6 +108,16 @@ public struct CLIHerdrClient: HerdrClient, HerdrTerminalClient {
         try validate(try await execute(prefix + ["workspace", "rename", workspaceID, name]), machine: machine)
     }
 
+    public func checkouts(around workspaceID: String, on machine: Machine) async throws -> [String: WorkspaceCheckout] {
+        try requireArgument(workspaceID, "workspace")
+        let prefix = machine.profileID.map { ["--machine", $0] } ?? []
+        let output = try await execute(prefix + ["worktree", "list", "--workspace", workspaceID])
+        // Outside a Git repository Herdr answers with an error: no checkouts.
+        guard (try? validate(output, machine: machine)) != nil else { return [:] }
+        do { return try HerdrJSON.checkouts(output.stdout) }
+        catch { throw decodingFailure(error) }
+    }
+
     public func addMachine(_ request: NewMachineRequest) async throws {
         let target = request.sshTarget.trimmingCharacters(in: .whitespacesAndNewlines)
         try requireArgument(target, "SSH target")

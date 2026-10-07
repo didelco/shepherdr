@@ -38,10 +38,13 @@ public struct TerminalSurface: NSViewRepresentable {
     let resolveFile: (_ path: String) -> URL?
     /// Pull requests, issues and Claude artifacts seen on screen.
     let onResources: (_ found: [SessionResource]) -> Void
+    /// Files and images dropped on the terminal; nil refuses drops.
+    let onDropFiles: ((_ files: [URL]) -> Void)?
 
     public init(store: TerminalStore, palette: TerminalPalette, font: NSFont, focusRequest: Int = 0,
                 resolveFile: @escaping (_ path: String) -> URL? = { _ in nil },
                 onResources: @escaping (_ found: [SessionResource]) -> Void = { _ in },
+                onDropFiles: ((_ files: [URL]) -> Void)? = nil,
                 openLink: @escaping (_ url: URL, _ external: Bool) -> Void = { url, _ in NSWorkspace.shared.open(url) }) {
         self.store = store
         self.palette = palette
@@ -49,6 +52,7 @@ public struct TerminalSurface: NSViewRepresentable {
         self.focusRequest = focusRequest
         self.resolveFile = resolveFile
         self.onResources = onResources
+        self.onDropFiles = onDropFiles
         self.openLink = openLink
     }
 
@@ -75,6 +79,7 @@ public struct TerminalSurface: NSViewRepresentable {
         view.openLink = openLink
         view.resolveFile = resolveFile
         view.onResources = onResources
+        view.onDropFiles = onDropFiles
         if context.coordinator.focusRequest != focusRequest {
             context.coordinator.focusRequest = focusRequest
             DispatchQueue.main.async { [weak view] in view?.window?.makeFirstResponder(view) }
@@ -139,6 +144,7 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
     var openLink: ((_ url: URL, _ external: Bool) -> Void)?
     var resolveFile: ((_ path: String) -> URL?)?
     var onResources: ((_ found: [SessionResource]) -> Void)?
+    var onDropFiles: ((_ files: [URL]) -> Void)?
     private var scanPending = false
     /// Bumped by every frame, so the menu found under the pointer is reused until the screen changes.
     private var screenGeneration = 0
@@ -335,6 +341,7 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
     /// around them; selection keeps working.
     func installInteractions() {
         guard linkTracker == nil else { return }
+        registerForDraggedTypes([.fileURL, .png, .tiff])
         let tracker = LinkTracker(view: self)
         linkTracker = tracker
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.activeInKeyWindow, .mouseMoved, .inVisibleRect],
@@ -386,6 +393,60 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
         let rows = screenRows(first...last)
         if let url = TerminalLinks.url(in: rows, row: row - first, column: column) { return (url, false) }
         return TerminalPaths.path(in: rows, row: row - first, column: column).flatMap { resolveFile?($0) }.map { ($0, false) }
+    }
+}
+
+/// Files and images dropped on the terminal reach the agent: their paths are typed into its prompt,
+/// as other macOS terminals do, so Claude Code and Codex attach dropped images.
+extension ConsoleTerminalView {
+    public override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard onDropFiles != nil, Self.canTakeFiles(from: sender.draggingPasteboard) else { return [] }
+        showDropTarget(true)
+        return .copy
+    }
+
+    public override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        onDropFiles != nil && Self.canTakeFiles(from: sender.draggingPasteboard) ? .copy : []
+    }
+
+    public override func draggingExited(_ sender: NSDraggingInfo?) { showDropTarget(false) }
+
+    public override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        showDropTarget(false)
+        let files = Self.files(from: sender.draggingPasteboard)
+        guard let onDropFiles, !files.isEmpty else { return false }
+        window?.makeFirstResponder(self)
+        onDropFiles(files)
+        return true
+    }
+
+    private func showDropTarget(_ shown: Bool) {
+        layer?.borderWidth = shown ? 2 : 0
+        layer?.borderColor = caretColor.cgColor
+    }
+
+    static func canTakeFiles(from pasteboard: NSPasteboard) -> Bool {
+        pasteboard.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
+            || NSImage.canInit(with: pasteboard)
+    }
+
+    /// Dropped files, or an image dragged without one (from a web page, say) saved as a PNG first.
+    static func files(from pasteboard: NSPasteboard) -> [URL] {
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
+           !urls.isEmpty {
+            return urls
+        }
+        guard let image = NSImage(pasteboard: pasteboard), let tiff = image.tiffRepresentation,
+              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return [] }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("shepherdr-drops", isDirectory: true)
+        let file = folder.appendingPathComponent("image-\(Int(Date().timeIntervalSince1970 * 1000)).png")
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try png.write(to: file)
+            return [file]
+        } catch {
+            return []
+        }
     }
 }
 

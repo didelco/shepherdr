@@ -198,6 +198,16 @@ struct SessionSidebar: View {
     }
 
     private var footer: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            LidStatus(cluster: cluster)
+            connectionStatus
+        }
+        .font(Theme.mono(10))
+        .foregroundStyle(Theme.dim)
+        .padding(.horizontal, 14).padding(.vertical, 10)
+    }
+
+    private var connectionStatus: some View {
         HStack(spacing: 8) {
             let enabled = cluster.machines.filter(\.machine.isEnabled)
             ConnectionDot(state: cluster.onlineCount == enabled.count && !enabled.isEmpty ? .online
@@ -215,9 +225,30 @@ struct SessionSidebar: View {
                 .buttonStyle(.plain).foregroundStyle(Theme.dim)
                 .help("Machines and preferences (⌘,)")
         }
-        .font(Theme.mono(10))
-        .foregroundStyle(Theme.dim)
-        .padding(.horizontal, 14).padding(.vertical, 10)
+    }
+}
+
+/// Whether this Mac can sleep: closing the lid pauses agents working here, never remote ones.
+/// Unknown, and hidden, while the local Herdr does not answer.
+private struct LidStatus: View {
+    let cluster: ClusterStore
+
+    var body: some View {
+        if cluster.machines.first(where: { $0.machine.isLocal })?.connection == .online {
+            let working = cluster.agents.filter {
+                $0.id.machineID == Machine.local.id && !$0.isStale && $0.agent.state == .working
+            }.count
+            HStack(spacing: 7) {
+                PixelFace(mood: working > 0 ? .working : .happy)
+                Text(working > 0 ? "\(working) local session\(working == 1 ? "" : "s") running · don't close the lid"
+                                 : "it's safe to close the lid")
+                    .foregroundStyle(working > 0 ? Theme.amber : Theme.phosphor.opacity(0.85))
+                    .lineLimit(1).truncationMode(.tail)
+            }
+            .help(working > 0 ? "Closing the lid puts this Mac to sleep and pauses the agents working on it. Remote sessions keep going."
+                              : "No agent is working on this Mac. Remote sessions keep going while it sleeps.")
+            .accessibilityElement(children: .combine)
+        }
     }
 }
 
@@ -273,6 +304,7 @@ private struct SessionRowView: View {
                     }
                 }
                 Text(row.title).font(Theme.mono(10.5)).foregroundStyle(Theme.dim).lineLimit(1)
+                whereabouts
             }
             Spacer(minLength: 0)
             if tree.nestedCount > 0 { nestedToggle }
@@ -364,6 +396,64 @@ private struct SessionRowView: View {
         .accessibilityLabel((isNested ? "" : "Priority \(row.manualPriority), ") + "\(row.workspace), \(row.title), \(row.agent.state.title)"
                             + (tree.nestedCount > 0 ? ", waits for \(tree.nestedCount)\(tree.isCollapsed ? ", hidden" : "")" : ""))
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    /// The session's pull request, when it has one, and where it works: its folder, or for a worktree
+    /// its project.
+    @ViewBuilder private var whereabouts: some View {
+        let pulls = model.pullRequests(of: row.id)
+        let checkout = model.cluster.checkout(machineID: row.id.machineID, workspaceID: row.agent.workspaceID)
+        let folder = checkout?.name ?? row.agent.directory.map { ($0 as NSString).lastPathComponent }
+        if !pulls.isEmpty || folder != nil {
+            HStack(spacing: 9) {
+                if let first = pulls.first {
+                    let checks = model.checksMonitor
+                    Button { model.openPullRequests(of: row.id) } label: {
+                        HStack(spacing: 4) {
+                            Text("⇄ \(pulls.count == 1 ? Self.number(of: first) : "\(pulls.count) PRs")")
+                                .foregroundStyle(Theme.phosphor.opacity(0.85))
+                            ChecksMark(state: checks.state(of: pulls))
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(pulls.count == 1 ? "Open \(first.name)\(first.title.map { ": \($0)" } ?? "") in this session's browser"
+                                             + (checks.checks[first.key].map { "\nChecks: \($0.summary)" } ?? "")
+                                           : "Open these pull requests in this session's browser:\n"
+                                             + pulls.prefix(10).map { pull in
+                                                 "\(pull.name)\(pull.title.map { "  \($0)" } ?? "")"
+                                                     + (checks.checks[pull.key].map { "  [\($0.summary)]" } ?? "")
+                                             }.joined(separator: "\n"))
+                }
+                if let folder {
+                    // Worktrees in their own color: work that lives apart from the main checkout.
+                    let isWorktree = checkout?.isLinkedWorktree == true
+                    HStack(spacing: 4) {
+                        Image(systemName: isWorktree ? "arrow.triangle.branch" : "folder").font(.system(size: 8, weight: .semibold))
+                        Text(folder).lineLimit(1).truncationMode(.middle)
+                        if isWorktree { Text("worktree").opacity(0.7) }
+                    }
+                    .foregroundStyle(isWorktree ? Theme.cyan.opacity(0.8) : Theme.faint)
+                    .help(folderHelp(checkout))
+                }
+            }
+            .font(Theme.mono(9.5))
+            .foregroundStyle(Theme.faint)
+            .padding(.top, 1)
+        }
+    }
+
+    private func folderHelp(_ checkout: WorkspaceCheckout?) -> String {
+        guard let checkout else { return row.agent.directory ?? "" }
+        let branch = checkout.branch.map { " on branch \($0)" } ?? ""
+        return (checkout.isLinkedWorktree ? "A worktree of \(checkout.repository)\(branch)" : "\(checkout.repository)\(branch)")
+            + "\n" + checkout.path
+    }
+
+    /// `#2175` from `theam/tam-os#2175`, `!31` from a GitLab merge request.
+    private static func number(of resource: SessionResource) -> String {
+        guard let mark = resource.name.lastIndex(where: { $0 == "#" || $0 == "!" }) else { return resource.name }
+        return String(resource.name[mark...])
     }
 
     /// Shows or hides the sessions nested under this one. Amber while a hidden one needs you.

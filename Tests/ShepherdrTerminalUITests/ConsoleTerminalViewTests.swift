@@ -50,6 +50,30 @@ struct ConsoleTerminalViewTests {
         #expect(recorder.sent == Array("@#".utf8))
     }
 
+    @Test func droppedFilesAndImagesBecomeFiles() throws {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("ShepherdrTests.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("drop test.txt")
+        try Data("hi".utf8).write(to: file)
+        pasteboard.clearContents()
+        pasteboard.writeObjects([file as NSURL])
+        #expect(ConsoleTerminalView.canTakeFiles(from: pasteboard))
+        #expect(ConsoleTerminalView.files(from: pasteboard) == [file])
+        // An image without a file is saved as a PNG.
+        let image = NSImage(size: NSSize(width: 4, height: 4))
+        image.lockFocus(); NSColor.green.setFill(); NSRect(x: 0, y: 0, width: 4, height: 4).fill(); image.unlockFocus()
+        pasteboard.clearContents()
+        pasteboard.writeObjects([image])
+        #expect(ConsoleTerminalView.canTakeFiles(from: pasteboard))
+        let saved = try #require(ConsoleTerminalView.files(from: pasteboard).first)
+        #expect(saved.pathExtension == "png")
+        #expect(NSImage(contentsOf: saved) != nil)
+        try? FileManager.default.removeItem(at: saved)
+        pasteboard.clearContents()
+        pasteboard.setString("just text", forType: .string)
+        #expect(!ConsoleTerminalView.canTakeFiles(from: pasteboard))
+    }
+
     @Test func framesArePaintedWithoutWaitingForSwiftTerm() {
         let view = ConsoleTerminalView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
         view.show(TerminalFrame(bytes: Data("hello".utf8), columns: 40, rows: 10, isFull: false))

@@ -90,6 +90,19 @@ struct APIErrorDTO: Decodable {
     let error: Body
 }
 
+struct WorktreeListDTO: Decodable {
+    struct Envelope: Decodable { let result: WorktreeListDTO }
+    struct Source: Decodable { let repoName: String? }
+    struct Worktree: Decodable {
+        let branch: String?
+        let isLinkedWorktree: Bool?
+        let openWorkspaceId: String?
+        let path: String
+    }
+    let source: Source?
+    let worktrees: [Worktree]?
+}
+
 struct ServerStatusDTO: Decodable {
     let running: Bool
     let compatible: Bool?
@@ -100,6 +113,20 @@ enum HerdrJSON {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return decoder
+    }
+
+    /// The checkouts of one repository that workspaces have open, by workspace ID.
+    static func checkouts(_ data: Data) throws -> [String: WorkspaceCheckout] {
+        let list = try decoder().decode(WorktreeListDTO.Envelope.self, from: data).result
+        let repository = list.source?.repoName ?? ""
+        var result: [String: WorkspaceCheckout] = [:]
+        for worktree in list.worktrees ?? [] {
+            guard let workspace = worktree.openWorkspaceId, !workspace.isEmpty else { continue }
+            let name = repository.isEmpty ? (worktree.path as NSString).lastPathComponent : repository
+            result[workspace] = WorkspaceCheckout(repository: name, branch: worktree.branch,
+                                                  isLinkedWorktree: worktree.isLinkedWorktree ?? false, path: worktree.path)
+        }
+        return result
     }
 
     static func machines(_ data: Data) throws -> [Machine] {

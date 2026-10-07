@@ -65,6 +65,20 @@ struct SessionEventTests {
                 == #"Herdr pane w2:p1 (planner on Moonbase); send it a prompt with: herdr agent prompt w2:p1 "<message>""#)
     }
 
+    @Test func workspacesLearnWhetherTheyWorkInAWorktree() async throws {
+        let list = #"{"id":"cli:worktree:list","result":{"source":{"repo_key":"/home/javier/projects/tam-os/.git","repo_name":"tam-os","repo_root":"/home/javier/projects/tam-os"},"type":"worktree_list","worktrees":[{"branch":"main","is_linked_worktree":false,"label":"tam-os","open_workspace_id":"wP","path":"/home/javier/projects/tam-os"},{"branch":"feat-944","is_linked_worktree":true,"label":"tam-os","open_workspace_id":"wT","path":"/home/javier/.herdr/worktrees/tam-os/feat-944"},{"branch":"old","is_linked_worktree":true,"path":"/home/javier/.herdr/worktrees/tam-os/old"}]}}"#
+        let runner = RecordingRunner([output(list), output("", stderr: #"{"error":{"code":"not_a_repository","message":"not a git repository"}}"#, code: 1)])
+        let client = CLIHerdrClient(runner: runner, executable: URL(fileURLWithPath: "/usr/bin/true"))
+        let remote = Machine(profileID: "moon", name: "Moonbase", target: "moon.local", session: "default", isEnabled: true)
+        let checkouts = try await client.checkouts(around: "wT", on: remote)
+        #expect(checkouts.count == 2)
+        #expect(checkouts["wP"]?.isLinkedWorktree == false && checkouts["wP"]?.name == "tam-os")
+        #expect(checkouts["wT"]?.isLinkedWorktree == true && checkouts["wT"]?.name == "tam-os" && checkouts["wT"]?.branch == "feat-944")
+        #expect(await runner.recordedArguments() == [["--machine", "moon", "worktree", "list", "--workspace", "wT"]])
+        // Outside a Git repository there is nothing to report.
+        #expect(try await client.checkouts(around: "w9", on: .local).isEmpty)
+    }
+
     @Test func recentOutputIsReadAsPlainTextThroughTheMachine() async throws {
         let runner = RecordingRunner([output("⏺ Hello\n")])
         let client = CLIHerdrClient(runner: runner, executable: URL(fileURLWithPath: "/usr/bin/true"))
