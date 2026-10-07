@@ -9,10 +9,23 @@ struct MainView: View {
     @AppStorage("refreshSeconds") private var refreshSeconds = 5
     @AppStorage("openMode") private var openMode = TerminalMode.control.rawValue
     @Environment(\.openWindow) private var openWindow
+    /// Whether this is Shepherdr's one window; unknown until it is placed in a window.
+    @ViewState<Bool?> private var isMainWindow: Bool? = nil
 
     private var cluster: ClusterStore { model.cluster }
 
+    /// Only one window may exist. Another one, however it was opened, shows nothing, closes, and
+    /// brings the main window forward.
     var body: some View {
+        Group {
+            if isMainWindow == true { content } else { Theme.background }
+        }
+        .background(WindowReader { window in isMainWindow = model.adopt(window) })
+        // Notifications and other external events go to this window rather than a new one.
+        .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
+    }
+
+    private var content: some View {
         HSplitView {
             SessionSidebar(model: model)
                 .frame(minWidth: 250, idealWidth: 280, maxWidth: 340)
@@ -33,7 +46,7 @@ struct MainView: View {
         }
         .onChange(of: cluster.agents, initial: true) { model.notifier.observe(cluster.agents) }
         .onChange(of: cluster.lastRefresh, initial: true) { model.restoreSelection() }
-        .onAppear { model.showMainWindow = { [openWindow] in openWindow(id: "main") } }
+        .onAppear { model.openMainWindow = { [openWindow] in openWindow(id: "main") } }
         .alert("Rename Session", isPresented: Binding { model.renaming != nil } set: { if !$0 { model.renaming = nil } }) {
             TextField("Name", text: Binding { model.renaming?.name ?? "" } set: { model.renaming?.name = $0 })
             Button("Rename") { Task { await model.commitRename() } }
@@ -106,3 +119,28 @@ struct MainView: View {
         cluster.refreshInterval = TimeInterval(max(5, refreshSeconds))
     }
 }
+
+/// Reports the window a view is placed in.
+private struct WindowReader: NSViewRepresentable {
+    let found: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = WindowReaderView()
+        view.found = found
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    private final class WindowReaderView: NSView {
+        var found: ((NSWindow) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            // After this layout pass: the answer changes what the view shows.
+            DispatchQueue.main.async { [found] in found?(window) }
+        }
+    }
+}
+

@@ -10,7 +10,11 @@ typealias ViewState<Value> = SwiftUI.State<Value>
 struct ShepherdrApp: App {
     @ViewState<AppModel> private var model = AppModel()
 
-    init() { ConsoleFonts.registerBundled() }
+    init() {
+        ConsoleFonts.registerBundled()
+        // One window, never merged into tabs.
+        NSWindow.allowsAutomaticWindowTabbing = false
+    }
 
     var body: some Scene {
         Window("Shepherdr", id: "main") {

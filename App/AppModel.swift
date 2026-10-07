@@ -185,8 +185,10 @@ final class AppModel {
     }
     /// Until the session open at the last quit is back, or known to be gone.
     @ObservationIgnored private var isRestoringSelection = true
-    /// Brings the main window back, for a notification clicked after it was closed.
-    @ObservationIgnored var showMainWindow: (() -> Void)?
+    /// Shepherdr's one window, while it is open.
+    @ObservationIgnored private weak var mainWindow: NSWindow?
+    /// Opens the main window again after it was closed.
+    @ObservationIgnored var openMainWindow: (() -> Void)?
     /// The session being renamed, presented as a name prompt.
     var renaming: RenamePrompt?
     var search = ""
@@ -227,6 +229,29 @@ final class AppModel {
         self.relations = relations
         self.sessionStates = sessionStates
         notifier.model = self
+    }
+
+    /// Whether `window` is Shepherdr's one window. Any other window closes in favor of it.
+    func adopt(_ window: NSWindow) -> Bool {
+        if let main = mainWindow, main !== window, main.isVisible || main.isMiniaturized {
+            window.orderOut(nil)
+            window.close()
+            showMainWindow()
+            return false
+        }
+        mainWindow = window
+        window.tabbingMode = .disallowed
+        return true
+    }
+
+    /// Brings the main window forward, reopening it if it was closed.
+    func showMainWindow() {
+        guard let main = mainWindow, main.isVisible || main.isMiniaturized else {
+            openMainWindow?()
+            return
+        }
+        if main.isMiniaturized { main.deminiaturize(nil) }
+        main.makeKeyAndOrderFront(nil)
     }
 
     func workspace(for id: Agent.ID) -> SessionWorkspace {

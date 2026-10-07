@@ -44,6 +44,8 @@ final class SessionNotifier: NSObject {
         content.body = output.flatMap { AgentReply.lastParagraph(in: $0) } ?? row.agent.summary ?? ""
         content.sound = .default
         content.threadIdentifier = "\(row.id.machineID)/\(row.id.terminalID)"
+        // Routes the click to the existing window.
+        content.targetContentIdentifier = "main"
         content.userInfo = ["machineID": row.id.machineID, "terminalID": row.id.terminalID]
         try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
@@ -72,7 +74,7 @@ extension SessionNotifier: UNUserNotificationCenterDelegate {
             Task { @MainActor in
                 // Into the one main window, reopened if it was closed: never a second window.
                 NSApp.activate(ignoringOtherApps: true)
-                self.model?.showMainWindow?()
+                self.model?.showMainWindow()
                 self.model?.open(id)
             }
         }
