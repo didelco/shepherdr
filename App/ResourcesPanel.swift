@@ -69,9 +69,7 @@ struct ResourcesPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help([resource.title, checks.checks[resource.key].map { "Checks: \($0.summary)" }, resource.url.absoluteString,
-               "Mentioned \(resource.mentions)× · opened \(resource.opens)×"]
-                .compactMap { $0 }.joined(separator: "\n"))
+        .help(help(for: resource))
         .contextMenu {
             Button("Open") { workspace.open(resource) }
             Button("Open in Default Browser") {
@@ -82,6 +80,15 @@ struct ResourcesPanel: View {
             Divider()
             Button("Remove") { workspace.remove(resource) }
         }
+    }
+
+    private func help(for resource: SessionResource) -> String {
+        var lines: [String] = []
+        if let title = resource.title { lines.append(title) }
+        if let summary = checks.checks[resource.key]?.summary, !summary.isEmpty { lines.append("Checks: " + summary) }
+        lines.append(resource.url.absoluteString)
+        lines.append("Mentioned \(resource.mentions)× · opened \(resource.opens)×")
+        return lines.joined(separator: "\n")
     }
 
     private static func glyph(_ kind: SessionResource.Kind) -> String {

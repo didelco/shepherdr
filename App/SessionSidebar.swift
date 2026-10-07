@@ -274,8 +274,28 @@ private struct SessionRowView: View {
     private var isNested: Bool { tree.depth > 0 }
     private var leading: CGFloat { group == nil ? 12 : 26 }
 
+    private var accent: Color { row.agent.state == .blocked && !row.isStale ? Theme.amber : Theme.phosphor }
+
+    // Split into parts: one expression this size takes older compilers too long to type-check.
     var body: some View {
-        let accent = row.agent.state == .blocked && !row.isStale ? Theme.amber : Theme.phosphor
+        decorated
+            .opacity(row.isStale ? 0.6 : 1)
+            .measuringHeight(height)
+            .contentShape(Rectangle())
+            .onTapGesture { model.open(row.id) }
+            .onHover { hovering = $0 }
+            .help("\(row.agent.kind) · \(row.project)")
+            .queueDraggable(item, model: model, enabled: !isNested)
+            .onDrop(of: [.plainText], delegate: QueueDropDelegate(model: model, hint: $hint) { dragged, y in
+                drop(of: dragged, at: y)
+            })
+            .contextMenu { menu }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(accessibilityText)
+            .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    private var content: some View {
         HStack(alignment: .top, spacing: 8) {
             // Nested sessions move with the session waiting for them, so their own priority is not shown.
             if !isNested {
@@ -284,17 +304,7 @@ private struct SessionRowView: View {
                     .foregroundStyle(isSelected ? accent : Theme.faint)
                     .padding(.top, 1)
             }
-            if let wait = model.waitState(for: row.id) {
-                // On hold: an hourglass replaces the agent's state until the session resumes.
-                Image(systemName: wait == .ready ? "hourglass.bottomhalf.filled" : "hourglass")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(wait == .ready ? Theme.phosphor : Theme.cyan)
-                    .frame(width: 14)
-                    .help(wait == .ready ? "On hold; the sessions it waits for have finished"
-                                         : "On hold, waiting for other sessions")
-            } else {
-                StateGlyph(state: row.agent.state, stale: row.isStale)
-            }
+            stateMark
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(row.workspace).font(Theme.mono(12, .semibold)).lineLimit(1)
@@ -310,92 +320,122 @@ private struct SessionRowView: View {
             if tree.nestedCount > 0 { nestedToggle }
             if (hovering || isSelected) && !isNested { ReorderArrows(item: item, model: model, shortcuts: true) }
         }
-        .padding(.leading, leading + CGFloat(tree.depth) * Self.indent).padding(.trailing, 8).padding(.vertical, 7)
-        .background(isSelected ? Theme.raised : hovering ? Theme.raised.opacity(0.5) : .clear)
-        .overlay(alignment: .leading) {
-            if group != nil { Rectangle().fill(Theme.line).frame(width: 1).padding(.leading, 18) }
+    }
+
+    @ViewBuilder private var stateMark: some View {
+        if let wait = model.waitState(for: row.id) {
+            // On hold: an hourglass replaces the agent's state until the session resumes.
+            Image(systemName: wait == .ready ? "hourglass.bottomhalf.filled" : "hourglass")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(wait == .ready ? Theme.phosphor : Theme.cyan)
+                .frame(width: 14)
+                .help(wait == .ready ? "On hold; the sessions it waits for have finished" : "On hold, waiting for other sessions")
+        } else {
+            StateGlyph(state: row.agent.state, stale: row.isStale)
         }
-        .overlay {
-            if isNested || (tree.nestedCount > 0 && !tree.isCollapsed) { TreeLines(tree: tree, leading: leading) }
+    }
+
+    private var decorated: some View {
+        let selectionOpacity: Double = isSelected ? 1 : row.agent.state == .blocked && !row.isStale ? 0.6 : 0
+        let background: Color = isSelected ? Theme.raised : hovering ? Theme.raised.opacity(0.5) : .clear
+        return content
+            .padding(.leading, leading + CGFloat(tree.depth) * Self.indent).padding(.trailing, 8).padding(.vertical, 7)
+            .background(background)
+            .overlay(alignment: .leading) {
+                if group != nil { Rectangle().fill(Theme.line).frame(width: 1).padding(.leading, 18) }
+            }
+            .overlay {
+                if isNested || (tree.nestedCount > 0 && !tree.isCollapsed) { TreeLines(tree: tree, leading: leading) }
+            }
+            .overlay(alignment: .leading) {
+                Rectangle().fill(accent).frame(width: 2).opacity(selectionOpacity)
+                    .shadow(color: accent, radius: isSelected ? 4 : 0)
+            }
+            .dropLine(.top, hint == .before(item))
+            // A drop after a session with nested ones lands after all of them, so its line is drawn there.
+            .dropLine(.bottom, closesDropLine)
+    }
+
+    private var closesDropLine: Bool {
+        if tree.closes.contains(where: { hint == .after(.session($0)) }) { return true }
+        guard isLast, let group else { return false }
+        return hint == .after(.group(group.id))
+    }
+
+    private func drop(of dragged: QueueItemID, at y: CGFloat) -> QueueDrop? {
+        let upper = y < height.value / 2
+        let root = QueueItemID.session(tree.root)
+        switch dragged {
+        case .session(let id):
+            guard id != row.id else { return nil }
+            // Over a nested session, anything lands after the whole tree.
+            if isNested { return dragged == root ? nil : .after(root) }
+            return upper ? .before(item) : .after(item)
+        case .group(let draggedGroup):
+            // Groups never nest: over a grouped session, a group lands next to that group.
+            guard let group else { return isNested ? .after(root) : upper ? .before(item) : .after(item) }
+            guard group.id != draggedGroup else { return nil }
+            return upper && isFirst ? .before(.group(group.id)) : .after(.group(group.id))
         }
-        .overlay(alignment: .leading) {
-            Rectangle().fill(accent).frame(width: 2).opacity(isSelected ? 1 : row.agent.state == .blocked && !row.isStale ? 0.6 : 0)
-                .shadow(color: accent, radius: isSelected ? 4 : 0)
+    }
+
+    @ViewBuilder private var menu: some View {
+        Button("Open") { model.open(row.id) }
+        Button("Rename…") { model.promptRename(row.id) }.disabled(row.isStale)
+        Button("New Session in Same Folder…") { model.startNewSession(besides: row.id) }
+            .disabled(!model.canStartNewSession(besides: row.id))
+        Divider()
+        PriorityMenu(item: item, model: model)
+        Divider()
+        groupMenu
+        Divider()
+        waitMenu
+        Divider()
+        CopyPaneMenu(paneID: row.agent.paneID, workspace: row.workspace, machine: model.machine(for: row.id))
+        Divider()
+        Button("Close Session…") { model.requestClose(row.id) }.disabled(row.isStale)
+    }
+
+    @ViewBuilder private var groupMenu: some View {
+        Menu("Move to Group") {
+            let others = model.groups.filter { $0.id != row.groupID }
+            ForEach(others) { other in
+                Button(other.name) { model.moveToGroup(row.id, other.id) }
+            }
+            if !others.isEmpty { Divider() }
+            Button("New Group…") { model.promptNewGroup(with: row.id) }
         }
-        .dropLine(.top, hint == .before(item))
-        // A drop after a session with nested ones lands after all of them, so its line is drawn there.
-        .dropLine(.bottom, tree.closes.contains { hint == .after(.session($0)) }
-                  || (isLast && group.map { hint == .after(.group($0.id)) } == true))
-        .opacity(row.isStale ? 0.6 : 1)
-        .measuringHeight(height)
-        .contentShape(Rectangle())
-        .onTapGesture { model.open(row.id) }
-        .onHover { hovering = $0 }
-        .help("\(row.agent.kind) · \(row.project)")
-        .queueDraggable(item, model: model, enabled: !isNested)
-        .onDrop(of: [.plainText], delegate: QueueDropDelegate(model: model, hint: $hint) { dragged, y in
-            let upper = y < height.value / 2
-            let root = QueueItemID.session(tree.root)
-            switch dragged {
-            case .session(let id):
-                guard id != row.id else { return nil }
-                // Over a nested session, anything lands after the whole tree.
-                if isNested { return dragged == root ? nil : .after(root) }
-                return upper ? .before(item) : .after(item)
-            case .group(let draggedGroup):
-                // Groups never nest: over a grouped session, a group lands next to that group.
-                guard let group else { return isNested ? .after(root) : upper ? .before(item) : .after(item) }
-                guard group.id != draggedGroup else { return nil }
-                return upper && isFirst ? .before(.group(group.id)) : .after(.group(group.id))
-            }
-        })
-        .contextMenu {
-            Button("Open") { model.open(row.id) }
-            Button("Rename…") { model.promptRename(row.id) }.disabled(row.isStale)
-            Button("New Session in Same Folder…") { model.startNewSession(besides: row.id) }
-                .disabled(!model.canStartNewSession(besides: row.id))
-            Divider()
-            PriorityMenu(item: item, model: model)
-            Divider()
-            Menu("Move to Group") {
-                let others = model.groups.filter { $0.id != row.groupID }
-                ForEach(others) { other in
-                    Button(other.name) { model.moveToGroup(row.id, other.id) }
-                }
-                if !others.isEmpty { Divider() }
-                Button("New Group…") { model.promptNewGroup(with: row.id) }
-            }
-            if row.groupID != nil {
-                Button("Remove from Group") { model.moveToGroup(row.id, nil) }
-            }
-            Divider()
-            Menu("Wait For") {
-                ForEach(model.rankedRows.filter { $0.id != row.id }) { other in
-                    Toggle(showsMachine ? "\(other.workspace) @\(other.machineName)" : other.workspace,
-                           isOn: Binding { model.relations.isWaiting(row.id, for: other.id) }
-                                     set: { model.relations.setWaiting(row.id, for: other.id, $0) })
-                }
-            }
-            if !model.relations.waitingFor(row.id).isEmpty {
-                Button("Resume (Stop Waiting)") { model.relations.stopWaiting(row.id) }
-            }
-            if tree.nestedCount > 0 {
-                Button(tree.isCollapsed ? "Show Awaited Sessions" : "Hide Awaited Sessions") {
-                    model.toggleNestedSessions(of: row.id)
-                }
-            }
-            if isNested, let parent = model.waitForest.parents[row.id], let waiter = model.row(for: parent) {
-                Button("Stop \(waiter.workspace) Waiting for This") { model.relations.setWaiting(parent, for: row.id, false) }
-            }
-            Divider()
-            CopyPaneMenu(paneID: row.agent.paneID, workspace: row.workspace, machine: model.machine(for: row.id))
-            Divider()
-            Button("Close Session…") { model.requestClose(row.id) }.disabled(row.isStale)
+        if row.groupID != nil {
+            Button("Remove from Group") { model.moveToGroup(row.id, nil) }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel((isNested ? "" : "Priority \(row.manualPriority), ") + "\(row.workspace), \(row.title), \(row.agent.state.title)"
-                            + (tree.nestedCount > 0 ? ", waits for \(tree.nestedCount)\(tree.isCollapsed ? ", hidden" : "")" : ""))
-        .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    @ViewBuilder private var waitMenu: some View {
+        Menu("Wait For") {
+            ForEach(model.rankedRows.filter { $0.id != row.id }) { other in
+                Toggle(showsMachine ? "\(other.workspace) @\(other.machineName)" : other.workspace,
+                       isOn: Binding { model.relations.isWaiting(row.id, for: other.id) }
+                                 set: { model.relations.setWaiting(row.id, for: other.id, $0) })
+            }
+        }
+        if !model.relations.waitingFor(row.id).isEmpty {
+            Button("Resume (Stop Waiting)") { model.relations.stopWaiting(row.id) }
+        }
+        if tree.nestedCount > 0 {
+            Button(tree.isCollapsed ? "Show Awaited Sessions" : "Hide Awaited Sessions") {
+                model.toggleNestedSessions(of: row.id)
+            }
+        }
+        if isNested, let parent = model.waitForest.parents[row.id], let waiter = model.row(for: parent) {
+            Button("Stop \(waiter.workspace) Waiting for This") { model.relations.setWaiting(parent, for: row.id, false) }
+        }
+    }
+
+    private var accessibilityText: String {
+        var text = isNested ? "" : "Priority \(row.manualPriority), "
+        text += "\(row.workspace), \(row.title), \(row.agent.state.title)"
+        if tree.nestedCount > 0 { text += ", waits for \(tree.nestedCount)" + (tree.isCollapsed ? ", hidden" : "") }
+        return text
     }
 
     /// The session's pull request, when it has one, and where it works: its folder, or for a worktree
@@ -403,44 +443,53 @@ private struct SessionRowView: View {
     @ViewBuilder private var whereabouts: some View {
         let pulls = model.pullRequests(of: row.id)
         let checkout = model.cluster.checkout(machineID: row.id.machineID, workspaceID: row.agent.workspaceID)
-        let folder = checkout?.name ?? row.agent.directory.map { ($0 as NSString).lastPathComponent }
+        let folder: String? = checkout?.name ?? row.agent.directory.map { ($0 as NSString).lastPathComponent }
         if !pulls.isEmpty || folder != nil {
             HStack(spacing: 9) {
-                if let first = pulls.first {
-                    let checks = model.checksMonitor
-                    Button { model.openPullRequests(of: row.id) } label: {
-                        HStack(spacing: 4) {
-                            Text("⇄ \(pulls.count == 1 ? Self.number(of: first) : "\(pulls.count) PRs")")
-                                .foregroundStyle(Theme.phosphor.opacity(0.85))
-                            ChecksMark(state: checks.state(of: pulls))
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(pulls.count == 1 ? "Open \(first.name)\(first.title.map { ": \($0)" } ?? "") in this session's browser"
-                                             + (checks.checks[first.key].map { "\nChecks: \($0.summary)" } ?? "")
-                                           : "Open these pull requests in this session's browser:\n"
-                                             + pulls.prefix(10).map { pull in
-                                                 "\(pull.name)\(pull.title.map { "  \($0)" } ?? "")"
-                                                     + (checks.checks[pull.key].map { "  [\($0.summary)]" } ?? "")
-                                             }.joined(separator: "\n"))
-                }
-                if let folder {
-                    // Worktrees in their own color: work that lives apart from the main checkout.
-                    let isWorktree = checkout?.isLinkedWorktree == true
-                    HStack(spacing: 4) {
-                        Image(systemName: isWorktree ? "arrow.triangle.branch" : "folder").font(.system(size: 8, weight: .semibold))
-                        Text(folder).lineLimit(1).truncationMode(.middle)
-                        if isWorktree { Text("worktree").opacity(0.7) }
-                    }
-                    .foregroundStyle(isWorktree ? Theme.cyan.opacity(0.8) : Theme.faint)
-                    .help(folderHelp(checkout))
-                }
+                if !pulls.isEmpty { pullsButton(pulls) }
+                if let folder { folderLabel(folder, checkout: checkout) }
             }
             .font(Theme.mono(9.5))
             .foregroundStyle(Theme.faint)
             .padding(.top, 1)
         }
+    }
+
+    private func pullsButton(_ pulls: [SessionResource]) -> some View {
+        let label = pulls.count == 1 ? Self.number(of: pulls[0]) : "\(pulls.count) PRs"
+        return Button { model.openPullRequests(of: row.id) } label: {
+            HStack(spacing: 4) {
+                Text("⇄ " + label).foregroundStyle(Theme.phosphor.opacity(0.85))
+                ChecksMark(state: model.checksMonitor.state(of: pulls))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(pullsHelp(pulls))
+    }
+
+    private func pullsHelp(_ pulls: [SessionResource]) -> String {
+        let checks = model.checksMonitor.checks
+        func line(_ pull: SessionResource) -> String {
+            var text = pull.name
+            if let title = pull.title { text += "  " + title }
+            if let summary = checks[pull.key]?.summary, !summary.isEmpty { text += "  [" + summary + "]" }
+            return text
+        }
+        let heading = pulls.count == 1 ? "Open in this session's browser:" : "Open these pull requests in this session's browser:"
+        return ([heading] + pulls.prefix(10).map(line)).joined(separator: "\n")
+    }
+
+    /// Worktrees in their own color: work that lives apart from the main checkout.
+    private func folderLabel(_ folder: String, checkout: WorkspaceCheckout?) -> some View {
+        let isWorktree = checkout?.isLinkedWorktree == true
+        return HStack(spacing: 4) {
+            Image(systemName: isWorktree ? "arrow.triangle.branch" : "folder").font(.system(size: 8, weight: .semibold))
+            Text(folder).lineLimit(1).truncationMode(.middle)
+            if isWorktree { Text("worktree").opacity(0.7) }
+        }
+        .foregroundStyle(isWorktree ? Theme.cyan.opacity(0.8) : Theme.faint)
+        .help(folderHelp(checkout))
     }
 
     private func folderHelp(_ checkout: WorkspaceCheckout?) -> String {

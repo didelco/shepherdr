@@ -25,7 +25,10 @@ struct MainView: View {
         .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
     }
 
-    private var content: some View {
+    // In layers: as one expression it takes older compilers too long to type-check.
+    private var content: some View { dialogs(on: tracking) }
+
+    private var layout: some View {
         HSplitView {
             SessionSidebar(model: model)
                 .frame(minWidth: 250, idealWidth: 280, maxWidth: 340)
@@ -36,6 +39,11 @@ struct MainView: View {
         .ignoresSafeArea(.container, edges: .top)
         .preferredColorScheme(.dark)
         .tint(Theme.phosphor)
+    }
+
+    /// Refreshing Herdr and following what each refresh brings.
+    private var tracking: some View {
+        layout
         .task {
             configureRefresh()
             await cluster.monitor()
@@ -47,6 +55,13 @@ struct MainView: View {
         .onChange(of: cluster.agents, initial: true) { model.notifier.observe(cluster.agents) }
         .onChange(of: cluster.lastRefresh, initial: true) { model.restoreSelection() }
         .onAppear { model.openMainWindow = { [openWindow] in openWindow(id: "main") } }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
+            if cluster.automaticRefresh { Task { await cluster.refresh() } }
+        }
+    }
+
+    private func dialogs(on view: some View) -> some View {
+        view
         .alert("Rename Session", isPresented: Binding { model.renaming != nil } set: { if !$0 { model.renaming = nil } }) {
             TextField("Name", text: Binding { model.renaming?.name ?? "" } set: { model.renaming?.name = $0 })
             Button("Rename") { Task { await model.commitRename() } }
@@ -72,9 +87,6 @@ struct MainView: View {
             Button("OK") { model.actionFailure = nil }
         } message: {
             Text(model.actionFailure?.detail ?? "")
-        }
-        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
-            if cluster.automaticRefresh { Task { await cluster.refresh() } }
         }
     }
 
