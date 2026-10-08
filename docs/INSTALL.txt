@@ -14,8 +14,13 @@ Requires an Apple Silicon Mac (M1 or later) running macOS 14 Sonoma or later.
 Apple's instructions: https://support.apple.com/en-us/102445
 Do not disable Gatekeeper or remove quarantine globally.
 
-Install and start Herdr separately: https://herdr.dev/docs/
+Required: install and start Herdr separately: https://herdr.dev/docs/
 Shepherdr reads your existing Herdr installation and saved machine profiles.
+
+Recommended: install the GitHub CLI (https://cli.github.com) and sign in with
+"gh auth login". Shepherdr uses it to confirm pull requests and issues, fetch
+their titles and watch pull requests' CI checks.
+
 Pick a session in the sidebar to open its live terminal and send it the next
 prompt. Switching sessions or quitting only detaches; Herdr keeps them running.
 Interactive terminals require compatible Herdr terminal session commands

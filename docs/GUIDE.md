@@ -35,7 +35,7 @@ Download the `.dmg` from [the latest GitHub release](../../../releases/latest), 
 
 Current downloads have an **ad hoc signature and are not notarized by Apple**. If macOS blocks the first launch because the developer cannot be verified and you trust this download, use **System Settings → Privacy & Security → Open Anyway** for Shepherdr. Follow [Apple's instructions](https://support.apple.com/en-us/102445); managed Macs may require administrator approval.
 
-Install and start Herdr separately, then open Shepherdr. The app reads your existing sessions and saved machines.
+Install and start Herdr separately, then open Shepherdr. The app reads your existing sessions and saved machines. Installing the [GitHub CLI](https://cli.github.com) and signing in with `gh auth login` is recommended: see the requirements below.
 
 ## Requirements
 
@@ -43,6 +43,7 @@ Install and start Herdr separately, then open Shepherdr. The app reads your exis
 - A locally installed `herdr` supporting `machine list --json` and `api snapshot`.
 - For remote machines, a local Herdr build with the documented global `--machine` option, plus compatible remote installations and an already-running server. Herdr CLI 0.9.3 provides that option; 0.9.0 does not. Shepherdr shows an incompatibility message on older CLIs.
 - For interactive terminals, the Herdr installation on the target machine must support `terminal session observe` and `terminal session control`. Verified with CLI/server 0.9.3. Remote terminals require a Unix-like host, OpenSSH access and an existing saved profile.
+- Recommended: the [GitHub CLI](https://cli.github.com) on this Mac, signed in with `gh auth login`. With it, Shepherdr confirms GitHub pull requests and issues, private ones included, fetches their titles, and watches pull requests' CI checks. Without it, resources are checked through the session browsers, which see private repositories only while you're signed in there, and checks aren't watched.
 
 Local integration has been verified with CLI 0.9.3 querying an existing, compatible 0.9.0 server. Updating the CLI does not require replacing a compatible running server.
 
