@@ -133,6 +133,13 @@ public final class TerminalStore {
 
     public func press(_ key: TerminalKey) { send(.bytes(key.bytes)) }
 
+    /// Clicks a cell for programs that read the mouse, such as Claude Code in full screen, which
+    /// moves its cursor there. Herdr 0.9.2 and later deliver it; earlier versions ignore it.
+    public func click(column: Int, row: Int) {
+        send(.mouse(pressed: true, column: column, row: row))
+        send(.mouse(pressed: false, column: column, row: row))
+    }
+
     /// Scrolls through the history Herdr keeps, which Herdr then paints; in a full-screen program,
     /// such as less, Herdr scrolls the program instead. Herdr takes scrolling only from a client in control.
     public func scroll(up: Bool, lines: Int) {

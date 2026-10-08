@@ -101,6 +101,9 @@ public enum TerminalInput: Sendable {
     case bytes(Data)
     case resize(TerminalSize)
     case scroll(up: Bool, lines: Int)
+    /// The left button pressed or released at a zero-based cell of the visible terminal. Herdr
+    /// encodes it for the program's mouse mode and drops it when the program doesn't read the mouse.
+    case mouse(pressed: Bool, column: Int, row: Int)
     case release
     /// Local pacing between queued inputs; never written to the terminal.
     case pause(Duration)

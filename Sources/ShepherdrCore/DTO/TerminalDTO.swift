@@ -34,6 +34,9 @@ enum TerminalJSON {
         case .resize(let size): object = ["type": "terminal.resize", "cols": size.columns, "rows": size.rows]
         case .scroll(let up, let lines):
             object = ["type": "terminal.scroll", "direction": up ? "up" : "down", "lines": min(500, max(1, lines))]
+        case .mouse(let pressed, let column, let row):
+            object = ["type": "terminal.mouse", "action": pressed ? "down" : "up", "button": "left",
+                      "column": max(0, column), "row": max(0, row)]
         case .release: object = ["type": "terminal.release"]
         case .pause: throw HerdrFailure(.incompatible, "A local pause is not a terminal command.")
         }

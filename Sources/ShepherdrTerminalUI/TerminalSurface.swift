@@ -62,15 +62,17 @@ public struct TerminalSurface: NSViewRepresentable {
         let view = ConsoleTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 520), font: font)
         apply(palette, to: view)
         context.coordinator.palette = palette
-        view.allowMouseReporting = false // Selection and copy remain native; input uses the keyboard.
+        // Selection and copy remain native; plain clicks reach the program through Herdr (onClick).
+        view.allowMouseReporting = false
         // Option types what the keyboard layout gives it (@, #, €…), as in Terminal; the word-wise
-        // keys that need Meta get it from installInteractions.
+        // and line-wise keys get their sequences from installInteractions.
         view.optionAsMetaKey = false
         view.terminalDelegate = context.coordinator
         // Herdr keeps the history and paints whatever part of it is shown, so the view keeps none:
         // lines a resize pushed out would only be a stale copy to scroll into, hiding live output.
         view.getTerminal().changeHistorySize(0)
         view.onScroll = { [weak store] up, lines in store?.scroll(up: up, lines: lines) }
+        view.onClick = { [weak store] column, row in store?.click(column: column, row: row) }
         view.installInteractions()
         store.display = { [weak view] frame in view?.show(frame) }
         store.resetDisplay = { [weak view] in view?.resetScreen() }
@@ -142,8 +144,9 @@ public struct TerminalSurface: NSViewRepresentable {
 }
 
 /// SwiftTerm's view with Shepherdr's interactions: clicking a link opens it (⌘-click: in the
-/// default browser), Shift-Return inserts a new line in agent TUIs instead of submitting, and
-/// selecting text copies it.
+/// default browser), other clicks reach programs that read the mouse, Shift-Return inserts a new
+/// line in agent TUIs instead of submitting, ⌘ and ⌥ with the arrows and delete keys edit the
+/// line as in macOS text fields, and selecting text copies it.
 public final class ConsoleTerminalView: SwiftTerm.TerminalView {
     var openLink: ((_ url: URL, _ external: Bool) -> Void)?
     var resolveFile: ((_ path: String) -> URL?)?
@@ -151,6 +154,8 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
     var onDropFiles: ((_ files: [URL]) -> Void)?
     /// Scrolls Herdr's history: up toward earlier output, by whole lines.
     var onScroll: ((_ up: Bool, _ lines: Int) -> Void)?
+    /// Passes a click on a cell to the program, for programs that read the mouse.
+    var onClick: ((_ column: Int, _ row: Int) -> Void)?
     /// Lines the wheel turned that are not sent yet; fractions wait for more turning.
     private var pendingScroll: CGFloat = 0
     private var scrollSendScheduled = false
@@ -173,6 +178,11 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
     private var heldFrames: [TerminalFrame]?
     private var selectedWithMouse = false
     private var pressedCell: (row: Int, column: Int)?
+    /// The hyperlink being written, as SwiftTerm stores it: `params;URI`.
+    private var link: String?
+    /// One atom per link. SwiftTerm has room for 65,535 and never frees them on its own, while Herdr
+    /// writes a busy screen's links again in every frame.
+    private static var linkAtoms: [String: TinyAtom] = [:]
 
     func show(_ frame: TerminalFrame) {
         if heldFrames != nil {
@@ -185,31 +195,140 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
         if getTerminal().cols != frame.columns || getTerminal().rows != frame.rows {
             resize(cols: frame.columns, rows: frame.rows)
         }
-        feed(byteArray: Self.unsynchronized(frame.bytes)[...])
+        for piece in Self.pieces(frame.bytes) {
+            switch piece {
+            case .link(let payload): link = payload
+            case .bytes(let bytes):
+                if let link { feed(bytes, linking: link) } else { feed(byteArray: bytes[...]) }
+            }
+        }
         applyingFrame = false
         paintChangedRows()
     }
 
+    /// A frame as Shepherdr feeds it: terminal bytes, and where a hyperlink (OSC 8) opens or closes.
+    enum FramePiece: Equatable {
+        case bytes([UInt8])
+        /// A link's `params;URI`, or nil where links close.
+        case link(String?)
+    }
+
+    /// Takes two things out of a frame.
+    ///
     /// Herdr wraps every frame in synchronized output (mode 2026), but a frame arrives whole and is fed
     /// at once, so the screen never shows half of one anyway. Left in, it makes SwiftTerm copy the whole
     /// screen as each frame begins and repaint every row as it ends, even for a spinner's single cell.
-    static func unsynchronized(_ data: Data) -> [UInt8] {
+    ///
+    /// Links are set on cells by Shepherdr instead: SwiftTerm marks every cell from where a link opens
+    /// to where the cursor is when it closes, and Herdr closes a link after moving to its next change,
+    /// so blank cells all over the screen would show the link's dashed underline.
+    static func pieces(_ data: Data) -> [FramePiece] {
         let bytes = [UInt8](data)
-        let marker = Array("\u{1b}[?2026".utf8)
-        var result: [UInt8] = []
-        result.reserveCapacity(bytes.count)
+        let synchronized = Array("\u{1b}[?2026".utf8)
+        var pieces: [FramePiece] = []
+        var run: [UInt8] = []
+        run.reserveCapacity(bytes.count)
         var index = 0
         while index < bytes.count {
-            let end = index + marker.count
-            if bytes[index] == 27, end < bytes.count, bytes[end] == UInt8(ascii: "h") || bytes[end] == UInt8(ascii: "l"),
-               bytes[index..<end].elementsEqual(marker) {
+            guard bytes[index] == 27 else {
+                run.append(bytes[index])
+                index += 1
+                continue
+            }
+            let end = index + synchronized.count
+            if end < bytes.count, bytes[end] == UInt8(ascii: "h") || bytes[end] == UInt8(ascii: "l"),
+               bytes[index..<end].elementsEqual(synchronized) {
                 index = end + 1
                 continue
             }
-            result.append(bytes[index])
+            if index + 3 < bytes.count, bytes[index + 1] == UInt8(ascii: "]"), bytes[index + 2] == UInt8(ascii: "8"),
+               bytes[index + 3] == UInt8(ascii: ";") {
+                let close = stringEnd(bytes, from: index + 4)
+                let payload = String(decoding: bytes[(index + 4)..<close.content], as: UTF8.self)
+                if !run.isEmpty { pieces.append(.bytes(run)); run = [] }
+                let uri = payload.firstIndex(of: ";").map { payload[payload.index(after: $0)...] } ?? ""
+                pieces.append(.link(uri.isEmpty ? nil : payload))
+                index = close.next
+                continue
+            }
+            run.append(bytes[index])
             index += 1
         }
-        return result
+        if !run.isEmpty { pieces.append(.bytes(run)) }
+        return pieces
+    }
+
+    /// Where an escape string's content ends, at BEL or ST (`ESC \`), and where what follows it starts.
+    private static func stringEnd(_ bytes: [UInt8], from start: Int) -> (content: Int, next: Int) {
+        var end = start
+        while end < bytes.count {
+            if bytes[end] == 7 { return (end, end + 1) }
+            if bytes[end] == 27, end + 1 < bytes.count, bytes[end + 1] == UInt8(ascii: "\\") { return (end, end + 2) }
+            end += 1
+        }
+        return (end, end)
+    }
+
+    /// Feeds bytes written inside a link, one piece at a time, and links exactly the cells its text lands on.
+    private func feed(_ bytes: [UInt8], linking payload: String) {
+        guard let atom = Self.linkAtoms[payload] ?? TinyAtom.lookup(value: payload) else {
+            feed(byteArray: bytes[...])
+            return
+        }
+        Self.linkAtoms[payload] = atom
+        let terminal = getTerminal()
+        var index = 0
+        while index < bytes.count {
+            let end = Self.tokenEnd(bytes, from: index)
+            let isText = bytes[index] >= 0x20 && bytes[index] != 0x7F
+            let start = terminal.getCursorLocation()
+            feed(byteArray: bytes[index..<end])
+            if isText { setLink(atom, from: start, to: terminal.getCursorLocation()) }
+            index = end
+        }
+    }
+
+    /// Where a run of text, an escape sequence or a control character that starts at `start` ends.
+    static func tokenEnd(_ bytes: [UInt8], from start: Int) -> Int {
+        let first = bytes[start]
+        if first == 27 {
+            guard start + 1 < bytes.count else { return bytes.count }
+            switch bytes[start + 1] {
+            case UInt8(ascii: "["):
+                var end = start + 2
+                while end < bytes.count, !(0x40...0x7E).contains(bytes[end]) { end += 1 }
+                return min(end + 1, bytes.count)
+            case UInt8(ascii: "]"), UInt8(ascii: "P"), UInt8(ascii: "^"), UInt8(ascii: "_"):
+                return stringEnd(bytes, from: start + 2).next
+            case UInt8(ascii: "("), UInt8(ascii: ")"), UInt8(ascii: "*"), UInt8(ascii: "+"), UInt8(ascii: "#"),
+                 UInt8(ascii: "%"), UInt8(ascii: " "):
+                return min(start + 3, bytes.count)
+            default:
+                return start + 2
+            }
+        }
+        if first < 0x20 || first == 0x7F { return start + 1 }
+        var end = start + 1
+        while end < bytes.count, bytes[end] >= 0x20, bytes[end] != 0x7F { end += 1 }
+        return end
+    }
+
+    /// Links the cells text was written to, from where the cursor was to where it is, across a wrap.
+    /// The terminal keeps no history, so the cursor's rows are the screen's rows.
+    private func setLink(_ atom: TinyAtom, from start: (x: Int, y: Int), to end: (x: Int, y: Int)) {
+        let terminal = getTerminal()
+        guard end.y >= start.y else { return }
+        for row in start.y...end.y {
+            guard let line = terminal.getLine(row: row) else { continue }
+            let first = row == start.y ? start.x : 0
+            let last = row == end.y ? min(end.x, terminal.cols) : terminal.cols
+            guard first < last else { continue }
+            for column in first..<last {
+                var cell = line[column]
+                cell.setPayload(atom: atom)
+                line[column] = cell
+            }
+        }
     }
 
     func resetScreen() {
@@ -322,7 +441,7 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
     }
 
     /// SwiftTerm's own cell metrics: the width of "W" and the font's line height.
-    private var cellSize: CGSize {
+    var cellSize: CGSize {
         let font = font
         if let cellMetrics, cellMetrics.font === font { return cellMetrics.size }
         let size = CGSize(width: max(1, font.advancement(forGlyph: font.glyph(withName: "W")).width),
@@ -382,27 +501,30 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
         } else if let pressed = pressedCell {
             // Released in the cell it was pressed in: a click rather than a selection drag.
             let click = cell(at: point).map { $0 == pressed } == true
-                ? (point: point, count: event.clickCount, command: event.modifierFlags.contains(.command)) : nil
+                ? (point: point, count: event.clickCount, modifiers: event.modifierFlags.intersection([.shift, .control, .option, .command]))
+                : nil
             pressedCell = nil
             // After SwiftTerm has handled this mouse up.
             DispatchQueue.main.async { [weak self] in
-                if let click { self?.clicked(at: click.point, count: click.count, command: click.command) }
+                if let click { self?.clicked(at: click.point, count: click.count, modifiers: click.modifiers) }
                 self?.endMousePress()
             }
         }
     }
 
     /// A click opens the link or file under it (⌘: in the default browser or app), or chooses the
-    /// option of an agent's menu under it.
-    private func clicked(at point: NSPoint, count: Int, command: Bool) {
+    /// option of an agent's menu under it. Any other plain click goes to the program, which Herdr
+    /// drops unless the program reads the mouse.
+    func clicked(at point: NSPoint, count: Int, modifiers: NSEvent.ModifierFlags) {
+        let command = modifiers.contains(.command)
         if let link = link(at: point) {
             // SwiftTerm already opens explicit links on ⌘-click, through requestOpenLink. A double click
             // opens a link once.
             guard count == 1, !(command && link.explicit) else { return }
             clickWasConsumed = true
             openLink?(link.url, command)
-        } else if !command {
-            _ = chooseMenuOption(at: point, clickCount: count)
+        } else if !command, !chooseMenuOption(at: point, clickCount: count), modifiers.isEmpty, let cell = cell(at: point) {
+            onClick?(cell.column, cell.row)
         }
     }
 
@@ -430,7 +552,7 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
                                        owner: tracker))
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, event.window === self.window, self.window?.firstResponder === self,
-                  let bytes = Self.metaSequence(for: event) else { return event }
+                  let bytes = Self.sequence(for: event) else { return event }
             self.terminalDelegate?.send(source: self, data: bytes[...])
             return nil
         }
@@ -450,8 +572,10 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
         scrollMonitor = nil
     }
 
-    /// Keys that send Meta (Escape-prefixed) sequences although Option otherwise types characters.
-    static func metaSequence(for event: NSEvent) -> [UInt8]? {
+    /// Keys that edit the line as they do in macOS text fields, sent as the Meta (Escape-prefixed)
+    /// and Control keys that agents and shells read; Option otherwise types characters. SwiftTerm
+    /// would move a word on ⌘← and ⌘→ and send nothing on ⌘⌫.
+    static func sequence(for event: NSEvent) -> [UInt8]? {
         let flags = event.modifierFlags.intersection([.shift, .control, .option, .command])
         switch (event.keyCode, flags) {
         // Claude Code, Codex and Gemini read ESC-Return (Alt-Return) as a new line; Return submits.
@@ -459,6 +583,10 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
         case (123, .option): return EscapeSequences.emacsBack // a word back
         case (124, .option): return EscapeSequences.emacsForward // a word forward
         case (51, .option): return [27, 127] // delete the previous word
+        case (123, .command): return [1] // Control-A: the start of the line
+        case (124, .command): return [5] // Control-E: the end of the line
+        case (51, .command): return [21] // Control-U: delete to the start of the line
+        case (117, .command): return [11] // Control-K: delete to the end of the line
         default: return nil
         }
     }

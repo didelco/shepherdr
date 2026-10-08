@@ -130,6 +130,11 @@ private final class MockTerminalConnection: HerdrTerminalConnection, @unchecked 
     var scrolls: [String] {
         lock.withLock { inputs.compactMap { if case .scroll(let up, let lines) = $0 { "\(up ? "up" : "down") \(lines)" } else { nil } } }
     }
+    var clicks: [String] {
+        lock.withLock {
+            inputs.compactMap { if case .mouse(let pressed, let column, let row) = $0 { "\(pressed ? "down" : "up") \(column),\(row)" } else { nil } }
+        }
+    }
     init() {
         let pair = AsyncThrowingStream<TerminalEvent, Error>.makeStream()
         events = pair.stream
@@ -272,6 +277,21 @@ private actor MockTerminalClient: HerdrTerminalClient {
         // Herdr returns to the latest output on input.
         store.send(.bytes(Data("x".utf8)))
         #expect(store.linesBack == 0)
+    }
+
+    @Test func aClickReachesProgramsThatReadTheMouse() async throws {
+        let command = try TerminalJSON.command(.mouse(pressed: true, column: 12, row: 5))
+        #expect(String(decoding: command, as: UTF8.self)
+            == #"{"action":"down","button":"left","column":12,"row":5,"type":"terminal.mouse"}"# + "\n")
+        let controller = MockTerminalConnection()
+        let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
+        let store = TerminalStore(target: target, mode: .control, client: MockTerminalClient([controller]))
+        defer { store.disconnect() }
+        store.open()
+        try await wait { store.status == .interactive }
+        store.click(column: 12, row: 5)
+        try await wait { controller.clicks.count == 2 }
+        #expect(controller.clicks == ["down 12,5", "up 12,5"])
     }
 
     @Test func aLockedTerminalCannotScroll() async throws {
