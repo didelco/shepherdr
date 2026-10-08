@@ -82,12 +82,15 @@ struct NewSessionSheet: View {
             }
 
             field(isLocal ? "Folder" : "Folder on \(machine?.machine.name ?? "machine")") {
-                HStack(spacing: 8) {
-                    consoleTextField(isLocal ? "\(projectsFolder)/my-app" : "/home/me/projects/my-app", text: $directory)
-                        .focused($focus, equals: .directory)
-                    if isLocal {
-                        Button("CHOOSE…") { chooseFolder() }.buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        consoleTextField(isLocal ? "\(projectsFolder)/my-app" : "/home/me/projects/my-app", text: $directory)
+                            .focused($focus, equals: .directory)
+                        if isLocal {
+                            Button("CHOOSE…") { chooseFolder() }.buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
+                        }
                     }
+                    folderShortcuts
                 }
             }
 
@@ -129,6 +132,39 @@ struct NewSessionSheet: View {
         .background(Theme.panel)
         // A prefilled folder usually only needs a name.
         .onAppear { focus = directory.isEmpty ? .directory : .name }
+    }
+
+    /// The folders agents on this machine work in, the most used first, one click away.
+    @ViewBuilder private var folderShortcuts: some View {
+        let folders = machine.map { model.folders(on: $0.id) } ?? []
+        if !folders.isEmpty {
+            FlowLayout(spacing: 6) {
+                ForEach(folders, id: \.path) { folder in
+                    folderButton(folder, label: Self.label(for: folder.path, among: folders.map(\.path)))
+                }
+            }
+        }
+    }
+
+    private func folderButton(_ folder: FolderUse, label: String) -> some View {
+        let isChosen = resolvedDirectory == folder.path
+        return Button {
+            directory = isLocal ? (folder.path as NSString).abbreviatingWithTildeInPath : folder.path
+        } label: {
+            HStack(spacing: 4) {
+                Text(label).lineLimit(1)
+                if folder.agents > 1 { Text("×\(folder.agents)").foregroundStyle(Theme.faint) }
+            }
+        }
+        .buttonStyle(ConsoleButtonStyle(tint: isChosen ? Theme.phosphor : Theme.dim))
+        .help("\(folder.path)\n\(folder.agents == 1 ? "1 agent works" : "\(folder.agents) agents work") here")
+    }
+
+    /// A folder's name, with its parent's when another folder has the same name.
+    static func label(for path: String, among paths: [String]) -> String {
+        let name = (path as NSString).lastPathComponent
+        guard paths.contains(where: { $0 != path && ($0 as NSString).lastPathComponent == name }) else { return name }
+        return ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent + "/" + name
     }
 
     private func field(_ label: String, @ViewBuilder content: () -> some View) -> some View {
@@ -174,4 +210,37 @@ struct NewSessionSheet: View {
 
 private extension String {
     var nonEmpty: String? { isEmpty ? nil : self }
+}
+
+/// Lays its views out in rows, starting a new row when one is full.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let frames = place(subviews, within: proposal.width ?? .infinity)
+        return CGSize(width: proposal.width ?? frames.map(\.maxX).max() ?? 0, height: frames.map(\.maxY).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, place(subviews, within: bounds.width)) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func place(_ subviews: Subviews, within width: CGFloat) -> [CGRect] {
+        var frames: [CGRect] = []
+        var origin = CGPoint.zero
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if origin.x > 0, origin.x + size.width > width {
+                origin = CGPoint(x: 0, y: origin.y + rowHeight + spacing)
+                rowHeight = 0
+            }
+            frames.append(CGRect(origin: origin, size: size))
+            origin.x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return frames
+    }
 }

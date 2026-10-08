@@ -48,6 +48,7 @@ struct MainView: View {
             configureRefresh()
             await cluster.monitor()
         }
+        .task { await model.watchBackgroundWork() }
         .onChange(of: refreshSeconds) { configureRefresh() }
         .onChange(of: cluster.agents.map(\.id), initial: true) {
             model.order.synchronize(with: cluster.agents.map(\.id))

@@ -331,7 +331,7 @@ private struct SessionRowView: View {
                 .frame(width: 14)
                 .help(wait == .ready ? "On hold; the sessions it waits for have finished" : "On hold, waiting for other sessions")
         } else {
-            StateGlyph(state: row.agent.state, stale: row.isStale)
+            StateGlyph(state: row.agent.state, stale: row.isStale, background: !model.backgroundCommands(of: row).isEmpty)
         }
     }
 
@@ -435,19 +435,23 @@ private struct SessionRowView: View {
         var text = isNested ? "" : "Priority \(row.manualPriority), "
         text += "\(row.workspace), \(row.title), \(row.agent.state.title)"
         if tree.nestedCount > 0 { text += ", waits for \(tree.nestedCount)" + (tree.isCollapsed ? ", hidden" : "") }
+        let background = model.backgroundCommands(of: row)
+        if !background.isEmpty { text += ", left running: " + background.map(\.command).joined(separator: ", ") }
         return text
     }
 
-    /// The session's pull request, when it has one, and where it works: its folder, or for a worktree
-    /// its project.
+    /// The session's pull request, when it has one, where it works: its folder, or for a worktree
+    /// its project, and what its agent left running.
     @ViewBuilder private var whereabouts: some View {
         let pulls = model.pullRequests(of: row.id)
         let checkout = model.cluster.checkout(machineID: row.id.machineID, workspaceID: row.agent.workspaceID)
         let folder: String? = checkout?.name ?? row.agent.directory.map { ($0 as NSString).lastPathComponent }
-        if !pulls.isEmpty || folder != nil {
+        let background = model.backgroundCommands(of: row)
+        if !pulls.isEmpty || folder != nil || !background.isEmpty {
             HStack(spacing: 9) {
                 if !pulls.isEmpty { pullsButton(pulls) }
                 if let folder { folderLabel(folder, checkout: checkout) }
+                BackgroundLabel(commands: background).foregroundStyle(Theme.dim).layoutPriority(-1)
             }
             .font(Theme.mono(9.5))
             .foregroundStyle(Theme.faint)

@@ -230,12 +230,22 @@ struct PixelFace: View {
 struct StateGlyph: View {
     let state: AgentState
     var stale = false
+    /// Whether the agent left commands running, such as a watcher: a slow clock instead of its state's mark.
+    var background = false
     private static let spinner = Array("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+    private static let clock = Array("◴◷◶◵")
 
     var body: some View {
         Group {
             if stale {
                 Text("◌")
+            } else if background && state != .working && state != .blocked {
+                let color = NSColor(Theme.color(for: state))
+                FrameCycle(count: Self.clock.count, interval: 0.4, size: CGSize(width: 14, height: 16), key: "clock-\(state)") { tick, context in
+                    FrameCycle.draw(String(Self.clock[tick]), in: context, size: CGSize(width: 14, height: 16),
+                                    font: ConsoleFonts.font(family: ConsoleFonts.defaultFamily, size: 13, weight: .bold), color: color)
+                }
+                .frame(height: 16)
             } else if state == .working || state == .blocked {
                 let working = state == .working
                 let color = NSColor(Theme.color(for: state))
@@ -255,7 +265,34 @@ struct StateGlyph: View {
         .foregroundStyle(Theme.color(for: state, stale: stale))
         .frame(width: 14)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(stale ? "\(state.title), stale" : state.title)
+        .accessibilityLabel(stale ? "\(state.title), stale" : background ? "\(state.title), with commands running" : state.title)
+    }
+}
+
+/// What an agent left running, such as `◴ npm run dev +1`; its help lists every command.
+struct BackgroundLabel: View {
+    let commands: [BackgroundCommand]
+
+    var body: some View {
+        if let first = commands.first {
+            Text("◴ \(first.command)" + (commands.count > 1 ? " +\(commands.count - 1)" : ""))
+                .lineLimit(1).truncationMode(.tail)
+                .help(Self.help(commands))
+        }
+    }
+
+    static func help(_ commands: [BackgroundCommand]) -> String {
+        let lines = commands.map { "• \($0.command)  (\(duration(Int(-$0.started.timeIntervalSinceNow))))" }
+        return (["The agent isn't working, but it left these running:"] + lines).joined(separator: "\n")
+    }
+
+    static func duration(_ seconds: Int) -> String {
+        switch seconds {
+        case ..<60: "\(seconds) s"
+        case ..<3_600: "\(seconds / 60) min"
+        case ..<86_400: "\(seconds / 3_600) h \(seconds % 3_600 / 60) min"
+        default: "\(seconds / 86_400) d \(seconds % 86_400 / 3_600) h"
+        }
     }
 }
 

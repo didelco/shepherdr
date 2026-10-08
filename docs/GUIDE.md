@@ -6,7 +6,7 @@ The sidebar is your prioritized queue of sessions. Pick one and its live termina
 
 ## Features
 
-- **Session queue:** every agent session in your own priority order, shown by workspace, what the agent is doing, and where it works: its folder, or for a Git worktree its project, in cyan. When a session has a pull request among its resources, its number is there too, or how many it has; click it to open the session with the pull request in its browser, or the ten most relevant in tabs. Drag to reorder, use the ▲▼ controls, **⌥⌘↑ / ⌥⌘↓**, or jump with **⌘1…⌘9**. Gather sessions into **groups** that you prioritize like a single session, each with its own internal order.
+- **Session queue:** every agent session in your own priority order, shown by workspace, what the agent is doing, and where it works: its folder, or for a Git worktree its project, in cyan. When a session has a pull request among its resources, its number is there too, or how many it has; click it to open the session with the pull request in its browser, or the ten most relevant in tabs. An agent that isn't working but left commands running, such as a dev server or a watcher, shows a turning clock **◴** instead of its state's mark. Drag to reorder, use the ▲▼ controls, **⌥⌘↑ / ⌥⌘↓**, or jump with **⌘1…⌘9**. Gather sessions into **groups** that you prioritize like a single session, each with its own internal order.
 - **Work area:** the selected session's live terminal, embedded in the main window like Herdr's own client. Switching sessions detaches the previous one; the pane keeps running in Herdr.
 - **Type in the terminal:** work in the agent's own TUI; **⇧⏎** adds a line instead of sending. Drop files or images on it to paste their paths, so Claude Code and Codex attach them. A bottom bar has quick keys (Esc, ^C, Tab, arrows, Return).
 - **Optional prompt editor:** open it (**⌘L**) for long prompts you want to think through and edit with the mouse. **⏎** sends, **⇧⏎** adds a line, **↑/↓** recall this session's prompts.
@@ -20,7 +20,7 @@ The sidebar is your prioritized queue of sessions. Pick one and its live termina
 - **Notifications:** a macOS notification tells you when an agent finishes or needs you, with what it last said, and when a pull request's checks finish. Click it to open the session.
 - **Sessions on hold:** mark a session as waiting for others, such as a planner waiting for the subagents it launched. It shows an hourglass, and the sessions it waits for are listed under it, in a tree you can collapse.
 - **Create and close sessions:** **⌘N** creates a Herdr workspace with a shell in a folder; start Claude Code, Codex or any other supported agent in it and it joins the queue. Create one in a group with its **+**, or next to a session with **New Session in Same Folder…**. **Close Session…** in a session's context menu ends its pane after confirmation. **Rename…** renames its Herdr workspace.
-- Overview with working / needs-you / done / idle counts and session cards; plain shell panes are listed separately.
+- **Overview:** how many sessions need you, are working, done or idle, and a card per machine with its sessions and its processor, memory and disk use. Click states and machines to list the sessions in any combination of them. Plain shell panes are listed separately.
 - **Lid status:** the foot of the sidebar tells you whether it's safe to close the lid. While agents work on this Mac it warns you not to, since sleep would pause them; remote sessions don't count, they keep going.
 - **Machines** in **Settings → Machines** (⌘,): add SSH machines, disable them to stop polling, or remove them from Herdr's catalog.
 - Concurrent queries, independent connection states, and last-known data marked stale after failure.
@@ -71,6 +71,20 @@ SHEPHERDR_HERDR_PATH=/absolute/path/to/herdr \
 
 Local executable discovery does not source shell startup files. Inherited `HERDR_SESSION`, `HERDR_SOCKET_PATH`, and pane/workspace/tab routing variables are cleared so opening Shepherdr from an agent pane cannot silently retarget Local. Herdr's own configuration environment is otherwise retained.
 
+## Overview
+
+**⌘0** shows the overview. Its first row counts the sessions that need you, are working, are done or are idle. The second has a card per machine with how many sessions it has and how busy it is, to help choose where the next agent goes: processor use over one second, memory in use, and the disk holding the home folder, amber from 70% and red from 90%.
+
+Click a state or a machine to show only its sessions, and click more to add them: the sessions that need you on two machines, say. Each row counts what the other row lets through. Click a card again to drop it, or **SHOW ALL** to see every session again. The sidebar's queue is never filtered. A machine that isn't answering shows its sessions' last known state, so they are left out once you choose a state.
+
+Herdr does not report machine load, so Shepherdr measures it every 15 seconds while the overview is on screen: on this Mac directly, and on other machines with a short `sh` script over SSH, with the same non-interactive settings as remote terminals. The script uses `/proc` on Linux, `iostat` and `vm_stat` on macOS, and `df` on both. Memory in use counts what `free` and Activity Monitor count. A machine that stops answering keeps its last reading for a minute.
+
+## Commands left running
+
+Agents often leave commands running after their turn: dev servers, watchers, test loops. When the agent is done or idle, a turning clock **◴** replaces its ✓ or ○ in the queue, on its overview card and in its session's header. The first command shows next to the session's folder, with **+n** when there are more, also while the agent waits for you. Its help lists them all, with how long each has been running.
+
+Agents run each command in a shell of their own, so Shepherdr counts the shells still alive under an agent that is not working: shells the agent started, not ones you open inside its pane, and only after five seconds, so its hooks and status line don't count. Herdr only reports a pane's foreground processes, so Shepherdr asks Herdr once for each pane's shell and lists the processes under them every 10 seconds while its window shows: with `ps` on this Mac, and on other machines over SSH, which returns only the processes under those panes.
+
 ## Prioritize sessions
 
 The sidebar queue is your saved order across all machines; its numbers are each session's priority. Drag a session to a new position (a line shows where it will land), use the ▲▼ controls that appear on hover or selection, press **⌥⌘↑ / ⌥⌘↓** for the selected session, or choose **Move to Top/Bottom** from its context menu. **⌘1…⌘9** open the first nine sessions, **⌘[ / ⌘]** step through them and **⌘0** returns to the overview.
@@ -94,6 +108,8 @@ You can reorder while filtering the queue (**⌘F**): movement is relative to th
 ## Create and close sessions
 
 **⌘N** (or **+** in the sidebar) opens **New Session**: choose a folder (on the selected machine) and an optional name. Shepherdr runs `herdr workspace create --cwd … --label …` and opens its shell. Start an agent there as you would in any terminal: Herdr detects it, and the session joins the queue within one refresh.
+
+Below the folder, the folders agents on the selected machine work in are one click away, the most used first. Git worktrees are left out: they belong to the session that made them.
 
 On this Mac, **CHOOSE…** always starts in your projects folder, `~/projects` unless you change it in **Settings → General**, and a folder name alone means a folder inside it. **New Session in Same Folder…** in a session's or shell's context menu prefills its folder and machine and places the new session right after it, in the same group. A group header's **+** places it in that group.
 

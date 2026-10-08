@@ -105,7 +105,7 @@ struct SessionView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
             if let agent = context.agent {
-                StateGlyph(state: agent.agent.state, stale: agent.isStale)
+                StateGlyph(state: agent.agent.state, stale: agent.isStale, background: !model.backgroundCommands(of: agent).isEmpty)
             } else {
                 Text("$").font(Theme.mono(13, .bold)).foregroundStyle(Theme.phosphor)
             }
@@ -123,7 +123,14 @@ struct SessionView: View {
                 }
             }
             Spacer(minLength: 8)
-            if let agent = context.agent { StateTag(state: agent.agent.state, stale: agent.isStale) }
+            if let agent = context.agent {
+                let background = model.backgroundCommands(of: agent)
+                if !background.isEmpty {
+                    BackgroundLabel(commands: background)
+                        .font(Theme.mono(10)).foregroundStyle(Theme.dim).frame(maxWidth: 220, alignment: .trailing)
+                }
+                StateTag(state: agent.agent.state, stale: agent.isStale)
+            }
             lockButton
             Button { terminal.open() } label: { Text("↻") }
                 .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
@@ -420,7 +427,7 @@ struct RelationsPanel: View {
         let row = model.row(for: other)
         return HStack(spacing: 6) {
             if let row {
-                StateGlyph(state: row.agent.state, stale: row.isStale)
+                StateGlyph(state: row.agent.state, stale: row.isStale, background: !model.backgroundCommands(of: row).isEmpty)
                 Text(row.workspace).foregroundStyle(Theme.text)
                 if model.showsMachineNames { Text("@\(row.machineName)").foregroundStyle(Theme.faint) }
                 Text(row.agent.state == .blocked ? "needs you" : row.agent.state.title.lowercased())

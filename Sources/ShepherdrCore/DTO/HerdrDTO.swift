@@ -103,6 +103,12 @@ struct WorktreeListDTO: Decodable {
     let worktrees: [Worktree]?
 }
 
+struct ProcessInfoDTO: Decodable {
+    struct Envelope: Decodable { let result: Result }
+    struct Result: Decodable { let processInfo: ProcessInfoDTO }
+    let shellPid: Int?
+}
+
 struct PaneListDTO: Decodable {
     struct Envelope: Decodable { let result: PaneListDTO }
     struct Pane: Decodable {
@@ -137,6 +143,11 @@ enum HerdrJSON {
                                                   isLinkedWorktree: worktree.isLinkedWorktree ?? false, path: worktree.path)
         }
         return result
+    }
+
+    /// The process ID of the shell a pane started with; nil when Herdr doesn't say.
+    static func shellPID(_ data: Data) throws -> Int? {
+        try decoder().decode(ProcessInfoDTO.Envelope.self, from: data).result.processInfo.shellPid
     }
 
     /// How many lines above its latest output Herdr shows a terminal; nil when Herdr doesn't say.

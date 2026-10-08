@@ -126,6 +126,15 @@ public struct CLIHerdrClient: HerdrClient, HerdrTerminalClient {
         catch { throw decodingFailure(error) }
     }
 
+    public func shellPID(paneID: String, on machine: Machine) async throws -> Int? {
+        try requireArgument(paneID, "pane")
+        let prefix = machine.profileID.map { ["--machine", $0] } ?? []
+        let output = try await execute(prefix + ["pane", "process-info", "--pane", paneID])
+        try validate(output, machine: machine)
+        do { return try HerdrJSON.shellPID(output.stdout) }
+        catch { throw decodingFailure(error) }
+    }
+
     public func addMachine(_ request: NewMachineRequest) async throws {
         let target = request.sshTarget.trimmingCharacters(in: .whitespacesAndNewlines)
         try requireArgument(target, "SSH target")

@@ -1,16 +1,22 @@
+import AppKit
 import SwiftUI
 import ShepherdrCore
 
 /// The home screen: cluster pulse at a glance, then every session as a card in priority order.
+/// Choosing states and machines narrows the cards to any combination of them.
 struct OverviewView: View {
     @Bindable var model: AppModel
     private var cluster: ClusterStore { model.cluster }
+    private var machines: [MachineState] { cluster.machines.filter(\.machine.isEnabled) }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 hero
-                counters
+                VStack(spacing: 10) {
+                    stateTiles
+                    machineTiles
+                }
                 if let failure = cluster.discoveryFailure, failure.state != .notInstalled {
                     NoticeView(title: "Saved machines could not be refreshed", message: failure.message, detail: failure.detail)
                 }
@@ -25,6 +31,8 @@ struct OverviewView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Theme.background)
+        .task { await model.usageMonitor.monitor { [cluster] in cluster.machines.map(\.machine).filter(\.isEnabled) } }
+        .onChange(of: machines.map(\.id), initial: true) { model.sessionFilter.keep(machines: Set(machines.map(\.id))) }
     }
 
     private var hero: some View {
@@ -42,30 +50,46 @@ struct OverviewView: View {
         }
     }
 
-    private var counters: some View {
-        let live = cluster.agents.filter { !$0.isStale }
+    /// Each tile counts the sessions the other row lets through.
+    private var stateTiles: some View {
+        let rows = cluster.agents
+        let filter = model.sessionFilter
         return HStack(spacing: 10) {
             ForEach([AgentState.blocked, .working, .done, .idle], id: \.self) { state in
-                let count = live.filter { $0.agent.state == state }.count
-                let color = count > 0 ? Theme.color(for: state) : Theme.faint
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(String(format: "%02d", count)).font(Theme.mono(26, .bold)).foregroundStyle(color)
-                        .shadow(color: count > 0 ? color.opacity(0.5) : .clear, radius: 6)
-                    Text(state == .blocked ? "NEED YOU" : state.title.uppercased())
-                        .font(Theme.mono(10, .semibold)).tracking(1.5).foregroundStyle(Theme.dim)
+                StateTile(state: state, count: filter.count(state, in: rows), isChosen: filter.states.contains(state),
+                          isLeftOut: !filter.states.isEmpty && !filter.states.contains(state)) {
+                    model.sessionFilter.toggle(state)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
-                .background(Theme.panel, in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(count > 0 && state == .blocked ? Theme.amber.opacity(0.5) : Theme.line, lineWidth: 1))
-                .accessibilityElement(children: .combine)
+            }
+        }
+    }
+
+    private var machineTiles: some View {
+        let rows = cluster.agents
+        let filter = model.sessionFilter
+        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 10)], spacing: 10) {
+            ForEach(machines) { state in
+                MachineTile(state: state, count: filter.count(machine: state.id, in: rows),
+                            usage: model.usageMonitor.usage[state.id], isChosen: filter.machines.contains(state.id),
+                            isLeftOut: !filter.machines.isEmpty && !filter.machines.contains(state.id)) {
+                    model.sessionFilter.toggle(machine: state.id)
+                }
             }
         }
     }
 
     @ViewBuilder private var sessions: some View {
-        let rows = model.matchingRows
-        ConsoleHeader(title: "Sessions by priority", trailing: rows.isEmpty ? nil : "⌘1–⌘9 to jump")
+        let rows = model.overviewRows
+        HStack(spacing: 10) {
+            ConsoleHeader(title: "Sessions by priority",
+                          trailing: model.sessionFilter.isEmpty ? (rows.isEmpty ? nil : "⌘1–⌘9 to jump")
+                                                                : "\(rows.count) of \(model.matchingRows.count)")
+            if !model.sessionFilter.isEmpty {
+                Button("SHOW ALL") { model.sessionFilter = SessionFilter() }
+                    .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
+                    .help("Stop filtering by state and machine")
+            }
+        }
         if rows.isEmpty {
             Text(emptyMessage).font(Theme.mono(12)).foregroundStyle(Theme.dim)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -74,13 +98,16 @@ struct OverviewView: View {
         } else {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 10)], spacing: 10) {
                 ForEach(rows) { row in
-                    SessionCard(row: row, showsMachine: model.showsMachineNames) { model.open(row.id) }
+                    SessionCard(row: row, showsMachine: model.showsMachineNames, background: model.backgroundCommands(of: row)) {
+                        model.open(row.id)
+                    }
                 }
             }
         }
     }
 
     private var emptyMessage: String {
+        if !model.matchingRows.isEmpty { return "No sessions in the chosen states and machines." }
         if !model.search.isEmpty { return "No sessions match \"\(model.search)\"." }
         if cluster.isRefreshing && cluster.lastRefresh == nil { return "Connecting to Herdr…" }
         if cluster.onlineCount == 0 { return "Herdr is not reachable. Open Settings (⌘,) → Machines for details, then refresh (⌘R)." }
@@ -88,9 +115,206 @@ struct OverviewView: View {
     }
 }
 
+/// A tile that narrows the sessions below: chosen ones are outlined in their color, and those
+/// left out by another choice in their row fade.
+private struct FilterTile: ViewModifier {
+    let accent: Color
+    let isChosen: Bool
+    let isLeftOut: Bool
+    var isAlert = false
+    @ViewState<Bool> private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(isChosen ? accent.opacity(0.07) : hovering ? Theme.raised : Theme.panel, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(border, lineWidth: isChosen ? 1.5 : 1))
+            .overlay(alignment: .topTrailing) {
+                if isChosen { Rectangle().fill(accent).frame(width: 6, height: 6).padding(9) }
+            }
+            .contentShape(Rectangle())
+            .opacity(isLeftOut && !hovering ? 0.45 : 1)
+            .onHover { hovering = $0 }
+    }
+
+    private var border: Color {
+        if isChosen { return accent.opacity(0.8) }
+        if hovering { return accent.opacity(0.4) }
+        return isAlert ? Theme.amber.opacity(0.5) : Theme.line
+    }
+}
+
+private struct StateTile: View {
+    let state: AgentState
+    let count: Int
+    let isChosen: Bool
+    let isLeftOut: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        let color = count > 0 ? Theme.color(for: state) : Theme.faint
+        Button(action: toggle) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String(format: "%02d", count)).font(Theme.mono(26, .bold)).foregroundStyle(color)
+                    .shadow(color: count > 0 ? color.opacity(0.5) : .clear, radius: 6)
+                Text(label).font(Theme.mono(10, .semibold)).tracking(1.5).foregroundStyle(isChosen ? Theme.text : Theme.dim)
+            }
+            .modifier(FilterTile(accent: Theme.color(for: state), isChosen: isChosen, isLeftOut: isLeftOut,
+                                 isAlert: count > 0 && state == .blocked))
+        }
+        .buttonStyle(.plain)
+        .help(isChosen ? "Stop showing only these sessions" : "Show only sessions in this state; choose more to add them")
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isChosen ? .isSelected : [])
+    }
+
+    private var label: String { state == .blocked ? "NEED YOU" : state.title.uppercased() }
+}
+
+/// A machine's sessions and how busy it is, to pick where the next agent goes.
+private struct MachineTile: View {
+    let state: MachineState
+    let count: Int
+    let usage: MachineUsage?
+    let isChosen: Bool
+    let isLeftOut: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        let online = state.connection == .online
+        Button(action: toggle) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    ConnectionDot(state: state.connection)
+                    Text(state.machine.name.uppercased()).font(Theme.mono(10, .semibold)).tracking(1.5)
+                        .foregroundStyle(isChosen ? Theme.text : Theme.dim).lineLimit(1)
+                }
+                HStack(alignment: .bottom, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(String(format: "%02d", count)).font(Theme.mono(26, .bold))
+                            .foregroundStyle(count > 0 ? Theme.text : Theme.faint)
+                        Text(online ? "SESSIONS" : status)
+                            .font(Theme.mono(9, .semibold)).tracking(1.2)
+                            .foregroundStyle(online ? Theme.faint : Theme.color(for: state.connection)).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    UsageBars(usage: usage).fixedSize()
+                }
+            }
+            .modifier(FilterTile(accent: Theme.phosphor, isChosen: isChosen, isLeftOut: isLeftOut))
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isChosen ? .isSelected : [])
+    }
+
+    /// Short enough for the tile; the notice below the tiles explains it.
+    private var status: String {
+        switch state.connection {
+        case .online: "ONLINE"
+        case .loading: "CONNECTING"
+        case .unreachable: "UNREACHABLE"
+        case .notInstalled: "NO HERDR"
+        case .notRunning: "HERDR OFF"
+        case .incompatible: "INCOMPATIBLE"
+        case .disabled: "DISABLED"
+        }
+    }
+
+    private var help: String {
+        let measured = usage == nil
+            ? (state.machine.isLocal ? "Measuring this Mac…" : "No usage yet: Shepherdr measures it over SSH every 15 seconds.")
+            : "Processor over one second, memory in use, and the disk holding the home folder, every 15 seconds."
+        return measured + (isChosen ? "\nClick to stop showing only its sessions." : "\nClick to show only its sessions; choose more to add them.")
+    }
+}
+
+/// Processor, memory and disk as ten blocks each: amber from 70%, red from 90%.
+private struct UsageBars: View {
+    let usage: MachineUsage?
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            bar("CPU", usage?.cpu)
+            bar("MEM", usage?.memory)
+            bar("DSK", usage?.disk)
+        }
+    }
+
+    private func bar(_ label: String, _ value: Int?) -> some View {
+        let color = value.map(Self.color) ?? Theme.faint
+        return HStack(spacing: 6) {
+            Text(label).font(Theme.mono(9, .semibold)).foregroundStyle(Theme.faint)
+            HStack(spacing: 2) {
+                ForEach(0..<10, id: \.self) { block in
+                    Rectangle().fill(block < Self.blocks(value) ? color : Theme.line).frame(width: 5, height: 8)
+                }
+            }
+            Text(value.map { "\($0)%" } ?? "—").font(Theme.mono(10)).foregroundStyle(color)
+                .frame(width: 32, alignment: .trailing)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label): \(value.map { "\($0)%" } ?? "unknown")")
+    }
+
+    /// Any use shows at least one block.
+    static func blocks(_ value: Int?) -> Int {
+        guard let value, value > 0 else { return 0 }
+        return max(1, (value + 5) / 10)
+    }
+
+    static func color(_ value: Int) -> Color { value >= 90 ? Theme.red : value >= 70 ? Theme.amber : Theme.phosphor }
+}
+
+/// How busy each machine is, measured every 15 seconds while the overview is on screen.
+@MainActor @Observable
+final class MachineUsageMonitor {
+    private(set) var usage: [String: MachineUsage] = [:]
+    @ObservationIgnored private var measuredAt: [String: Date] = [:]
+    @ObservationIgnored private var startedAt: [String: Date] = [:]
+    @ObservationIgnored private var measuring = Set<String>()
+
+    /// Measures until cancelled, such as when the overview leaves the screen; a machine that joins
+    /// is measured right away. Nothing is measured while no window shows, such as while the
+    /// screens sleep.
+    func monitor(_ machines: @escaping @MainActor () -> [Machine]) async {
+        await withDiscardingTaskGroup { group in
+            while !Task.isCancelled {
+                if NSApp.occlusionState.contains(.visible) {
+                    for machine in machines() where isDue(machine.id) {
+                        measuring.insert(machine.id)
+                        startedAt[machine.id] = Date()
+                        group.addTask { await self.measure(machine) }
+                    }
+                }
+                do { try await Task.sleep(for: .seconds(1)) } catch { break }
+            }
+        }
+    }
+
+    private func isDue(_ id: String) -> Bool {
+        !measuring.contains(id) && Date().timeIntervalSince(startedAt[id] ?? .distantPast) >= 15
+    }
+
+    private func measure(_ machine: Machine) async {
+        let found = await MachineUsage.read(machine)
+        measuring.remove(machine.id)
+        if let found {
+            usage[machine.id] = found
+            measuredAt[machine.id] = Date()
+        } else if Date().timeIntervalSince(measuredAt[machine.id] ?? .distantPast) > 60 {
+            // A machine that stopped answering keeps its last reading for a minute.
+            usage[machine.id] = nil
+        }
+    }
+}
+
 private struct SessionCard: View {
     let row: AgentRow
     let showsMachine: Bool
+    let background: [BackgroundCommand]
     let open: () -> Void
     @ViewState<Bool> private var hovering = false
 
@@ -100,15 +324,18 @@ private struct SessionCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Text(String(format: "%02d", row.manualPriority)).font(Theme.mono(10, .semibold)).foregroundStyle(Theme.faint)
-                    StateGlyph(state: row.agent.state, stale: row.isStale)
+                    StateGlyph(state: row.agent.state, stale: row.isStale, background: !background.isEmpty)
                     Text(row.workspace).font(Theme.mono(13, .bold)).foregroundStyle(Theme.text).lineLimit(1)
                     Spacer(minLength: 4)
                     StateTag(state: row.agent.state, stale: row.isStale)
                 }
                 Text(row.title).font(Theme.mono(11)).foregroundStyle(Theme.text.opacity(0.7)).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text(showsMachine ? "\(row.agent.kind) @\(row.machineName)" : row.agent.kind)
-                    .font(Theme.mono(10)).foregroundStyle(Theme.faint).lineLimit(1)
+                HStack(spacing: 8) {
+                    Text(showsMachine ? "\(row.agent.kind) @\(row.machineName)" : row.agent.kind).layoutPriority(1)
+                    BackgroundLabel(commands: background).foregroundStyle(Theme.dim)
+                }
+                .font(Theme.mono(10)).foregroundStyle(Theme.faint).lineLimit(1)
             }
             .padding(12)
             .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
