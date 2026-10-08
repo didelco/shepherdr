@@ -15,6 +15,7 @@ struct SessionView: View {
     @ViewState<CGFloat> private var editorHeight: CGFloat = 60
     @AppStorage("terminalFontSize") private var fontSize = 13.0
     @AppStorage("terminalFontFamily") private var fontFamily = ConsoleFonts.defaultFamily
+    @AppStorage(ConsoleFonts.ligaturesKey) private var ligatures = false
     @AppStorage("showsResources") private var showsResources = true
 
     init(context: SessionContext, model: AppModel, mode: TerminalMode) {
@@ -61,7 +62,7 @@ struct SessionView: View {
                 banners
                 if context.canConnect {
                     TerminalSurface(store: terminal, palette: Theme.terminal,
-                                    font: ConsoleFonts.font(family: fontFamily, size: fontSize),
+                                    font: ConsoleFonts.font(family: fontFamily, size: fontSize, ligatures: ligatures),
                                     focusRequest: model.terminalFocusRequest,
                                     resolveFile: { [model, id] path in model.file(at: path, for: id) },
                                     onResources: { [model, id] found in model.collectResources(found, for: id) },
@@ -72,6 +73,7 @@ struct SessionView: View {
                     .padding(.leading, 10).padding(.top, 6)
                     .background(Theme.background)
                     .overlay { if terminal.status == .connecting { connecting } }
+                    .overlay(alignment: .bottomTrailing) { HistoryBadge(terminal: terminal) }
                 } else {
                     offline
                 }
@@ -223,11 +225,12 @@ struct SessionView: View {
                 .padding(.top, 3)
             ZStack(alignment: .topLeading) {
                 if draft.wrappedValue.isEmpty {
-                    Text(placeholder).font(Font(ConsoleFonts.font(family: fontFamily, size: 13))).foregroundStyle(Theme.faint)
+                    Text(placeholder).font(Font(ConsoleFonts.font(family: fontFamily, size: 13, ligatures: ligatures)))
+                        .foregroundStyle(Theme.faint)
                         .padding(.top, 5).allowsHitTesting(false)
                 }
                 PromptEditor(text: draft, height: $editorHeight, isEnabled: true,
-                             font: ConsoleFonts.font(family: fontFamily, size: 13),
+                             font: ConsoleFonts.font(family: fontFamily, size: 13, ligatures: ligatures),
                              focusRequest: model.promptFocusRequest, history: model.prompts(for: id),
                              onSubmit: submit)
                     .frame(height: max(editorHeight, 60))
@@ -524,6 +527,25 @@ struct DictationButton: View {
 
 /// The terminal beside its browser. The browser opens at half the width (an HSplitView would open it
 /// at its minimum), and the divider between them can be dragged.
+/// Shown while Herdr shows earlier output, so new output arriving out of sight is not mistaken for a
+/// frozen terminal.
+private struct HistoryBadge: View {
+    let terminal: TerminalStore
+
+    var body: some View {
+        if terminal.linesBack > 0 {
+            let live = terminal.status == .interactive
+            Button { terminal.scrollToLatest() } label: { Text("↓ LATEST") }
+                .buttonStyle(ConsoleButtonStyle(tint: Theme.amber))
+                .background(Theme.panel, in: RoundedRectangle(cornerRadius: 4))
+                .disabled(!live)
+                .help(live ? "You're reading earlier output. Back to the latest; typing also brings you back."
+                           : "Herdr shows earlier output here. Unlock the session to scroll back down.")
+                .padding(.trailing, 24).padding(.bottom, 10)
+        }
+    }
+}
+
 private struct BrowserSplit<Terminal: View, Browser: View>: View {
     let showsBrowser: Bool
     @ViewBuilder let terminal: Terminal

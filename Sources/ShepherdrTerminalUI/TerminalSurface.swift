@@ -67,6 +67,10 @@ public struct TerminalSurface: NSViewRepresentable {
         // keys that need Meta get it from installInteractions.
         view.optionAsMetaKey = false
         view.terminalDelegate = context.coordinator
+        // Herdr keeps the history and paints whatever part of it is shown, so the view keeps none:
+        // lines a resize pushed out would only be a stale copy to scroll into, hiding live output.
+        view.getTerminal().changeHistorySize(0)
+        view.onScroll = { [weak store] up, lines in store?.scroll(up: up, lines: lines) }
         view.installInteractions()
         store.display = { [weak view] frame in view?.show(frame) }
         store.resetDisplay = { [weak view] in view?.resetScreen() }
@@ -145,10 +149,17 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
     var resolveFile: ((_ path: String) -> URL?)?
     var onResources: ((_ found: [SessionResource]) -> Void)?
     var onDropFiles: ((_ files: [URL]) -> Void)?
+    /// Scrolls Herdr's history: up toward earlier output, by whole lines.
+    var onScroll: ((_ up: Bool, _ lines: Int) -> Void)?
+    /// Lines the wheel turned that are not sent yet; fractions wait for more turning.
+    private var pendingScroll: CGFloat = 0
+    private var scrollSendScheduled = false
+    private var cellMetrics: (font: NSFont, size: CGSize)?
     private var scanPending = false
     /// Bumped by every frame, so the menu found under the pointer is reused until the screen changes.
     private var screenGeneration = 0
     private var menuCache: (generation: Int, row: Int, moves: Int?)?
+    private var hoverCache: (generation: Int, row: Int, column: Int, clickable: Bool)?
     /// A click that chose a menu option is not a selection to copy.
     private var clickWasConsumed = false
     /// Set while a Herdr frame resizes the view, so that resize is not reported back as the user's.
@@ -156,6 +167,7 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
     private var linkTracker: LinkTracker?
     private var keyMonitor: Any?
     private var mouseMonitor: Any?
+    private var scrollMonitor: Any?
     /// Frames that arrived while the mouse button is down in the terminal. SwiftTerm drops the
     /// selection whenever output arrives, so a busy agent would otherwise make text impossible to select.
     private var heldFrames: [TerminalFrame]?
@@ -173,9 +185,31 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
         if getTerminal().cols != frame.columns || getTerminal().rows != frame.rows {
             resize(cols: frame.columns, rows: frame.rows)
         }
-        feed(byteArray: Array(frame.bytes)[...])
+        feed(byteArray: Self.unsynchronized(frame.bytes)[...])
         applyingFrame = false
         paintChangedRows()
+    }
+
+    /// Herdr wraps every frame in synchronized output (mode 2026), but a frame arrives whole and is fed
+    /// at once, so the screen never shows half of one anyway. Left in, it makes SwiftTerm copy the whole
+    /// screen as each frame begins and repaint every row as it ends, even for a spinner's single cell.
+    static func unsynchronized(_ data: Data) -> [UInt8] {
+        let bytes = [UInt8](data)
+        let marker = Array("\u{1b}[?2026".utf8)
+        var result: [UInt8] = []
+        result.reserveCapacity(bytes.count)
+        var index = 0
+        while index < bytes.count {
+            let end = index + marker.count
+            if bytes[index] == 27, end < bytes.count, bytes[end] == UInt8(ascii: "h") || bytes[end] == UInt8(ascii: "l"),
+               bytes[index..<end].elementsEqual(marker) {
+                index = end + 1
+                continue
+            }
+            result.append(bytes[index])
+            index += 1
+        }
+        return result
     }
 
     func resetScreen() {
@@ -267,6 +301,18 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
         return moves
     }
 
+    /// Whether a click at a point opens something or chooses a menu option. The pointer moves many
+    /// times within a cell, so the answer holds until it leaves the cell or the screen changes.
+    func isClickable(at point: NSPoint) -> Bool {
+        guard let cell = cell(at: point) else { return false }
+        if let hover = hoverCache, hover.generation == screenGeneration, hover.row == cell.row, hover.column == cell.column {
+            return hover.clickable
+        }
+        let clickable = link(at: point) != nil || menuMoves(at: point) != nil
+        hoverCache = (screenGeneration, cell.row, cell.column, clickable)
+        return clickable
+    }
+
     private func cell(at point: NSPoint) -> (row: Int, column: Int)? {
         let terminal = getTerminal(), size = cellSize
         let column = Int(point.x / size.width), row = Int((bounds.height - point.y) / size.height)
@@ -277,8 +323,44 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
 
     /// SwiftTerm's own cell metrics: the width of "W" and the font's line height.
     private var cellSize: CGSize {
-        CGSize(width: max(1, font.advancement(forGlyph: font.glyph(withName: "W")).width),
-               height: max(1, ceil(CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font))))
+        let font = font
+        if let cellMetrics, cellMetrics.font === font { return cellMetrics.size }
+        let size = CGSize(width: max(1, font.advancement(forGlyph: font.glyph(withName: "W")).width),
+                          height: max(1, ceil(CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font))))
+        cellMetrics = (font, size)
+        return size
+    }
+
+    /// The wheel and the trackpad scroll Herdr's history. Returns whether the event was the terminal's.
+    private func handleScroll(_ event: NSEvent) -> Bool {
+        let point = convert(event.locationInWindow, from: nil)
+        guard event.window === window, !isHiddenOrHasHiddenAncestor, bounds.contains(point), onScroll != nil else { return false }
+        // A trackpad reports points; a mouse wheel reports notches, three lines each.
+        scroll(lines: event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / cellSize.height : event.scrollingDeltaY * 3,
+               startsGesture: event.phase == .began)
+        return true
+    }
+
+    /// Turns the history by some lines, toward earlier output when positive.
+    func scroll(lines: CGFloat, startsGesture: Bool = false) {
+        guard lines != 0 else { return }
+        // A new gesture, or a turn the other way, starts counting afresh.
+        if startsGesture || (lines > 0) != (pendingScroll > 0) { pendingScroll = 0 }
+        pendingScroll += lines
+        if !scrollSendScheduled { sendScroll() }
+    }
+
+    /// Sends the whole lines turned so far, at most once a frame however fast the wheel turns.
+    private func sendScroll() {
+        let lines = Int(pendingScroll)
+        guard lines != 0 else { return }
+        pendingScroll -= CGFloat(lines)
+        onScroll?(lines > 0, abs(lines))
+        scrollSendScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60) { [weak self] in
+            self?.scrollSendScheduled = false
+            self?.sendScroll()
+        }
     }
 
     public override func selectionChanged(source: Terminal) {
@@ -356,12 +438,16 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
             self?.handleMouse(event)
             return event
         }
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            self?.handleScroll(event) == true ? nil : event
+        }
     }
 
     func removeInteractions() {
-        for monitor in [keyMonitor, mouseMonitor].compactMap({ $0 }) { NSEvent.removeMonitor(monitor) }
+        for monitor in [keyMonitor, mouseMonitor, scrollMonitor].compactMap({ $0 }) { NSEvent.removeMonitor(monitor) }
         keyMonitor = nil
         mouseMonitor = nil
+        scrollMonitor = nil
     }
 
     /// Keys that send Meta (Escape-prefixed) sequences although Option otherwise types characters.
@@ -464,7 +550,7 @@ extension ConsoleTerminalView {
     override func mouseMoved(with event: NSEvent) {
         guard let view else { return }
         let point = view.convert(event.locationInWindow, from: nil)
-        guard view.link(at: point) != nil || view.menuMoves(at: point) != nil else { return }
+        guard view.isClickable(at: point) else { return }
         NSCursor.pointingHand.set()
     }
 }

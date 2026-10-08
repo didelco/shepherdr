@@ -24,6 +24,11 @@ public final class TerminalStore {
     /// Another client already controls this terminal; Shepherdr fell back to observing it.
     public private(set) var isControlledElsewhere = false
 
+    /// How many lines above the latest output Herdr shows: 0 at the bottom. Herdr keeps the history.
+    public private(set) var linesBack = 0
+    @ObservationIgnored private var scrollCheck: Task<Void, Never>?
+    @ObservationIgnored private var scrolledSinceCheck = false
+
     public init(target: TerminalTarget, mode: TerminalMode = .observe,
                 client: any HerdrTerminalClient = CLIHerdrClient()) {
         self.target = target
@@ -47,6 +52,8 @@ public final class TerminalStore {
                 guard let self, attempt == self.generation, !Task.isCancelled else { stream.close(); return }
                 self.connection = stream
                 defer { stream.close() }
+                // Herdr may still show history someone scrolled to earlier.
+                self.checkLinesBack()
                 for try await event in stream.events {
                     guard attempt == self.generation, !Task.isCancelled else { return }
                     switch event {
@@ -102,6 +109,8 @@ public final class TerminalStore {
         resizeTask = nil
         inputTask?.cancel()
         inputTask = nil
+        scrollCheck?.cancel()
+        scrollCheck = nil
         task?.cancel()
         task = nil
         connection?.close()
@@ -124,8 +133,44 @@ public final class TerminalStore {
 
     public func press(_ key: TerminalKey) { send(.bytes(key.bytes)) }
 
+    /// Scrolls through the history Herdr keeps, which Herdr then paints; in a full-screen program,
+    /// such as less, Herdr scrolls the program instead. Herdr takes scrolling only from a client in control.
+    public func scroll(up: Bool, lines: Int) {
+        guard status == .interactive, lines > 0 else { return }
+        send(.scroll(up: up, lines: lines))
+        checkLinesBack()
+    }
+
+    /// Back to the latest output, as typing also does.
+    public func scrollToLatest() {
+        guard status == .interactive else { return }
+        // Herdr scrolls up to 500 lines at a time.
+        for _ in 0...(linesBack / 500) { send(.scroll(up: false, lines: 500)) }
+        if linesBack != 0 { linesBack = 0 }
+        checkLinesBack()
+    }
+
+    /// Asks Herdr how far back it shows the terminal once scrolling pauses, and again while it goes on.
+    private func checkLinesBack() {
+        scrolledSinceCheck = true
+        guard scrollCheck == nil else { return }
+        let attempt = generation
+        scrollCheck = Task { [weak self, client, target] in
+            while let self, self.scrolledSinceCheck, attempt == self.generation {
+                self.scrolledSinceCheck = false
+                do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+                if let lines = try? await client.linesBack(in: target), attempt == self.generation, lines != self.linesBack {
+                    self.linesBack = lines
+                }
+            }
+            if let self, attempt == self.generation { self.scrollCheck = nil }
+        }
+    }
+
     public func send(_ input: TerminalInput) {
         guard status == .interactive, let connection else { return }
+        // Herdr returns to the latest output whenever the terminal gets input.
+        if case .bytes = input, linesBack != 0 { linesBack = 0 }
         let previous = inputTask
         let attempt = generation
         // Keep keyboard/paste/resize order even though the transport API is asynchronous.

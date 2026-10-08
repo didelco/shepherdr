@@ -84,4 +84,17 @@ import Foundation
         #expect(local.agents[0].id != remote.agents[0].id)
         #expect(local.agents[0].id.terminalID == remote.agents[0].id.terminalID)
     }
+
+    @Test func howFarBackHerdrShowsATerminal() throws {
+        // As `herdr pane list` answers, trimmed to what matters.
+        let list = Data("""
+        {"id":"cli:pane:list","result":{"type":"pane_list","panes":[
+          {"pane_id":"w1:p1","terminal_id":"term_a","focused":true,
+           "scroll":{"max_offset_from_bottom":126,"offset_from_bottom":42,"viewport_rows":24}},
+          {"pane_id":"w2:p1","terminal_id":"term_b"}]}}
+        """.utf8)
+        #expect(try HerdrJSON.linesBack(list, terminalID: "term_a") == 42)
+        #expect(try HerdrJSON.linesBack(list, terminalID: "term_b") == nil)
+        #expect(try HerdrJSON.linesBack(list, terminalID: "term_gone") == nil)
+    }
 }

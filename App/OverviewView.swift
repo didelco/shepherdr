@@ -125,10 +125,13 @@ private struct SessionCard: View {
 
 struct BlinkingCursor: View {
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.55)) { timeline in
-            let on = Int(timeline.date.timeIntervalSinceReferenceDate / 0.55) % 2 == 0
-            Rectangle().fill(Theme.phosphor).frame(width: 7, height: 13).opacity(on ? 0.9 : 0).padding(.leading, 3)
+        FrameCycle(count: 2, interval: 0.55, size: CGSize(width: 7, height: 13), key: 0) { frame, context in
+            guard frame == 0 else { return }
+            context.setFillColor(NSColor(Theme.phosphor).withAlphaComponent(0.9).cgColor)
+            context.fill(CGRect(x: 0, y: 0, width: 7, height: 13))
         }
+        .frame(width: 7, height: 13)
+        .padding(.leading, 3)
         .accessibilityHidden(true)
     }
 }

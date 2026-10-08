@@ -83,4 +83,50 @@ struct ConsoleTerminalViewTests {
         // Nothing is left for SwiftTerm's delayed pass to paint.
         #expect(terminal.getUpdateRange() == nil)
     }
+
+    @Test func resizesLeaveNoStaleHistoryToScrollInto() {
+        let view = ConsoleTerminalView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        view.getTerminal().changeHistorySize(0)
+        // Herdr paints whole screens with the cursor at the bottom; a smaller one pushes rows out.
+        let rows = (1...10).map { "\u{1b}[\($0);1Hrow \($0)" }.joined()
+        view.show(TerminalFrame(bytes: Data(rows.utf8), columns: 40, rows: 10, isFull: true))
+        view.show(TerminalFrame(bytes: Data("\u{1b}[6;1H\u{1b}[2Klive".utf8), columns: 40, rows: 6, isFull: false))
+        #expect(!view.canScroll)
+        // Scrolling must not leave live output out of sight behind rows from before the resize.
+        view.scrollUp(lines: 3)
+        #expect(view.getTerminal().getLine(row: 5)?.translateToString(trimRight: true) == "live")
+    }
+
+    @Test func theWheelScrollsWholeLinesAtMostOnceAFrame() async throws {
+        let view = ConsoleTerminalView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        var sent: [String] = []
+        view.onScroll = { up, lines in sent.append("\(up ? "up" : "down") \(lines)") }
+        view.scroll(lines: 0.4, startsGesture: true)
+        #expect(sent.isEmpty)
+        // A whole line goes at once; what follows within the frame waits for it to end.
+        view.scroll(lines: 0.7)
+        view.scroll(lines: 2.5)
+        view.scroll(lines: 0.5)
+        #expect(sent == ["up 1"])
+        try await Task.sleep(for: .milliseconds(60))
+        #expect(sent == ["up 1", "up 3"])
+        // Turning the other way drops what was left of the other direction.
+        view.scroll(lines: -1.2)
+        try await Task.sleep(for: .milliseconds(60))
+        #expect(sent == ["up 1", "up 3", "down 1"])
+    }
+
+    @Test func framesSkipSynchronizedOutput() {
+        let frame = Data("\u{1b}[?2026h\u{1b}[?25l\u{1b}[5;1Hspin\u{1b}[?2026l\u{1b}[?2026".utf8)
+        #expect(ConsoleTerminalView.unsynchronized(frame) == Array("\u{1b}[?25l\u{1b}[5;1Hspin\u{1b}[?2026".utf8))
+        // A frame that changes one row repaints that row only.
+        let view = ConsoleTerminalView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        view.show(TerminalFrame(bytes: Data("\u{1b}[?2026h\u{1b}[2J\u{1b}[1;1Hfull\u{1b}[?2026l".utf8), columns: 40, rows: 10, isFull: true))
+        view.getTerminal().clearUpdateRange()
+        view.getTerminal().feed(text: "\u{1b}[?2026h\u{1b}[5;1Hspin\u{1b}[?2026l")
+        #expect(view.getTerminal().getUpdateRange().map { [$0.0, $0.1] } == [0, 9])
+        view.getTerminal().clearUpdateRange()
+        view.getTerminal().feed(byteArray: ConsoleTerminalView.unsynchronized(Data("\u{1b}[?2026h\u{1b}[5;1Hspun\u{1b}[?2026l".utf8)))
+        #expect(view.getTerminal().getUpdateRange().map { [$0.0, $0.1] } == [4, 4])
+    }
 }

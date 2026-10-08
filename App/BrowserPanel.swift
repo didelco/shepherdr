@@ -179,9 +179,21 @@ final class BrowserTab: NSObject, Identifiable, WKNavigationDelegate, WKUIDelega
         webView.removeFromSuperview()
     }
 
+    /// Where ⌘-clicked links go: your default browser.
+    static var openOutside: (URL) -> Void = { NSWorkspace.shared.open($0) }
+
+    /// A ⌘-click on a link, which opens it in your default browser instead.
+    private static func isCommandClick(_ action: WKNavigationAction) -> Bool {
+        action.navigationType == .linkActivated && action.modifierFlags.contains(.command)
+    }
+
     // Links that ask for a new window open as a tab in the same session's browser.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if Self.isCommandClick(navigationAction), let url = navigationAction.request.url {
+            Self.openOutside(url)
+            return nil
+        }
         guard let browser else { return nil }
         let tab = BrowserTab(url: nil, browser: browser, configuration: configuration)
         browser.add(tab)
@@ -197,6 +209,10 @@ final class BrowserTab: NSObject, Identifiable, WKNavigationDelegate, WKUIDelega
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  preferences: WKWebpagePreferences) async -> (WKNavigationActionPolicy, WKWebpagePreferences) {
         guard let url = navigationAction.request.url, let scheme = url.scheme?.lowercased() else { return (.allow, preferences) }
+        if Self.isCommandClick(navigationAction) {
+            Self.openOutside(url)
+            return (.cancel, preferences)
+        }
         if url.isFileURL, navigationAction.navigationType == .linkActivated, navigationAction.targetFrame?.isMainFrame != false {
             let file = url.removingFragment
             if LocalPage(file) != nil, file != self.url?.removingFragment { load(file) }

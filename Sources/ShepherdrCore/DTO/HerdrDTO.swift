@@ -103,6 +103,16 @@ struct WorktreeListDTO: Decodable {
     let worktrees: [Worktree]?
 }
 
+struct PaneListDTO: Decodable {
+    struct Envelope: Decodable { let result: PaneListDTO }
+    struct Pane: Decodable {
+        struct Scroll: Decodable { let offsetFromBottom: Int }
+        let terminalId: String
+        let scroll: Scroll?
+    }
+    let panes: [Pane]
+}
+
 struct ServerStatusDTO: Decodable {
     let running: Bool
     let compatible: Bool?
@@ -127,6 +137,12 @@ enum HerdrJSON {
                                                   isLinkedWorktree: worktree.isLinkedWorktree ?? false, path: worktree.path)
         }
         return result
+    }
+
+    /// How many lines above its latest output Herdr shows a terminal; nil when Herdr doesn't say.
+    static func linesBack(_ data: Data, terminalID: String) throws -> Int? {
+        let panes = try decoder().decode(PaneListDTO.Envelope.self, from: data).result.panes
+        return panes.first { $0.terminalId == terminalID }?.scroll.map { max(0, $0.offsetFromBottom) }
     }
 
     static func machines(_ data: Data) throws -> [Machine] {

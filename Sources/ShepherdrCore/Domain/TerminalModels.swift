@@ -115,4 +115,11 @@ public protocol HerdrTerminalConnection: Sendable {
 
 public protocol HerdrTerminalClient: Sendable {
     func connect(to target: TerminalTarget, mode: TerminalMode, size: TerminalSize) async throws -> any HerdrTerminalConnection
+    /// How many lines above its latest output Herdr shows the terminal: 0 at the bottom; nil when
+    /// Herdr cannot tell. Herdr keeps the history and scrolls it, for every client at once.
+    func linesBack(in target: TerminalTarget) async throws -> Int?
+}
+
+extension HerdrTerminalClient {
+    public func linesBack(in target: TerminalTarget) async throws -> Int? { nil }
 }

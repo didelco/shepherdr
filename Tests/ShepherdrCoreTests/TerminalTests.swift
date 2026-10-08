@@ -127,6 +127,9 @@ private final class MockTerminalConnection: HerdrTerminalConnection, @unchecked 
         lock.withLock { inputs.compactMap { if case .bytes(let data) = $0 { data } else { nil } } }
     }
     var isClosed: Bool { lock.withLock { closed } }
+    var scrolls: [String] {
+        lock.withLock { inputs.compactMap { if case .scroll(let up, let lines) = $0 { "\(up ? "up" : "down") \(lines)" } else { nil } } }
+    }
     init() {
         let pair = AsyncThrowingStream<TerminalEvent, Error>.makeStream()
         events = pair.stream
@@ -144,11 +147,15 @@ private actor MockTerminalClient: HerdrTerminalClient {
     var conflicted: Set<TerminalMode> = []
     /// How many attaches find a read of the pane in progress first.
     var busy: Int
+    /// How far back Herdr shows the terminal.
+    var history = 0
     init(_ connections: [MockTerminalConnection], conflicted: Set<TerminalMode> = [], busy: Int = 0) {
         self.connections = connections
         self.conflicted = conflicted
         self.busy = busy
     }
+    func linesBack(in target: TerminalTarget) async throws -> Int? { history }
+    func scrolled(to lines: Int) { history = lines }
     func connect(to target: TerminalTarget, mode: TerminalMode, size: TerminalSize) async throws -> any HerdrTerminalConnection {
         modes.append(mode)
         let connection = connections.removeFirst()
@@ -242,6 +249,40 @@ private actor MockTerminalClient: HerdrTerminalClient {
         store.press(.escape)
         try await wait { controller.sentBytes.count == 3 }
         #expect(controller.sentBytes == [Data("\u{1b}[200~line one\nline two\u{1b}[201~".utf8), Data([13]), Data([27])])
+    }
+
+    @Test func scrollingMovesThroughHerdrsHistoryAndInputReturnsToTheLatest() async throws {
+        let controller = MockTerminalConnection()
+        let client = MockTerminalClient([controller])
+        // Someone left the terminal scrolled back in Herdr.
+        await client.scrolled(to: 30)
+        let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
+        let store = TerminalStore(target: target, mode: .control, client: client)
+        defer { store.disconnect() }
+        store.open()
+        try await wait { store.status == .interactive && store.linesBack == 30 }
+        store.scrollToLatest()
+        #expect(store.linesBack == 0)
+        await client.scrolled(to: 0)
+        store.scroll(up: true, lines: 3)
+        store.scroll(up: true, lines: 4)
+        await client.scrolled(to: 7)
+        try await wait { store.linesBack == 7 }
+        #expect(controller.scrolls == ["down 500", "up 3", "up 4"])
+        // Herdr returns to the latest output on input.
+        store.send(.bytes(Data("x".utf8)))
+        #expect(store.linesBack == 0)
+    }
+
+    @Test func aLockedTerminalCannotScroll() async throws {
+        let observer = MockTerminalConnection()
+        let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
+        let store = TerminalStore(target: target, client: MockTerminalClient([observer]))
+        defer { store.disconnect() }
+        store.open()
+        try await wait { store.status == .observing }
+        store.scroll(up: true, lines: 5)
+        #expect(observer.scrolls.isEmpty)
     }
 
     @Test func testControlConflictFallsBackToWatchingUntilUserTakesOver() async throws {

@@ -7,6 +7,8 @@ public enum ConsoleFonts {
     public static let defaultFamily = "Fira Code"
     /// The system's SF Mono is not listed as a regular font family, so it gets a stable name.
     public static let systemFamily = "SF Mono"
+    /// Whether consoles join characters such as `->` and `!=` into ligatures; off unless chosen.
+    public static let ligaturesKey = "terminalLigatures"
 
     /// Registers the bundled fonts once. Safe to call repeatedly.
     @MainActor public static func registerBundled() {
@@ -36,15 +38,28 @@ public enum ConsoleFonts {
     }
 
     /// A font from `family`, falling back to Fira Code and then SF Mono.
-    @MainActor public static func font(family: String, size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+    @MainActor public static func font(family: String, size: CGFloat, weight: NSFont.Weight = .regular,
+                                       ligatures: Bool = true) -> NSFont {
         registerBundled()
         for candidate in [family, defaultFamily] where candidate != systemFamily {
             let descriptor = NSFontDescriptor(fontAttributes: [
                 .family: candidate,
                 .traits: [NSFontDescriptor.TraitKey.weight: weight],
             ])
-            if let font = NSFont(descriptor: descriptor, size: size), font.familyName == candidate { return font }
+            if let font = NSFont(descriptor: descriptor, size: size), font.familyName == candidate {
+                return ligatures ? font : withoutLigatures(font)
+            }
         }
         return .monospacedSystemFont(ofSize: size, weight: weight)
+    }
+
+    /// Fira Code builds its ligatures from hundreds of contextual substitutions; without them a busy
+    /// terminal redraws about two and a half times faster. Bold and italic faces keep the setting.
+    private static func withoutLigatures(_ font: NSFont) -> NSFont {
+        let descriptor = font.fontDescriptor.addingAttributes([.featureSettings: [
+            [NSFontDescriptor.FeatureKey.typeIdentifier: kLigaturesType, .selectorIdentifier: kCommonLigaturesOffSelector],
+            [NSFontDescriptor.FeatureKey.typeIdentifier: kContextualAlternatesType, .selectorIdentifier: kContextualAlternatesOffSelector],
+        ]])
+        return NSFont(descriptor: descriptor, size: font.pointSize) ?? font
     }
 }

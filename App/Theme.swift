@@ -186,9 +186,20 @@ struct PixelFace: View {
 
     var body: some View {
         if mood == .working && !reduceMotion {
-            TimelineView(.periodic(from: .now, by: 0.35)) { timeline in
-                face(drop: Int(timeline.date.timeIntervalSinceReferenceDate / 0.35) % 3)
+            let pixel = pixel
+            FrameCycle(count: 3, interval: 0.35, size: CGSize(width: 11 * pixel, height: 9 * pixel), key: pixel) { drop, context in
+                for (row, line) in Self.working.enumerated() {
+                    for (column, character) in line.enumerated() {
+                        guard let color = Self.colors[character] else { continue }
+                        context.setFillColor(NSColor(color).cgColor)
+                        context.fill(CGRect(x: CGFloat(column) * pixel, y: CGFloat(row) * pixel, width: pixel, height: pixel))
+                    }
+                }
+                context.setFillColor(NSColor(Theme.cyan).cgColor)
+                context.fill(CGRect(x: 10 * pixel, y: CGFloat(1 + drop * 2) * pixel, width: pixel, height: pixel * 2))
             }
+            .frame(width: 11 * pixel, height: 9 * pixel)
+            .accessibilityHidden(true)
         } else {
             face(drop: mood == .working ? 0 : nil)
         }
@@ -226,14 +237,16 @@ struct StateGlyph: View {
             if stale {
                 Text("◌")
             } else if state == .working || state == .blocked {
-                TimelineView(.periodic(from: .now, by: state == .working ? 0.1 : 0.5)) { timeline in
-                    let tick = Int(timeline.date.timeIntervalSinceReferenceDate * (state == .working ? 10 : 2))
-                    if state == .working {
-                        Text(String(Self.spinner[tick % Self.spinner.count]))
-                    } else {
-                        Text("!").opacity(tick % 2 == 0 ? 1 : 0.35)
-                    }
+                let working = state == .working
+                let color = NSColor(Theme.color(for: state))
+                FrameCycle(count: working ? Self.spinner.count : 2, interval: working ? 0.1 : 0.5,
+                           size: CGSize(width: 14, height: 16), key: state) { tick, context in
+                    let glyph = working ? String(Self.spinner[tick]) : "!"
+                    FrameCycle.draw(glyph, in: context, size: CGSize(width: 14, height: 16),
+                                    font: ConsoleFonts.font(family: ConsoleFonts.defaultFamily, size: 12, weight: .bold),
+                                    color: working || tick == 0 ? color : color.withAlphaComponent(0.35))
                 }
+                .frame(height: 16)
             } else {
                 Text(state == .done ? "✓" : state == .idle ? "○" : "?")
             }
@@ -241,6 +254,7 @@ struct StateGlyph: View {
         .font(Theme.mono(12, .bold))
         .foregroundStyle(Theme.color(for: state, stale: stale))
         .frame(width: 14)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(stale ? "\(state.title), stale" : state.title)
     }
 }
@@ -307,3 +321,84 @@ struct ConnectionDot: View {
             .accessibilityHidden(true)
     }
 }
+
+/// Still frames shown in turn by Core Animation, in the window server. A SwiftUI timeline would lay
+/// out the whole window on every tick: a tenth of a core for one spinner, for as long as agents work.
+struct FrameCycle: NSViewRepresentable {
+    let count: Int
+    /// How long each frame shows. Frames follow the clock, so every cycle of this pace is in step.
+    let interval: TimeInterval
+    let size: CGSize
+    /// Changing it draws the frames again.
+    let key: AnyHashable
+    /// Draws one frame, with the origin at the top left.
+    let draw: (_ frame: Int, _ context: CGContext) -> Void
+
+    func makeNSView(context: Context) -> FrameCycleView { FrameCycleView(cycle: self) }
+
+    func updateNSView(_ view: FrameCycleView, context: Context) {
+        guard view.cycle.key != key || view.cycle.count != count || view.cycle.size != size else { return }
+        view.cycle = self
+        view.render()
+    }
+
+    /// A glyph centered in a frame.
+    static func draw(_ text: String, in context: CGContext, size: CGSize, font: NSFont, color: NSColor) {
+        let string = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color])
+        let bounds = string.size()
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        string.draw(at: CGPoint(x: (size.width - bounds.width) / 2, y: (size.height - bounds.height) / 2))
+        NSGraphicsContext.restoreGraphicsState()
+    }
+}
+
+final class FrameCycleView: NSView {
+    var cycle: FrameCycle
+
+    init(cycle: FrameCycle) {
+        self.cycle = cycle
+        super.init(frame: CGRect(origin: .zero, size: cycle.size))
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var intrinsicContentSize: NSSize { cycle.size }
+    override var wantsUpdateLayer: Bool { true }
+    override func viewDidMoveToWindow() { render() }
+    override func viewDidChangeBackingProperties() { render() }
+
+    func render() {
+        guard let layer, let window else { return }
+        let scale = window.backingScaleFactor
+        let frames = (0..<cycle.count).compactMap { image($0, scale: scale) }
+        layer.contentsScale = scale
+        layer.contentsGravity = .center
+        layer.contents = frames.first
+        layer.removeAnimation(forKey: "frames")
+        guard frames.count > 1 else { return }
+        let animation = CAKeyframeAnimation(keyPath: "contents")
+        animation.values = frames
+        animation.keyTimes = (0...frames.count).map { NSNumber(value: Double($0) / Double(frames.count)) }
+        animation.calculationMode = .discrete
+        animation.duration = cycle.interval * Double(frames.count)
+        animation.repeatCount = .infinity
+        animation.isRemovedOnCompletion = false
+        let now = layer.convertTime(CACurrentMediaTime(), from: nil)
+        animation.beginTime = now - now.truncatingRemainder(dividingBy: animation.duration)
+        layer.add(animation, forKey: "frames")
+    }
+
+    private func image(_ frame: Int, scale: CGFloat) -> CGImage? {
+        guard let context = CGContext(data: nil, width: Int(ceil(cycle.size.width * scale)),
+                                      height: Int(ceil(cycle.size.height * scale)), bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.translateBy(x: 0, y: CGFloat(context.height))
+        context.scaleBy(x: scale, y: -scale)
+        cycle.draw(frame, context)
+        return context.makeImage()
+    }
+}
+
