@@ -1,16 +1,15 @@
 Native macOS console for herding your coding agents across your Herdr machines: one prioritized queue, the real terminal of every session, a browser per session, and a notification when it's your turn.
 
-### What's new in 0.8
+### What's new in 0.8.1
 
-- **Drop files and images on the terminal.** Their paths are pasted into the agent's prompt, escaped as other macOS terminals do, so Claude Code and Codex attach dropped images. An image without a file, from a web page say, is saved as a PNG first. In a session on another machine, each file is copied there over SSH first.
-- **Pull request checks.** While you look at a session, its GitHub pull requests show their CI checks: ● running, ✓ passed, ✗ failed. One query covers them all, every 15 seconds while checks run and every 2 minutes after; a notification tells you when they finish. Needs the GitHub CLI, signed in.
-- **Resources you can trust.** Each new resource is checked once: links agents write as examples leave the panel, and the rest show their page's title. A GitHub number is listed once, as the pull request or issue it really is. Each kind shows its ten most relevant first, the most opened and mentioned.
-- **More in the queue.** Each session shows where it works, its folder or, in cyan, the project of its Git worktree, and its pull request; click it to open the session with the pull request, or with all of them in tabs.
-- **Know when to close the lid.** The foot of the sidebar tells you whether it's safe to close the lid, or whether agents are working on this Mac.
+- **Scroll back through a session.** The trackpad and mouse wheel now move through the history Herdr keeps for each terminal, and full-screen programs such as `less` scroll themselves. While you read earlier output, **↓ LATEST** brings you back to the bottom; typing does too. Locked sessions don't scroll.
+- **Lighter on your Mac.** Terminals redraw only the lines that change, and the sidebar's animations no longer redraw the window. A busy agent's terminal takes about half the CPU it did, and a quiet one with agents working in the sidebar drops from about 15% to under 2%.
+- **Ligatures are now off by default**, because they make busy terminals redraw more slowly. Turn them back on in **Settings → General → Terminal font**.
+- **⌘-click a link in a session's browser** to open it in your default browser.
 
 ### Fixed
 
-- Clicking a notification could open a second window. Shepherdr now keeps a single window.
+- After the window changed size, scrolling could reach an old copy of the screen and hide new output until you typed.
 
 ### Download and install
 
