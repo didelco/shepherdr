@@ -64,7 +64,10 @@ struct MainView: View {
         view
         .alert("Rename Session", isPresented: Binding { model.renaming != nil } set: { if !$0 { model.renaming = nil } }) {
             TextField("Name", text: Binding { model.renaming?.name ?? "" } set: { model.renaming?.name = $0 })
-            Button("Rename") { Task { await model.commitRename() } }
+            Button("Rename") {
+                guard let prompt = model.renaming else { return }
+                Task { await model.commitRename(prompt) }
+            }
             Button("Cancel", role: .cancel) { model.renaming = nil }
         } message: {
             Text("Renames its Herdr workspace. Other panes in the same workspace share the name.")

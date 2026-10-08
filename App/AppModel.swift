@@ -619,9 +619,9 @@ final class AppModel {
         renaming = RenamePrompt(session: id, workspaceID: workspaceID, name: context.target.workspace)
     }
 
-    func commitRename() async {
-        guard let prompt = renaming else { return }
-        renaming = nil
+    /// Takes the prompt as it was when the button was tapped: dismissing the alert clears
+    /// `renaming` right away, before an awaited `Task` would get a chance to read it.
+    func commitRename(_ prompt: RenamePrompt) async {
         let name = prompt.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name != context(for: prompt.session)?.target.workspace else { return }
         do { try await cluster.renameWorkspace(prompt.workspaceID, to: name, onMachine: prompt.session.machineID) }
