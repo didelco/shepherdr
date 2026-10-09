@@ -57,7 +57,7 @@ struct BackgroundWorkTests {
         let remote = try #require(BackgroundWork.command(under: [12, 34], on: Fixture.remote))
         #expect(remote.executable.path == "/usr/bin/ssh")
         #expect(remote.arguments.contains("BatchMode=yes"))
-        #expect(try #require(remote.arguments.last).hasSuffix("' sh 12 34"))
+        #expect(try #require(remote.arguments.last).hasSuffix("' sh '12' '34'"))
     }
 
     @MainActor @Test func theStoreAsksForEachPaneShellOnceAndWatchesOnlyIdleAgents() async {

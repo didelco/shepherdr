@@ -58,21 +58,5 @@ public struct MachineUsage: Equatable, Sendable {
     echo "shepherdr-usage ${cpu:--} ${mem:--} ${disk:--}"
     """
 
-    static func command(for machine: Machine) -> (executable: URL, arguments: [String])? {
-        if machine.isLocal { return (URL(fileURLWithPath: "/bin/sh"), ["-c", script]) }
-        guard machine.isEnabled, let target = machine.checkedSSHTarget else { return nil }
-        return (URL(fileURLWithPath: "/usr/bin/ssh"),
-                ["-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=10",
-                 "-o", "ClearAllForwardings=yes", "-o", "ForwardAgent=no",
-                 "--", target, "sh -c \(TerminalCommand.quote(script))"])
-    }
-}
-
-extension Machine {
-    /// The saved SSH target, when it can only be read as a host and never as an option.
-    var checkedSSHTarget: String? {
-        guard let target, !target.isEmpty, !target.hasPrefix("-"),
-              target.rangeOfCharacter(from: CharacterSet.whitespacesAndNewlines.union(.controlCharacters)) == nil else { return nil }
-        return target
-    }
+    static func command(for machine: Machine) -> (executable: URL, arguments: [String])? { machine.shell(script) }
 }

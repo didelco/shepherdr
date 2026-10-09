@@ -52,13 +52,7 @@ public enum BackgroundWork {
     """
 
     static func command(under shells: [Int], on machine: Machine) -> (executable: URL, arguments: [String])? {
-        let roots = shells.map(String.init)
-        if machine.isLocal { return (URL(fileURLWithPath: "/bin/sh"), ["-c", script, "sh"] + roots) }
-        guard machine.isEnabled, let target = machine.checkedSSHTarget else { return nil }
-        return (URL(fileURLWithPath: "/usr/bin/ssh"),
-                ["-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=10",
-                 "-o", "ClearAllForwardings=yes", "-o", "ForwardAgent=no",
-                 "--", target, "sh -c \(TerminalCommand.quote(script)) sh \(roots.joined(separator: " "))"])
+        machine.shell(script, arguments: shells.map(String.init))
     }
 
     /// Reads `ps -o pid=,ppid=,etime=,args=` lines.

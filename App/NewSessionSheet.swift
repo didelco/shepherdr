@@ -24,6 +24,10 @@ struct NewSessionSheet: View {
     @ViewState<String> private var directory: String
     @ViewState<String> private var name = ""
     @ViewState<HerdrFailure?> private var failure: HerdrFailure? = nil
+    /// A folder that doesn't exist yet, waiting for the user to make it a new project.
+    @ViewState<String?> private var newProject: String? = nil
+    /// What the sheet is doing before Herdr creates the workspace, such as checking the folder.
+    @ViewState<String?> private var progress: String? = nil
     @FocusState private var focus: Field?
 
     private enum Field { case directory, name }
@@ -52,8 +56,9 @@ struct NewSessionSheet: View {
             ?? URL(fileURLWithPath: resolvedDirectory).lastPathComponent
     }
     private var canCreate: Bool {
-        machine != nil && !resolvedDirectory.isEmpty && !resolvedName.isEmpty && !model.isCreatingSession
+        machine != nil && !resolvedDirectory.isEmpty && !resolvedName.isEmpty && !model.isCreatingSession && progress == nil
     }
+    private var whereabouts: String { isLocal ? "on this Mac" : "on \(machine?.machine.name ?? "that machine")" }
     private var subtitle: String {
         guard case .into(let groupID) = draft.placement,
               let group = model.groups.first(where: { $0.id == groupID }) else { return "a new herdr workspace with a shell in it" }
@@ -102,6 +107,15 @@ struct NewSessionSheet: View {
             Text("Start an agent in its terminal when you need one; the session joins the queue as soon as Herdr detects it.")
                 .font(Theme.mono(10)).foregroundStyle(Theme.faint).fixedSize(horizontal: false, vertical: true)
 
+            if let newProject {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("? \(isLocal ? (newProject as NSString).abbreviatingWithTildeInPath : newProject) doesn't exist \(whereabouts).")
+                        .font(Theme.mono(11)).foregroundStyle(Theme.amber)
+                    Text("Start a new project there? Shepherdr makes the folder, runs git init in it and opens the session.")
+                        .font(Theme.mono(10)).foregroundStyle(Theme.dim).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             if let failure {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("✗ \(failure.message)").font(Theme.mono(11)).foregroundStyle(Theme.red)
@@ -112,16 +126,16 @@ struct NewSessionSheet: View {
             }
 
             HStack {
-                if model.isCreatingSession {
-                    Text("creating workspace…").font(Theme.mono(10.5)).foregroundStyle(Theme.phosphor)
+                if model.isCreatingSession || progress != nil {
+                    Text(progress ?? "creating workspace…").font(Theme.mono(10.5)).foregroundStyle(Theme.phosphor)
                     BlinkingCursor()
                 }
                 Spacer()
                 Button("CANCEL") { model.newSession = nil }
                     .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
                     .keyboardShortcut(.cancelAction)
-                    .disabled(model.isCreatingSession)
-                Button("CREATE ⏎") { create() }
+                    .disabled(model.isCreatingSession || progress != nil)
+                Button(newProject == nil ? "CREATE ⏎" : "NEW PROJECT ⏎") { newProject == nil ? create() : createProject() }
                     .buttonStyle(ConsoleButtonStyle(prominent: true))
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canCreate)
@@ -132,6 +146,8 @@ struct NewSessionSheet: View {
         .background(Theme.panel)
         // A prefilled folder usually only needs a name.
         .onAppear { focus = directory.isEmpty ? .directory : .name }
+        // The question and any failure were about the folder as it was.
+        .onChange(of: resolvedDirectory) { newProject = nil; failure = nil }
     }
 
     /// The folders agents on this machine work in, the most used first, one click away.
@@ -194,16 +210,48 @@ struct NewSessionSheet: View {
         }
     }
 
+    /// Checks the folder on its machine first: Herdr would open a missing one's workspace in the home folder.
     private func create() {
         guard canCreate, let machine else { return }
-        var isDirectory: ObjCBool = false
-        if isLocal, !FileManager.default.fileExists(atPath: resolvedDirectory, isDirectory: &isDirectory) || !isDirectory.boolValue {
-            failure = HerdrFailure(.unreachable, "That folder does not exist on this Mac.")
-            return
-        }
         failure = nil
         lastMachineID = machine.id
-        let request = NewSessionRequest(directory: resolvedDirectory, name: resolvedName, agentKind: nil)
+        let typed = resolvedDirectory
+        Task {
+            progress = "checking folder…"
+            let state = await ProjectFolder.check(typed, on: machine.machine)
+            progress = nil
+            guard typed == resolvedDirectory else { return }
+            switch state {
+            case .folder(let path): open(path, on: machine)
+            case .missing(let path): newProject = path
+            case .notAFolder: failure = HerdrFailure(.unreachable, "That is a file, not a folder.")
+            // Another machine may answer Herdr although it doesn't answer SSH.
+            case nil where !isLocal: open(typed, on: machine)
+            case nil: failure = HerdrFailure(.unreachable, "Could not check that folder.")
+            }
+        }
+    }
+
+    /// Makes the missing folder a new project, a folder with an empty Git repository, and opens it.
+    private func createProject() {
+        guard let path = newProject, canCreate, let machine else { return }
+        failure = nil
+        Task {
+            progress = "creating project…"
+            defer { progress = nil }
+            do {
+                try await ProjectFolder.create(path, on: machine.machine)
+            } catch {
+                failure = AppModel.failure(error)
+                return
+            }
+            newProject = nil
+            open(path, on: machine)
+        }
+    }
+
+    private func open(_ path: String, on machine: MachineState) {
+        let request = NewSessionRequest(directory: path, name: resolvedName, agentKind: nil)
         Task { failure = await model.createSession(request, onMachine: machine.id, placement: draft.placement) }
     }
 }

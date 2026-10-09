@@ -111,6 +111,8 @@ You can reorder while filtering the queue (**⌘F**): movement is relative to th
 
 Below the folder, the folders agents on the selected machine work in are one click away, the most used first. Git worktrees are left out: they belong to the session that made them.
 
+Shepherdr checks the folder on its machine first, over SSH for other machines, where `~` means that machine's home and a relative path starts there. If it doesn't exist, New Session offers to start a new project there: **NEW PROJECT** makes the folder, runs `git init` in it and opens the session. Herdr itself would open a missing folder's workspace in the home folder without a word.
+
 On this Mac, **CHOOSE…** always starts in your projects folder, `~/projects` unless you change it in **Settings → General**, and a folder name alone means a folder inside it. **New Session in Same Folder…** in a session's or shell's context menu prefills its folder and machine and places the new session right after it, in the same group. A group header's **+** places it in that group.
 
 **Close Session…** in a session's context menu asks for confirmation, then runs `herdr pane close`. It is deliberately only in the context menu, away from everyday controls. This ends the agent process. When it is the workspace's last pane, Herdr closes the workspace too.
