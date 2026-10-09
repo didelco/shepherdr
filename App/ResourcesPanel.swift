@@ -48,10 +48,11 @@ struct ResourcesPanel: View {
 
     private func row(_ resource: SessionResource) -> some View {
         let isOpen = workspace.browser.isVisible && workspace.browser.selected?.url == resource.url
+        let isMerged = checks.checks[resource.key]?.isMerged == true
         return Button { workspace.open(resource) } label: {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Text(Self.glyph(resource.kind)).font(Theme.mono(10.5, .bold))
-                    .foregroundStyle(Self.tint(resource.kind)).frame(width: 12)
+                    .foregroundStyle(isMerged ? Theme.lilac : Self.tint(resource.kind)).frame(width: 12)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 5) {
                         Text(resource.name).font(Theme.mono(11, .medium)).lineLimit(1).truncationMode(.middle)
@@ -85,6 +86,7 @@ struct ResourcesPanel: View {
     private func help(for resource: SessionResource) -> String {
         var lines: [String] = []
         if let title = resource.title { lines.append(title) }
+        if checks.checks[resource.key]?.isMerged == true { lines.append("Merged") }
         if let summary = checks.checks[resource.key]?.summary, !summary.isEmpty { lines.append("Checks: " + summary) }
         lines.append(resource.url.absoluteString)
         lines.append("Mentioned \(resource.mentions)× · opened \(resource.opens)×")

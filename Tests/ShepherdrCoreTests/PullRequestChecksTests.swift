@@ -27,9 +27,9 @@ struct PullRequestChecksTests {
                      "https://github.com/theam/shepherdr/pull/1", "https://github.com/a/b/pull/3"].map(pull)
         let checks = await lookup.checks(of: pulls)
         let running = checks?[pulls[0].key], failing = checks?[pulls[1].key], merged = checks?[pulls[2].key]
-        #expect(running?.state == .running && running?.summary == "2 passed · 1 running" && running?.head == "abc")
+        #expect(running?.state == .running && running?.summary == "2 passed · 1 running" && running?.head == "abc" && running?.isMerged == false)
         #expect(failing?.state == .failed && failing?.failed == 2 && failing?.passed == 1)
-        #expect(merged?.isOpen == false && merged?.state == PullRequestChecks.State.none)
+        #expect(merged?.isOpen == false && merged?.isMerged == true && merged?.state == PullRequestChecks.State.none)
         #expect(checks?[pulls[3].key] == nil)
         let arguments = await runner.recordedArguments().first ?? []
         #expect(Array(arguments.prefix(3)) == ["api", "graphql", "-f"])

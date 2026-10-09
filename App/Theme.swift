@@ -16,6 +16,8 @@ enum Theme {
     static let amber = Color(hex: 0xFFB547)
     static let cyan = Color(hex: 0x5CD6FF)
     static let red = Color(hex: 0xFF5F57)
+    /// The terminal's magenta: merged pull requests, as GitHub marks them.
+    static let lilac = Color(hex: 0xD77CFF)
 
     /// In-between shades for the pixel-art artwork (app icon, README header): the logo's amber coat
     /// and the terminal's pinks, filled out so lightness steps stay small. scripts/pixelate.swift reads

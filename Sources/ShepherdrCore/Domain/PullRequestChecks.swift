@@ -13,14 +13,16 @@ public struct PullRequestChecks: Equatable, Sendable {
     public let running: Int
     /// Merged and closed pull requests are no longer watched.
     public let isOpen: Bool
+    public let isMerged: Bool
     /// The latest commit: a new push restarts the checks.
     public let head: String
 
-    public init(passed: Int, failed: Int, running: Int, isOpen: Bool, head: String) {
+    public init(passed: Int, failed: Int, running: Int, isOpen: Bool, isMerged: Bool = false, head: String) {
         self.passed = passed
         self.failed = failed
         self.running = running
         self.isOpen = isOpen
+        self.isMerged = isMerged
         self.head = head
     }
 
@@ -105,7 +107,8 @@ extension GitHubLookup {
                 }
             }
             result[key] = PullRequestChecks(passed: passed, failed: failed, running: running,
-                                            isOpen: pull["state"] as? String == "OPEN", head: pull["headRefOid"] as? String ?? "")
+                                            isOpen: pull["state"] as? String == "OPEN", isMerged: pull["state"] as? String == "MERGED",
+                                            head: pull["headRefOid"] as? String ?? "")
         }
         return result
     }
