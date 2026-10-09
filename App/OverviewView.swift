@@ -332,7 +332,11 @@ private struct SessionCard: View {
                 Text(row.title).font(Theme.mono(11)).foregroundStyle(Theme.text.opacity(0.7)).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 8) {
-                    Text(showsMachine ? "\(row.agent.kind) @\(row.machineName)" : row.agent.kind).layoutPriority(1)
+                    HStack(spacing: 5) {
+                        AgentMark(program: row.agent.program)
+                        if showsMachine { Text("@\(row.machineName)") }
+                    }
+                    .layoutPriority(1)
                     BackgroundLabel(commands: background).foregroundStyle(Theme.dim)
                 }
                 .font(Theme.mono(10)).foregroundStyle(Theme.faint).lineLimit(1)

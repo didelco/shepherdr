@@ -125,7 +125,7 @@ struct MainView: View {
 
     private func closeMessage(_ id: Agent.ID) -> String {
         guard let context = model.context(for: id) else { return "" }
-        let what = context.agent.map { "ends \($0.agent.kind) and closes" } ?? "closes"
+        let what = context.agent.map { "ends \($0.agent.program.name) and closes" } ?? "closes"
         return "This \(what) pane \(context.paneID) in Herdr\(context.machine.machine.isLocal ? "" : " on \(context.machine.machine.name)"). "
             + "If it is the workspace's last pane, the workspace closes too. This cannot be undone."
     }

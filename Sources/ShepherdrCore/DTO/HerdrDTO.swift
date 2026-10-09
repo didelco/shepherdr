@@ -182,12 +182,14 @@ enum HerdrJSON {
         let agents = dto.agents.map { item in
             let workspace = workspaces[item.workspaceId]
             let pane = panes[item.paneId]
-            let kind = item.displayAgent?.nonempty ?? item.agent?.nonempty ?? "Unknown agent"
+            // Herdr's label names the agent; what a pane reports for display only names the session.
+            let kind = item.agent?.nonempty ?? item.displayAgent?.nonempty ?? ""
+            let display = item.displayAgent?.nonempty ?? AgentProgram(label: kind).name
             let directory = item.foregroundCwd?.nonempty ?? pane?.foregroundCwd?.nonempty
                 ?? item.cwd?.nonempty ?? pane?.cwd?.nonempty ?? workspace?.worktree?.checkoutPath
             return Agent(
                 id: .init(machineID: machine.id, terminalID: item.terminalId),
-                name: item.name?.nonempty ?? kind, kind: kind,
+                name: item.name?.nonempty ?? display, kind: kind,
                 state: AgentState(reportedValue: item.agentStatus), reportedState: item.agentStatus,
                 workspaceID: item.workspaceId, workspaceName: workspace?.label.nonempty ?? item.workspaceId,
                 tabID: item.tabId, tabName: tabs[item.tabId]?.label.nonempty ?? item.tabId,

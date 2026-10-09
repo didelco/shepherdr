@@ -316,6 +316,55 @@ struct StateTag: View {
     }
 }
 
+/// The agent working in a session, by the mark its own interface shows: `✻ claude` in a row, and a
+/// tag with its name in the session's header.
+struct AgentMark: View {
+    enum Style { case label, tag }
+    let program: AgentProgram
+    var style: Style = .label
+
+    var body: some View {
+        HStack(spacing: style == .tag ? 5 : 3) {
+            Text(program.glyph).fontWeight(.bold).foregroundStyle(Self.tint(program))
+            if style == .tag {
+                Text(program.name.uppercased()).tracking(1).foregroundStyle(Theme.dim)
+            } else {
+                Text(program.label).lineLimit(1)
+            }
+        }
+        .modifier(TagFrame(isTag: style == .tag))
+        .help(program.name)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(program.name)
+    }
+
+    /// The agents' own accent where the palette has one close by; the rest stay neutral.
+    static func tint(_ program: AgentProgram) -> Color {
+        switch program.label {
+        case "claude": Color(hex: 0xFFA99F)
+        case "codex": Theme.text
+        case "gemini": Theme.lilac
+        default: Theme.dim
+        }
+    }
+
+    private struct TagFrame: ViewModifier {
+        let isTag: Bool
+
+        func body(content: Content) -> some View {
+            if isTag {
+                content
+                    .font(Theme.mono(10, .bold))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Theme.raised, in: RoundedRectangle(cornerRadius: 3))
+                    .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(Theme.line, lineWidth: 1))
+            } else {
+                content
+            }
+        }
+    }
+}
+
 /// `// SECTION` headers used across the console.
 struct ConsoleHeader: View {
     let title: String

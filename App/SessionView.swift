@@ -129,6 +129,7 @@ struct SessionView: View {
                     BackgroundLabel(commands: background)
                         .font(Theme.mono(10)).foregroundStyle(Theme.dim).frame(maxWidth: 220, alignment: .trailing)
                 }
+                AgentMark(program: agent.agent.program, style: .tag)
                 StateTag(state: agent.agent.state, stale: agent.isStale)
             }
             lockButton
@@ -348,7 +349,7 @@ private struct SessionDetails: View {
         VStack(alignment: .leading, spacing: 12) {
             ConsoleHeader(title: "Session")
             if let row = context.agent {
-                field("Agent", row.agent.kind)
+                field("Agent", "\(row.agent.program.name) · \(row.agent.program.label)")
                 field("State", row.agent.state == .unknown ? "Unknown (\(row.agent.reportedState))" : row.agent.state.title)
                 field("Tab", "\(row.agent.tabName) · \(row.agent.tabID)")
                 field("Pane", row.agent.paneID)

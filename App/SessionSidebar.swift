@@ -284,7 +284,7 @@ private struct SessionRowView: View {
             .contentShape(Rectangle())
             .onTapGesture { model.open(row.id) }
             .onHover { hovering = $0 }
-            .help("\(row.agent.kind) · \(row.project)")
+            .help("\(row.agent.program.name) · \(row.project)")
             .queueDraggable(item, model: model, enabled: !isNested)
             .onDrop(of: [.plainText], delegate: QueueDropDelegate(model: model, hint: $hint) { dragged, y in
                 drop(of: dragged, at: y)
@@ -440,23 +440,22 @@ private struct SessionRowView: View {
         return text
     }
 
-    /// The session's pull request, when it has one, where it works: its folder, or for a worktree
-    /// its project, and what its agent left running.
-    @ViewBuilder private var whereabouts: some View {
+    /// The session's agent, its pull request when it has one, where it works: its folder, or for a
+    /// worktree its project, and what its agent left running.
+    private var whereabouts: some View {
         let pulls = model.pullRequests(of: row.id)
         let checkout = model.cluster.checkout(machineID: row.id.machineID, workspaceID: row.agent.workspaceID)
         let folder: String? = checkout?.name ?? row.agent.directory.map { ($0 as NSString).lastPathComponent }
         let background = model.backgroundCommands(of: row)
-        if !pulls.isEmpty || folder != nil || !background.isEmpty {
-            HStack(spacing: 9) {
-                if !pulls.isEmpty { pullsButton(pulls) }
-                if let folder { folderLabel(folder, checkout: checkout) }
-                BackgroundLabel(commands: background).foregroundStyle(Theme.dim).layoutPriority(-1)
-            }
-            .font(Theme.mono(9.5))
-            .foregroundStyle(Theme.faint)
-            .padding(.top, 1)
+        return HStack(spacing: 9) {
+            AgentMark(program: row.agent.program).foregroundStyle(Theme.dim)
+            if !pulls.isEmpty { pullsButton(pulls) }
+            if let folder { folderLabel(folder, checkout: checkout) }
+            BackgroundLabel(commands: background).foregroundStyle(Theme.dim).layoutPriority(-1)
         }
+        .font(Theme.mono(9.5))
+        .foregroundStyle(Theme.faint)
+        .padding(.top, 1)
     }
 
     private func pullsButton(_ pulls: [SessionResource]) -> some View {
