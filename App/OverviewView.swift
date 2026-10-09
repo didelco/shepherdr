@@ -25,6 +25,7 @@ struct OverviewView: View {
                     NoticeView(title: "\(state.machine.name): \(state.connection.title)" + (state.isStale ? " · showing last known data" : ""),
                                message: state.failure?.message ?? "", detail: state.failure?.detail)
                 }
+                GitHubInboxSection(model: model)
                 sessions
             }
             .padding(.horizontal, 28).padding(.top, 40).padding(.bottom, 28)

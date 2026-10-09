@@ -310,6 +310,8 @@ final class AppModel {
 
     /// The New Session sheet, while it is open.
     var newSession: NewSessionDraft?
+    /// The sheet choosing the repositories the GitHub inbox follows, while it is open.
+    var showsGitHubRepositoriesSheet = false
     private(set) var isCreatingSession = false
     /// The session awaiting close confirmation.
     var closingSession: Agent.ID?
@@ -321,6 +323,10 @@ final class AppModel {
     @ObservationIgnored let notifier = SessionNotifier()
     /// CI checks of the pull requests of the session on screen.
     let checksMonitor = ChecksMonitor()
+    /// The repositories the home screen's GitHub inbox follows, and which items you've seen.
+    let githubInbox = GitHubInboxStore()
+    /// What GitHub asks of you in those repositories.
+    let inboxMonitor = GitHubInboxMonitor()
     /// The overview's choice of states and machines.
     var sessionFilter = SessionFilter()
     /// How busy each machine is, measured while the overview is on screen.
@@ -365,6 +371,7 @@ final class AppModel {
         readiness.onChange { [weak self] in self?.compass.tick() }
         // Commands to each machine share one SSH connection from now on.
         SSHOptions.prepareSharing()
+        inboxMonitor.model = self
     }
 
     /// A refresh you asked for: also looks in every outbox for letters whose doorbell was lost.
