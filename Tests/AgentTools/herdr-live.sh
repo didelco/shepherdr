@@ -65,11 +65,16 @@ h pane run "$caller" "$cli spawn --shell --split right > $home/split.txt 2>&1; e
 wait_for "$home/split.done" || problem "split never finished"
 [ "$(cat "$home/split.done" 2>/dev/null)" = 0 ] || problem "split failed: $(cat "$home/split.txt")"
 
-# A second letter rings the doorbell again.
+# A second letter rings the doorbell again. Letters written within the same second sort by their
+# random part, so the new one is the one that wasn't there before.
+# shellcheck disable=SC2012
+ls "$home/.shepherdr/outbox" >"$home/before.txt"
 h pane run "$caller" "$cli notify 'live test' > $home/notify.txt 2>&1; echo \$? > $home/notify.done" >/dev/null
 wait_for "$home/notify.done" || problem "notify never finished"
-# shellcheck disable=SC2012
-newest=$(ls "$home/.shepherdr/outbox" | sort | tail -n 1)
+newest=
+for entry in "$home/.shepherdr/outbox"/*; do
+    grep -qxF "${entry##*/}" "$home/before.txt" || newest=${entry##*/}
+done
 case $(h api snapshot) in *"\"shepherdr-mail\":\"$newest\""*) ;; *) problem "the doorbell didn't ring again" ;; esac
 
 # Folders where sessions work.
