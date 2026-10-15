@@ -357,23 +357,34 @@ private actor MockTerminalClient: HerdrTerminalClient {
         #expect(await client.requestedModes() == [.control, .control])
     }
 
-    @Test func reconnectingBacksOffAndGivesUpAfterItsBudget() async throws {
+    @Test func reconnectingBacksOffWhileItHasBudget() async throws {
         let policy = ReconnectPolicy.standard
         #expect([0, 1, 3, 8, 9, 40].map(policy.delay(after:)) == [.seconds(1), .seconds(2), .seconds(8), .seconds(256), .seconds(300), .seconds(300)])
-        let client = MockTerminalClient([MockTerminalConnection()], failing: 100)
+        let client = MockTerminalClient([], failing: 100)
         let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
         let store = TerminalStore(target: target, client: client,
-                                  reconnecting: .init(first: .milliseconds(5), longest: .milliseconds(20), budget: .milliseconds(200)))
+                                  reconnecting: .init(first: .milliseconds(5), longest: .milliseconds(20), budget: .seconds(3_600)))
+        defer { store.disconnect() }
+        store.open()
+        try await wait { (store.reconnection?.attempts ?? 0) >= 3 }
+        #expect(store.reconnection?.gaveUp == false)
+    }
+
+    @Test func reconnectingGivesUpAfterItsBudget() async throws {
+        let client = MockTerminalClient([MockTerminalConnection()], failing: 100)
+        let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
+        // A budget shorter than the first wait has run out by the time that attempt fails, however slow the machine.
+        let store = TerminalStore(target: target, client: client,
+                                  reconnecting: .init(first: .milliseconds(5), longest: .milliseconds(20), budget: .milliseconds(1)))
         defer { store.disconnect() }
         store.open()
         try await wait { store.reconnection?.gaveUp == true }
-        let attempts = try #require(store.reconnection?.attempts)
-        #expect(attempts >= 3)
-        #expect(await client.requestedModes().count == attempts + 1)
+        #expect(store.reconnection?.attempts == 1)
+        #expect(await client.requestedModes().count == 2)
         #expect(store.status == .failed && store.reconnection?.next == nil)
         // Giving up stops trying until the user reconnects, which starts over.
         try await Task.sleep(for: .milliseconds(60))
-        #expect(await client.requestedModes().count == attempts + 1)
+        #expect(await client.requestedModes().count == 2)
         store.open()
         #expect(store.reconnection == nil)
     }
