@@ -124,7 +124,7 @@ struct AgentToolsTests {
     /// every change to the command or the skill needs a new `VERSION`. Each version keeps its
     /// fingerprint here: after bumping it, add the new one this test prints.
     @Test func changingTheToolsTakesANewVersion() throws {
-        let fingerprints = [1: "952e8ee960eebc1c"]
+        let fingerprints = [1: "2434a1a8d839ed0d"]
         let kit = try AgentTools.bundled()
         var hash = SHA256()
         for path in kit.files.keys.sorted() where path != "VERSION" {

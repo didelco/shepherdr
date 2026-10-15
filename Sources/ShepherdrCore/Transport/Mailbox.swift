@@ -25,8 +25,11 @@ public enum Mailbox {
     static let tripLimit = 7 * 1_024 * 1_024
     static let lettersPerTrip = 50
 
-    /// Prints waiting letters, oldest first, until the trip's limits.
+    /// Prints waiting letters, oldest first, until the trip's limits. Both scripts run in the C locale:
+    /// otherwise bash, /bin/sh on some Linux systems, takes ranges such as `[A-Z]` from the collation
+    /// of the locale SSH passes along.
     static let collectScript = """
+    export LC_ALL=C
     box="$HOME/.shepherdr/outbox"
     limit=$1
     echo 'shepherdr-mail 1'
@@ -64,6 +67,7 @@ public enum Mailbox {
 
     /// Moves collected letters out of the way, and clears what was collected over a week ago.
     static let acknowledgeScript = """
+    export LC_ALL=C
     box="$HOME/.shepherdr/outbox"
     [ -d "$box" ] || { echo shepherdr-acknowledged; exit 0; }
     mkdir -p "$box/.collected"

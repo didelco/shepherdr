@@ -1,7 +1,9 @@
 #!/bin/sh
-# Tests the agent tools' command line against a fake herdr, with whatever /bin/sh this machine
-# has: run it with dash, bash, busybox sh or zsh's sh to cover the shells agents meet.
+# Tests the agent tools' command line against a fake herdr. The command runs with sh, or with
+# TEST_SHELL: try dash, bash, busybox sh and zsh's sh, the shells agents meet, and a locale such
+# as en_US.UTF-8.
 #   sh Tests/AgentTools/test.sh
+#   LC_ALL=en_US.UTF-8 TEST_SHELL=bash sh Tests/AgentTools/test.sh
 # Needs nothing but POSIX tools. python3, when present, also checks that letters are valid JSON.
 
 set -u
@@ -214,6 +216,10 @@ run spawn --cwd "$home/missing"
 expect_status 1
 expect_output "No folder at"
 run spawn --name Bad
+expect_status 2
+run spawn --name "café"
+expect_status 2
+run spawn --name zed --kind Claude
 expect_status 2
 run spawn --shell --prompt hi
 expect_status 2

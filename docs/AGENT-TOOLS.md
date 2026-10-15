@@ -117,9 +117,10 @@ Letters from the Mac apply on their own. From another machine, anything whose te
 ## Testing
 
 ```sh
-sh Tests/AgentTools/test.sh             # the command against a fake herdr; run it with dash or busybox sh too
+sh Tests/AgentTools/test.sh             # the command against a fake herdr
+TEST_SHELL=dash sh Tests/AgentTools/test.sh   # with another shell: dash, bash, busybox sh
 sh Tests/AgentTools/herdr-live.sh       # against a real Herdr, in a server of its own
 swift test --filter "AgentTools|Letter|Mail"
 ```
 
-`test.sh` needs only POSIX tools. CI runs it on macOS, with dash and BusyBox on Linux, and ShellCheck. `herdr-live.sh` starts a Herdr server in a scratch home under `/tmp` (socket paths must be short), spawns shells from a pane and checks letters and doorbells; CI installs Herdr with Homebrew to run it. The Swift tests run the real command and scripts in a scratch home: what the command writes, the Swift side reads.
+`test.sh` needs only POSIX tools. CI runs it on macOS, with dash and BusyBox on Linux, and ShellCheck. Spell out character sets in patterns instead of ranges such as `[a-z]`: bash matches ranges by the locale's collation, so under `en_US.UTF-8` `[a-z]` takes `B`. The scripts Shepherdr runs over SSH also set `LC_ALL=C`; the command leaves the locale alone. `herdr-live.sh` starts a Herdr server in a scratch home under `/tmp` (socket paths must be short), spawns shells from a pane and checks letters and doorbells; CI installs Herdr with Homebrew to run it. The Swift tests run the real command and scripts in a scratch home: what the command writes, the Swift side reads.

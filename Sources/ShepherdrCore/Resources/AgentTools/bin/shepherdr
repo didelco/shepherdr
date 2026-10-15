@@ -21,6 +21,10 @@ machines_file=$root/machines
 tab=$(printf '\t')
 nl='
 '
+# Spelled out: bash takes ranges such as [a-z] from the locale's collation, where B falls
+# between a and z.
+lowercase=abcdefghijklmnopqrstuvwxyz
+alnum=ABCDEFGHIJKLMNOPQRSTUVWXYZ${lowercase}0123456789
 work=
 letter_dir=
 
@@ -70,18 +74,18 @@ json_value() {
     printf '%s' "$2" | grep -o "\"$1\":\"[^\"\\\\]*\"" | head -n 1 | sed 's/^"[^"]*":"//; s/"$//'
 }
 
-is_pane_id() { case $1 in '' | *[!A-Za-z0-9:_-]*) return 1 ;; esac; }
-is_terminal_id() { case $1 in '' | *[!A-Za-z0-9_-]*) return 1 ;; esac; }
-is_profile_id() { case $1 in '' | *[!A-Za-z0-9._-]*) return 1 ;; esac; }
+is_pane_id() { case $1 in '' | *[!${alnum}:_-]*) return 1 ;; esac; }
+is_terminal_id() { case $1 in '' | *[!${alnum}_-]*) return 1 ;; esac; }
+is_profile_id() { case $1 in '' | *[!${alnum}._-]*) return 1 ;; esac; }
 
 # Herdr's rule for agent names, which Shepherdr also uses for workspace labels it creates.
 is_agent_name() {
-    case $1 in [a-z]*) ;; *) return 1 ;; esac
-    case $1 in *[!a-z0-9_-]*) return 1 ;; esac
+    case $1 in [${lowercase}]*) ;; *) return 1 ;; esac
+    case $1 in *[!${lowercase}0123456789_-]*) return 1 ;; esac
     [ ${#1} -le 32 ]
 }
 
-is_agent_kind() { case $1 in '' | *[!a-z0-9_-]*) return 1 ;; esac; }
+is_agent_kind() { case $1 in '' | *[!${lowercase}0123456789_-]*) return 1 ;; esac; }
 
 is_url() {
     case $1 in http://?* | https://?*) ;; *) return 1 ;; esac
