@@ -176,6 +176,13 @@ In the tree, the sessions it waits for don't show their priority number: they fo
 
 Opening a session on hold shows a panel above its terminal with the sessions it waits for and their state. Click one to open it, **×** to stop waiting for it, **+** to add more, or **RESUME** to take the session off hold. Sessions that others are waiting for list them under **WAITED ON BY**. Holds are saved on this Mac with your priorities and only contain session identifiers. Closing a session from Shepherdr removes its holds.
 
+**HANDOFF AND CLOSE**, on the **WAITED ON BY** line, wraps a session up for the sessions waiting for it. After you confirm, Shepherdr waits until its agent is free and types a request into its prompt: hand the work back with `shepherdr handoff`, in a message that stands alone with the files that matter. As soon as that handoff reaches Shepherdr, the session closes and its pane ends. From then on Shepherdr holds the message and files and delivers them as usual, so nothing goes with the pane. It needs the [agent tools](#agents-that-coordinate) on the session's machine.
+
+- **While it waits:** the line says **HANDS OFF ONCE FREE**, then **HANDING OFF**. **CANCEL** keeps the session open; a request already typed stays in the agent's prompt.
+- **Across machines:** the session still closes when the handoff arrives. The handoff itself waits for your approval in the waiting session's mail, and that session's banner says so.
+- **When it stays open:** the session stays open, with a notice, if the handoff goes to another session or to none, if asking the agent fails, or if no handoff comes within 15 minutes of asking while the agent isn't working.
+- **Quitting Shepherdr:** a pending close isn't saved, so quitting forgets it. A handoff the agent already wrote is still collected and delivered.
+
 The interface uses the bundled Fira Code. **Settings → General → Terminal font** chooses the font and size for the terminal and prompt editor from the monospaced families installed on this Mac. **Ligatures**, off by default, join characters such as `->` and `!=` into single symbols in fonts that have them, like Fira Code; busy terminals redraw more slowly with them.
 
 For remote terminals, Shepherdr invokes the remote installed Herdr CLI through `/usr/bin/ssh` using the saved profile's target and session. Host keys must already be trusted and authentication must work without a prompt. It uses the host's `herdr` on PATH, then checks `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` and `~/.cargo/bin`. Connection or compatibility failures appear in the work area and leave the rest of the app usable.

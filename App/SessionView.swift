@@ -406,7 +406,7 @@ struct RelationsPanel: View {
                     }
                 }
                 if !waiters.isEmpty {
-                    line("WAITED ON BY", ids: waiters, removable: false) { EmptyView() }
+                    line("WAITED ON BY", ids: waiters, removable: false) { HandoffCloseControl(id: id, model: model) }
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 8)
@@ -455,6 +455,56 @@ struct RelationsPanel: View {
         .contentShape(Rectangle())
         .onTapGesture { if row != nil { model.open(other) } }
         .help(row.map { "Open \($0.workspace)" } ?? "This session is no longer reported by Herdr")
+    }
+}
+
+/// Hands a session's work back to the sessions waiting for it, then closes it: Shepherdr asks its
+/// agent to run `shepherdr handoff` once it is free, and closes the session when the handoff arrives.
+struct HandoffCloseControl: View {
+    let id: Agent.ID
+    let model: AppModel
+    @ViewState<Bool> private var confirming = false
+
+    var body: some View {
+        let courier = model.courier
+        if let close = courier.handoffCloses[id] {
+            HStack(spacing: 6) {
+                Text(close.stage == .queued ? "HANDS OFF ONCE FREE" : "HANDING OFF")
+                    .font(Theme.mono(9.5, .bold)).tracking(1).foregroundStyle(Theme.cyan).fixedSize()
+                BlinkingCursor()
+                Button("CANCEL") { courier.cancelHandoffClose(id) }
+                    .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
+                    .help("Keep this session open. A request already in its agent's prompt stays there.")
+            }
+            .help(close.stage == .queued
+                  ? "Shepherdr asks its agent to hand off as soon as it is free, then closes this session once the handoff arrives."
+                  : "Its agent was asked to hand off. Shepherdr closes this session once the handoff arrives.")
+        } else {
+            let reason = courier.whyNoHandoffClose(id)
+            // Disabled buttons don't show their help, so it goes on what holds them.
+            HStack {
+                Button("HANDOFF AND CLOSE") { confirming = true }
+                    .buttonStyle(ConsoleButtonStyle(tint: Theme.cyan))
+                    .disabled(reason != nil)
+            }
+            .contentShape(Rectangle())
+            .help(reason ?? "Ask its agent to hand its work back to the sessions waiting for it, then close this session")
+            .confirmationDialog("Hand off and close \(model.row(for: id)?.workspace ?? "this session")?", isPresented: $confirming,
+                                titleVisibility: .visible) {
+                Button("Hand Off and Close", role: .destructive) { courier.handOffAndClose(id) }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(message)
+            }
+        }
+    }
+
+    private var message: String {
+        let waiters = model.relations.waiters(of: id).compactMap { model.row(for: $0)?.workspace }
+        let who = waiters.isEmpty ? "the sessions waiting for it" : waiters.joined(separator: ", ")
+        return "Once its agent is free, Shepherdr asks it to hand its work back to \(who) with shepherdr handoff. "
+            + "When the handoff reaches Shepherdr, this session closes and its pane ends. "
+            + "If none comes within \(Int(HandoffClose.patience / 60)) minutes of asking, the session stays open."
     }
 }
 
