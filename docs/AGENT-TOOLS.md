@@ -164,7 +164,7 @@ The page is a local file loaded with a `WKWebViewConfiguration` of its own. `Com
 
 | `data-shepherdr` | Fields | Shepherdr |
 | --- | --- | --- |
-| `spawn` | `machine`, `cwd`, `kind` (an agent kind or `shell`), `name` (`[a-z][a-z0-9_-]{0,31}`), `prompt` (256 KB at most) | Opens New Session with them filled in. The first prompt waits in the mail like a spawned session's. With **Hand its result back to Compass**, Compass's agent waits for the session, so its handoff comes back. The item records it under `started` in the day's marks. |
+| `spawn` | `machine`, `cwd`, `kind` (an agent kind or `shell`), `name` (`[a-z][a-z0-9_-]{0,31}`), `prompt` (256 KB at most) | Opens New Session with them filled in. The first prompt waits in the mail like a spawned session's, in `~/.shepherdr/inbox/compass/<id>/message.md`, deleted once delivered or discarded. With **Hand its result back to Compass**, Compass's agent waits for the session, so its handoff comes back. The item records it under `started` in the day's marks. |
 | `ask` | `prompt` | Puts the text in Compass's prompt editor. |
 | `session` | `session`, `name` or `name@machine` | Switches to Agents and opens it. |
 | `prompt` | `session`, `prompt` | Opens it with the text in its prompt editor. |

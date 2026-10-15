@@ -80,7 +80,7 @@ struct ShepherdrApp: App {
                     .keyboardShortcut("b", modifiers: .command)
                 Button(model.dictation.isRecording ? "Stop Dictation" : "Dictate Prompt") { model.toggleDictation() }
                     .keyboardShortcut("d", modifiers: [.command, .shift])
-                    .disabled(model.selectedID == nil && !model.dictation.isRecording)
+                    .disabled(model.focusedID == nil && !model.dictation.isRecording)
                 Button(model.activeTerminal?.mode == .observe ? "Unlock Session" : "Lock Session (Read-Only)") { model.toggleLive() }
                     .keyboardShortcut("e", modifiers: .command)
                     .disabled(!model.canToggleLive)

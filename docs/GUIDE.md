@@ -324,6 +324,8 @@ Everything is in `~/.shepherdr/compass`:
 
 The folder is a Git repository: Shepherdr commits it after each run and when the page changes. Set a remote in **Settings → Compass → Backup**, ideally a private repository, and Shepherdr pushes after each commit; it warns you if a GitHub remote is public. Git runs without asking anything, so keep your SSH key in your agent or use a credential helper for HTTPS. `state.json`, `context/` and the copies per run stay on this Mac.
 
+A session you start from the page gets its first prompt once its agent is ready. Until then, the prompt waits in `~/.shepherdr/inbox/compass`; Shepherdr deletes it once delivered, or when you discard it from the session's mail panel.
+
 `context/sessions.json` holds what your queue shows: names, states, agents, titles, folders, groups, holds, and the pull requests, issues and links each session collected, with their checks. Never what a terminal printed: the agent reads that itself with `herdr agent read` when it needs to. Shepherdr rewrites it at most every 30 seconds while Compass is set up.
 
 Claude Code reads its permissions for Compass from `.claude/settings.json` in the folder: it may read and edit the folder and run read-only commands, such as `herdr agent read` and `shepherdr status`, without asking. Starting sessions, handing work to them and prompting them always asks first, since the agent reads content others wrote. Runs are unattended, so the contract tells the agent to put those actions on the page as buttons instead.

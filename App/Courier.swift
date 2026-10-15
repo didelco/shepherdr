@@ -368,7 +368,7 @@ final class Courier {
             }
             let text = MailPlanner.prompt(for: item, message: message, messagePath: messagePath, attachments: attachments)
             try await model.cluster.prompt(paneID: row.agent.paneID, text: text, onMachine: row.id.machineID)
-            mail.remove(item.id)
+            remove(item)
         } catch {
             let failure = AppModel.failure(error)
             // A question on screen or an agent still starting: tried again once it is free.
@@ -522,7 +522,16 @@ final class Courier {
         deliver()
     }
 
-    func discard(_ item: MailItem) { mail.remove(item.id) }
+    func discard(_ item: MailItem) { remove(item) }
+
+    /// Done with an item. A first prompt Shepherdr kept for a session it started, such as one
+    /// a Compass page asked for, leaves the disk with it: only letters stay in the inbox.
+    private func remove(_ item: MailItem) {
+        mail.remove(item.id)
+        let kept = inbox.appendingPathComponent("compass", isDirectory: true).standardizedFileURL.path + "/"
+        guard item.id.hasPrefix("compass/"), URL(fileURLWithPath: item.folder).standardizedFileURL.path.hasPrefix(kept) else { return }
+        try? FileManager.default.removeItem(atPath: item.folder)
+    }
 
     /// A first prompt for a session Shepherdr just started, such as one a Compass page asked
     /// for: kept in the inbox like a letter's, and delivered once the agent is ready.
