@@ -41,9 +41,12 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      # Homebrew updates first: the runner image's formulas can be months behind Herdr's releases.
+      # The runner image's formulas can be months behind Herdr's releases, and Homebrew doesn't
+      # update on its own here.
       - name: Install Herdr
-        run: brew install herdr
+        run: |
+          brew update
+          brew install herdr
         env:
           HOMEBREW_NO_INSTALL_CLEANUP: '1'
       - name: Command line against Herdr
