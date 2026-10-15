@@ -4,7 +4,7 @@ A native macOS console for the coding agents running in your [Herdr](https://her
 
 The sidebar is your prioritized queue of sessions. Pick one and its live terminal opens in the work area, with a composer underneath for the next prompt. Shepherdr is an independent, open-source client; it is not an official Herdr application and is not affiliated with the Herdr project.
 
-A bilingual (English/Spanish) quick guide with the same content is in [visual-guide.html](visual-guide.html); open it in a browser.
+A bilingual (English/Spanish) quick guide with the same content comes with the app: **Help → Shepherdr Guide** (**⌘?**), or **?** at the foot of the sidebar, opens it in the built-in browser. It is also [visual-guide.html](visual-guide.html) here.
 
 ## Features
 
@@ -138,6 +138,8 @@ Shepherdr never takes input away from another client implicitly. If one is attac
 Each session has its own browser column, to the right of the terminal. Clicking a link opens it there in a new tab, or switches to the tab already showing it; **◫ BROWSER** in the bottom bar or **⌘B** shows or hides the column, and **+** opens an empty tab. The tabs stay loaded, scrolled and signed in while you switch sessions, so a pull request you are reviewing is still where you left it. Pages that open new windows open new tabs. **⧉** opens the current page in your default browser.
 
 **⌘-click** a link in a page to open it in your default browser instead.
+
+**Help → Shepherdr Guide** (**⌘?**), or **?** at the foot of the sidebar, opens the quick guide in the browser of the session you are looking at, and **Help → Herdr Documentation** opens Herdr's. On the overview they open in a browser of its own, which **⌘B** also shows or hides; its tabs are not kept after a restart.
 
 Sign-ins are shared by every session's browser and persist across launches, in WebKit's own storage for Shepherdr. Safari's sessions and cookies cannot be shared with other apps, so sign in once here, or **⌘-click** links to use Safari. Shepherdr remembers each session's tabs, the selected one and whether the browser was open: after a restart they come back, and each page loads the first time you look at it. Closing a tab forgets it, and closing the session forgets them all.
 
