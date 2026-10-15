@@ -197,15 +197,31 @@ public struct NewSessionRequest: Equatable, Sendable {
     /// Agent kinds Herdr's `agent start --kind` accepts and Shepherdr offers by default.
     public static let agentKinds = ["claude", "codex", "gemini", "opencode", "cursor", "amp", "copilot", "droid", "qwen", "kimi", "grok"]
 
+    /// A Git worktree the session works in, made in the repository `directory` belongs to.
+    public struct Worktree: Equatable, Sendable {
+        /// Checked out when it exists, created otherwise.
+        public let branch: String
+        /// Where a new branch starts: the repository's current commit when nil.
+        public let base: String?
+
+        public init(branch: String, base: String? = nil) {
+            self.branch = branch
+            self.base = base
+        }
+    }
+
     public let directory: String
     public let name: String
     /// A Herdr agent kind such as `claude`, or nil for a plain shell.
     public let agentKind: String?
+    /// Nil for a session in `directory` itself.
+    public let worktree: Worktree?
 
-    public init(directory: String, name: String, agentKind: String?) {
+    public init(directory: String, name: String, agentKind: String?, worktree: Worktree? = nil) {
         self.directory = directory
         self.name = name
         self.agentKind = agentKind
+        self.worktree = worktree
     }
 }
 
@@ -215,12 +231,15 @@ public struct CreatedSession: Equatable, Sendable {
     public let terminalID: String
     /// Set when the workspace exists but its agent is waiting for the user or failed to start.
     public let notice: String?
+    /// A workspace Herdr already had open, such as the one of a worktree asked for again.
+    public let isExisting: Bool
 
-    public init(workspaceID: String, paneID: String, terminalID: String, notice: String? = nil) {
+    public init(workspaceID: String, paneID: String, terminalID: String, notice: String? = nil, isExisting: Bool = false) {
         self.workspaceID = workspaceID
         self.paneID = paneID
         self.terminalID = terminalID
         self.notice = notice
+        self.isExisting = isExisting
     }
 }
 

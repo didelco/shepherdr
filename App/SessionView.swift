@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ShepherdrCore
 import ShepherdrDictation
@@ -66,6 +67,7 @@ struct SessionView: View {
                                     font: ConsoleFonts.font(family: fontFamily, size: fontSize, ligatures: ligatures),
                                     focusRequest: model.terminalFocusRequest,
                                     resolveFile: { [model, id] path in model.file(at: path, for: id) },
+                                    resolveSession: { [model, id] row, column in model.sessionLink(in: row, column: column, from: id) },
                                     onResources: { [model, id] found in model.collectResources(found, for: id) },
                                     onDropFiles: { [model, id, terminal] files in model.drop(files, into: id, terminal: terminal) }
                     ) { [model, id] url, external in
@@ -390,6 +392,7 @@ private struct SessionDetails: View {
 struct RelationsPanel: View {
     let id: Agent.ID
     let model: AppModel
+    @ViewState<Bool> private var picking = false
 
     var body: some View {
         let awaited = model.relations.waitingFor(id)
@@ -399,7 +402,13 @@ struct RelationsPanel: View {
                 if !awaited.isEmpty {
                     line(model.waitState(for: id) == .ready ? "READY · WAITED FOR" : "ON HOLD · WAITING FOR",
                          ids: awaited, removable: true) {
-                        WaitForMenu(id: id, model: model) { Text("+").font(Theme.mono(11, .bold)) }
+                        Button { picking = true } label: { Text("+").font(Theme.mono(11, .bold)).contentShape(Rectangle()) }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Theme.cyan)
+                            .help("Find another session for this one to wait for")
+                            .popover(isPresented: $picking, arrowEdge: .bottom) {
+                                WaitForPicker(id: id, model: model) { picking = false }
+                            }
                         Button("RESUME") { model.relations.stopWaiting(id) }
                             .buttonStyle(ConsoleButtonStyle(tint: Theme.cyan))
                             .help("Stop waiting: clear this session's hold")
@@ -458,24 +467,193 @@ struct RelationsPanel: View {
     }
 }
 
-/// Picks the sessions another one waits for, as checkable menu items.
-struct WaitForMenu<Label: View>: View {
+/// Finds a session for another one to wait for from a few letters of it: ↑ and ↓ move through the
+/// matches, and Return or a click puts the session on hold for the highlighted one, or stops it
+/// waiting for one it already waits for (✓). Either closes the picker, as Escape does.
+struct WaitForPicker: View {
     let id: Agent.ID
     let model: AppModel
-    @ViewBuilder let label: () -> Label
+    /// Closes the sheet or popover the picker is in.
+    let close: () -> Void
+    @ViewState<String> private var query = ""
+    @ViewState<Int> private var highlighted = 0
 
     var body: some View {
-        Menu {
-            ForEach(model.rankedRows.filter { $0.id != id }) { other in
-                Toggle(model.showsMachineNames ? "\(other.workspace) @\(other.machineName)" : other.workspace,
-                       isOn: Binding { model.relations.isWaiting(id, for: other.id) }
-                                 set: { model.relations.setWaiting(id, for: other.id, $0) })
+        let others = model.rankedRows.filter { $0.id != id }
+        let matches = SessionSearch.ranked(others, matching: query)
+        let current = matches.isEmpty ? nil : min(highlighted, matches.count - 1)
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("WAIT FOR").font(Theme.mono(12, .bold)).tracking(1.5).foregroundStyle(Theme.cyan)
+                Text("\(model.row(for: id)?.workspace ?? "This session") goes on hold until they finish")
+                    .font(Theme.mono(10)).foregroundStyle(Theme.dim).lineLimit(1)
             }
-        } label: { label() }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Choose the sessions this one waits for")
+            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 8)
+            HStack(spacing: 6) {
+                Text("/").font(Theme.mono(12, .bold)).foregroundStyle(Theme.phosphor)
+                PickerSearchField(text: $query, placeholder: model.showsMachineNames ? "name, or name@machine" : "session name",
+                                  move: { step in
+                                      guard !matches.isEmpty else { return }
+                                      highlighted = max(0, min(matches.count - 1, (current ?? 0) + step))
+                                  },
+                                  submit: { if let current { toggle(matches[current]) } },
+                                  cancel: close)
+                    .frame(height: 18)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 5)
+            .background(Theme.background, in: RoundedRectangle(cornerRadius: 4))
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.phosphor.opacity(0.6), lineWidth: 1))
+            .padding(.horizontal, 12).padding(.bottom, 8)
+            Rectangle().fill(Theme.line).frame(height: 1)
+            list(matches, current: current, isEmpty: others.isEmpty)
+            Rectangle().fill(Theme.line).frame(height: 1)
+            HStack(spacing: 10) {
+                Text("↑↓ choose · ⏎ wait for it · ✓ waited for").font(Theme.mono(9.5)).foregroundStyle(Theme.faint)
+                Spacer(minLength: 4)
+                Button("CLOSE", action: close).buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+        }
+        .frame(width: 400)
+        .background(Theme.panel)
+        .onChange(of: query) { highlighted = 0 }
+    }
+
+    private func list(_ matches: [AgentRow], current: Int?, isEmpty: Bool) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(matches.enumerated()), id: \.element.id) { index, row in
+                        PickerRow(row: row, isHighlighted: index == current, isWaited: model.relations.isWaiting(id, for: row.id),
+                                  showsMachine: model.showsMachineNames,
+                                  background: !model.backgroundCommands(of: row).isEmpty) { toggle(row) }
+                            .id(row.id)
+                    }
+                    if matches.isEmpty {
+                        Text(isEmpty ? "no other sessions" : "no session matches \"\(query)\"")
+                            .font(Theme.mono(10.5)).foregroundStyle(Theme.faint)
+                            .padding(.horizontal, 14).padding(.vertical, 12)
+                    }
+                }
+            }
+            .frame(height: 260)
+            .onChange(of: current) { _, new in if let new { proxy.scrollTo(matches[new].id) } }
+        }
+    }
+
+    private func toggle(_ row: AgentRow) {
+        model.relations.setWaiting(id, for: row.id, !model.relations.isWaiting(id, for: row.id))
+        close()
+    }
+}
+
+/// One session the picker offers: its state, name, machine and task, and ✓ when it is waited for.
+private struct PickerRow: View {
+    let row: AgentRow
+    let isHighlighted: Bool
+    let isWaited: Bool
+    let showsMachine: Bool
+    let background: Bool
+    let choose: () -> Void
+    @ViewState<Bool> private var hovering = false
+
+    var body: some View {
+        Button(action: choose) {
+            HStack(alignment: .top, spacing: 8) {
+                StateGlyph(state: row.agent.state, stale: row.isStale, background: background)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(row.workspace).font(Theme.mono(12, .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                        if showsMachine {
+                            Text("@\(row.machineName)").font(Theme.mono(10)).foregroundStyle(Theme.faint).lineLimit(1)
+                        }
+                    }
+                    Text(row.title).font(Theme.mono(10.5)).foregroundStyle(Theme.dim).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                if isWaited { Text("✓").font(Theme.mono(12, .bold)).foregroundStyle(Theme.cyan) }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isHighlighted ? Theme.raised : hovering ? Theme.raised.opacity(0.5) : .clear)
+            .overlay(alignment: .leading) {
+                Rectangle().fill(Theme.phosphor).frame(width: 2).opacity(isHighlighted ? 1 : 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(isWaited ? "Stop waiting for \(row.workspace)" : "Wait for \(row.workspace)")
+        .accessibilityLabel("\(row.workspace), \(row.agent.state.title)\(isWaited ? ", waited for" : "")")
+        .accessibilityAddTraits(isWaited ? .isSelected : [])
+    }
+}
+
+/// The picker's search field: it takes the keyboard as it appears, and passes ↑, ↓, Return and
+/// Escape on instead of moving the cursor.
+private struct PickerSearchField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let move: (Int) -> Void
+    let submit: () -> Void
+    let cancel: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = FocusingField()
+        field.delegate = context.coordinator
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = ConsoleFonts.font(family: ConsoleFonts.defaultFamily, size: 12)
+        field.textColor = NSColor(hex: 0xD9E7DE)
+        field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
+            .foregroundColor: NSColor(hex: 0x4B5E53), .font: ConsoleFonts.font(family: ConsoleFonts.defaultFamily, size: 12)
+        ])
+        field.cell?.isScrollable = true
+        field.cell?.wraps = false
+        field.setAccessibilityLabel("Find a session")
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        if field.stringValue != text { field.stringValue = text }
+    }
+
+    @MainActor final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: PickerSearchField
+        init(_ parent: PickerSearchField) { self.parent = parent }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            parent.text = field.stringValue
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            switch selector {
+            case #selector(NSResponder.moveUp(_:)): parent.move(-1)
+            case #selector(NSResponder.moveDown(_:)): parent.move(1)
+            case #selector(NSResponder.insertNewline(_:)): parent.submit()
+            case #selector(NSResponder.cancelOperation(_:)): parent.cancel()
+            default: return false
+            }
+            return true
+        }
+    }
+
+    /// Takes keyboard focus once it is in a window: sheets and popovers open with the field ready.
+    private final class FocusingField: NSTextField {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard window != nil else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let window = self.window else { return }
+                window.makeFirstResponder(self)
+            }
+        }
     }
 }
 

@@ -257,9 +257,12 @@ herdr status</code></pre>
 <li><kbd>⌘⎋</kbd> envía Escape para interrumpir. El <b>candado</b> (<kbd>⌘E</kbd>) deja la sesión en solo lectura.</li>
 <li>Si otro cliente controla la terminal, queda bloqueada y se ofrece <b>Take Over</b>, siempre como decisión explícita.</li>
 <li>Para que un agente escriba a otro, clic derecho en el ID del panel (<code>w3:p1</code>) → <i>Copy Reference for Agents</i>.</li>
+<li>Haz clic en el <b>nombre de otra sesión</b> o en su ID de panel (<code>w3:p1</code>) en la terminal para ir a ella, como en lo que imprime <code>shepherdr</code> al lanzar una. <code>nombre@máquina</code> elige la máquina.</li>
 </ul>
 <h3>Crear y cerrar</h3>
-<p><kbd>⌘N</kbd> abre <b>New Session</b>: una carpeta (en la máquina elegida) y un nombre opcional. <i>New Session in Same Folder…</i> la crea justo después de otra, en su grupo. <i>Rename…</i> cambia el nombre del workspace. <i>Close Session…</i> pide confirmación y termina el proceso del agente; solo está en el menú contextual.</p>
+<p><kbd>⌘N</kbd> abre <b>New Session</b>: una carpeta (en la máquina elegida) y un nombre opcional. <i>New Session in Same Folder…</i> la crea justo después de otra, en su grupo. <b>IN A NEW WORKTREE</b> la abre en un worktree de la rama que elijas, que Herdr crea en su carpeta de worktrees.</p>
+<p>En lugar de una carpeta, pega un enlace de GitHub. Un <b>repositorio</b> abre tu clon, o lo clona antes en la carpeta de proyectos de esa máquina (<code>~/projects</code>; cada máquina tiene la suya en <i>Settings</i>). Un <b>pull request</b> abre un worktree de su rama, clonando el repositorio si hace falta, con el PR ya en <i>Resources</i>.</p>
+<p><i>Rename…</i> cambia el nombre del workspace. <i>Close Session…</i> pide confirmación y termina el proceso del agente; solo está en el menú contextual.</p>
 <p>No hay scroll del histórico ni ratón dentro de apps de pantalla completa. Para eso usa el cliente <code>herdr</code>: comparte las sesiones.</p>
 </div>
 <div class="en">
@@ -273,9 +276,12 @@ herdr status</code></pre>
 <li><kbd>⌘⎋</kbd> sends Escape to interrupt. The <b>padlock</b> (<kbd>⌘E</kbd>) makes the session read-only.</li>
 <li>If another client controls the terminal, it stays locked and offers <b>Take Over</b>, always an explicit choice.</li>
 <li>To have one agent message another, right-click the pane ID (<code>w3:p1</code>) → <i>Copy Reference for Agents</i>.</li>
+<li>Click <b>another session's name</b> or its pane ID (<code>w3:p1</code>) in the terminal to go to it, as in what <code>shepherdr</code> prints when it starts one. <code>name@machine</code> picks the machine.</li>
 </ul>
 <h3>Create and close</h3>
-<p><kbd>⌘N</kbd> opens <b>New Session</b>: a folder (on the chosen machine) and an optional name. <i>New Session in Same Folder…</i> creates it right after another, in its group. <i>Rename…</i> renames the workspace. <i>Close Session…</i> asks for confirmation and ends the agent process; it lives only in the context menu.</p>
+<p><kbd>⌘N</kbd> opens <b>New Session</b>: a folder (on the chosen machine) and an optional name. <i>New Session in Same Folder…</i> creates it right after another, in its group. <b>IN A NEW WORKTREE</b> opens it in a worktree of the branch you name, which Herdr creates in its worktrees folder.</p>
+<p>Instead of a folder, paste a GitHub link. A <b>repository</b> opens your clone, or clones it first into that machine's projects folder (<code>~/projects</code>; each machine has its own in <i>Settings</i>). A <b>pull request</b> opens a worktree of its branch, cloning the repository if needed, with the PR already in <i>Resources</i>.</p>
+<p><i>Rename…</i> renames the workspace. <i>Close Session…</i> asks for confirmation and ends the agent process; it lives only in the context menu.</p>
 <p>There's no scrollback browsing or mouse reporting inside full-screen apps. For that, use the <code>herdr</code> client: it shares the sessions.</p>
 </div>
 </section>
@@ -305,7 +311,7 @@ herdr status</code></pre>
 <h3>Notificaciones</h3>
 <p>Cuando un agente termina o te necesita (un permiso, una pregunta), macOS te avisa con el nombre de la sesión, su estado y lo último que dijo. Haz clic para abrirla. La sesión que miras no avisa. Los avisos llegan al refrescar la cola (<i>Settings → General → Refresh sessions</i>: 5, 15, 30 o 60 s) y no llegan con el refresco en pausa.</p>
 <h3>Sesiones en espera</h3>
-<p>Con <b>Wait For</b> en el menú de una sesión, eliges las que espera, por ejemplo los subagentes de un planificador. Muestra un reloj de arena: azul mientras alguna siga trabajando, verde cuando todas acaben. Las esperadas se cuelgan debajo en un árbol plegable. Abrirla muestra un panel con sus estados; <b>RESUME</b> la saca de espera.</p>
+<p>Con <b>Wait For…</b> en el menú de una sesión, escribes unas letras de cada sesión que espera, por ejemplo los subagentes de un planificador, y la eliges con <b>↑</b>/<b>↓</b> y <b>⏎</b>; <code>@</code> filtra por máquina. Muestra un reloj de arena: azul mientras alguna siga trabajando, verde cuando todas acaben. Las esperadas se cuelgan debajo en un árbol plegable. Abrirla muestra un panel con sus estados; <b>RESUME</b> la saca de espera.</p>
 <h3>Dictado</h3>
 <p><kbd>⇧⌘D</kbd> empieza a grabar y abre el editor; al parar, la transcripción cae en el borrador para que la revises. Se transcribe en tu Mac con NVIDIA Parakeet TDT v3 (25 idiomas europeos, bueno con términos técnicos en inglés dentro de español). El modelo pesa unos 460 MB: Shepherdr pregunta antes de descargarlo la primera vez, y reutiliza el de <i>scribe</i> si ya lo tienes. Tu voz solo está en memoria mientras grabas.</p>
 <h3>Portátil</h3>
@@ -316,7 +322,7 @@ herdr status</code></pre>
 <h3>Notifications</h3>
 <p>When an agent finishes or needs you (a permission, a question), macOS notifies you with the session's name, its state and what it last said. Click to open it. The session you're viewing never notifies. Alerts arrive when the queue refreshes (<i>Settings → General → Refresh sessions</i>: 5, 15, 30 or 60 s) and don't arrive while refreshing is paused.</p>
 <h3>Sessions on hold</h3>
-<p>With <b>Wait For</b> in a session's menu, pick the sessions it waits for, such as a planner's subagents. It shows an hourglass: blue while any is still working, green once all have finished. The awaited ones hang below in a collapsible tree. Opening it shows a panel with their states; <b>RESUME</b> takes it off hold.</p>
+<p>With <b>Wait For…</b> in a session's menu, type a few letters of each session it waits for, such as a planner's subagents, and pick it with <b>↑</b>/<b>↓</b> and <b>⏎</b>; <code>@</code> narrows to a machine. It shows an hourglass: blue while any is still working, green once all have finished. The awaited ones hang below in a collapsible tree. Opening it shows a panel with their states; <b>RESUME</b> takes it off hold.</p>
 <h3>Dictation</h3>
 <p><kbd>⇧⌘D</kbd> starts recording and opens the editor; when you stop, the transcript lands in the draft for you to review. It's transcribed on your Mac with NVIDIA Parakeet TDT v3 (25 European languages, good with English technical terms inside Spanish). The model is about 460 MB: Shepherdr asks before downloading it the first time, and reuses <i>scribe</i>'s copy if you have it. Your voice is only in memory while recording.</p>
 <h3>Laptop</h3>

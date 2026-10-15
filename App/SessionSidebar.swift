@@ -491,13 +491,8 @@ private struct SessionRowView: View {
     }
 
     @ViewBuilder private var waitMenu: some View {
-        Menu("Wait For") {
-            ForEach(model.rankedRows.filter { $0.id != row.id }) { other in
-                Toggle(showsMachine ? "\(other.workspace) @\(other.machineName)" : other.workspace,
-                       isOn: Binding { model.relations.isWaiting(row.id, for: other.id) }
-                                 set: { model.relations.setWaiting(row.id, for: other.id, $0) })
-            }
-        }
+        Button("Wait For…") { model.pickWaits(for: row.id) }
+            .disabled(model.rankedRows.count < 2)
         if !model.relations.waitingFor(row.id).isEmpty {
             Button("Resume (Stop Waiting)") { model.relations.stopWaiting(row.id) }
         }

@@ -77,6 +77,9 @@ struct MainView: View {
             Text("Renames its Herdr workspace. Other panes in the same workspace share the name.")
         }
         .sheet(item: $model.newSession) { draft in NewSessionSheet(model: model, draft: draft) }
+        .sheet(item: $model.waitPicking) { picking in
+            WaitForPicker(id: picking.session, model: model) { model.waitPicking = nil }
+        }
         .alert("Download the speech model?", isPresented: $model.asksToDownloadSpeechModel) {
             Button("Download") { model.acceptSpeechModelDownload() }
             Button("Cancel", role: .cancel) {}
