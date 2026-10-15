@@ -71,6 +71,52 @@ final class SessionNotifier: NSObject {
         }
     }
 
+    /// Tells you a letter from an agent waits for you: a handoff to approve or to address, a
+    /// session another machine asks for, or a page it suggests.
+    func mailArrived(_ item: MailItem, about session: Agent.ID?) {
+        guard UserDefaults.standard.object(forKey: Self.enabledKey) as? Bool ?? true,
+              !(NSApp.isActive && session != nil && model?.selectedID == session) else { return }
+        let sender = [item.senderName, "on \(item.originName)"].compactMap { $0 }.joined(separator: " ")
+        let title = switch item.kind {
+        case .handoff, .prompt: "Handoff from \(sender)"
+        case .spawnRequest: "\(sender) asks for a session on \(item.request?.machine ?? "another machine")"
+        case .openPage: "\(sender) suggests a page"
+        }
+        let subtitle = switch item.status {
+        case .needsApproval: "Waiting for your approval"
+        case .needsRecipient: "Choose the session it goes to"
+        default: ""
+        }
+        let body = item.headline ?? item.url?.absoluteString ?? item.request.map { "In \($0.directory)" } ?? ""
+        post(title: title, subtitle: subtitle, body: body, thread: "mail", session: session)
+    }
+
+    /// A notification an agent asked for with `shepherdr notify`.
+    func letterNotice(_ text: String, from session: Agent.ID?, machine: String) {
+        guard UserDefaults.standard.object(forKey: Self.enabledKey) as? Bool ?? true else { return }
+        let row = session.flatMap { model?.row(for: $0) }
+        let title = row?.workspace ?? machine
+        let subtitle = [row?.name, "on \(machine)"].compactMap { $0 }.joined(separator: " ")
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        post(title: title, subtitle: subtitle, body: body.count > 600 ? String(body.prefix(599)) + "…" : body,
+             thread: session.map { "\($0.machineID)/\($0.terminalID)" } ?? "notices", session: session)
+    }
+
+    private func post(title: String, subtitle: String, body: String, thread: String, session: Agent.ID?) {
+        Task {
+            guard let center, await isAuthorized(center) else { return }
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.subtitle = subtitle
+            content.body = body
+            content.sound = .default
+            content.threadIdentifier = thread
+            content.targetContentIdentifier = "main"
+            if let session { content.userInfo = ["machineID": session.machineID, "terminalID": session.terminalID] }
+            try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        }
+    }
+
     /// Asks the first time a notification is due; later answers come from System Settings.
     private func isAuthorized(_ center: UNUserNotificationCenter) async -> Bool {
         switch await center.notificationSettings().authorizationStatus {
@@ -90,6 +136,13 @@ extension SessionNotifier: UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
         let info = response.notification.request.content.userInfo
+        if info["machineID"] == nil {
+            // About no session in particular: bring Shepherdr forward.
+            Task { @MainActor in
+                NSApp.activate(ignoringOtherApps: true)
+                self.model?.showMainWindow()
+            }
+        }
         if let machineID = info["machineID"] as? String, let terminalID = info["terminalID"] as? String {
             let id = Agent.ID(machineID: machineID, terminalID: terminalID)
             let link = (info["link"] as? String).flatMap(URL.init(string:))

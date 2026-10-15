@@ -135,6 +135,14 @@ public struct CLIHerdrClient: HerdrClient, HerdrTerminalClient {
         catch { throw decodingFailure(error) }
     }
 
+    public func prompt(paneID: String, text: String, on machine: Machine) async throws {
+        try requireArgument(paneID, "pane")
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw HerdrFailure(.incompatible, "The prompt is empty.") }
+        let prefix = machine.profileID.map { ["--machine", $0] } ?? []
+        // The text is one argument, never shell text; Herdr pastes it and presses Return.
+        try validate(try await execute(prefix + ["agent", "prompt", paneID, text], timeout: 30), machine: machine)
+    }
+
     public func addMachine(_ request: NewMachineRequest) async throws {
         let target = request.sshTarget.trimmingCharacters(in: .whitespacesAndNewlines)
         try requireArgument(target, "SSH target")

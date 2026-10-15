@@ -1,0 +1,665 @@
+#!/bin/sh
+# Shepherdr's command line for agents in Herdr panes: start sessions that Shepherdr links to
+# yours, wait for them, and hand work back. Shepherdr installs it on every machine it reaches,
+# Linux included; `shepherdr skill` prints the instructions agents follow.
+#
+# It only talks to this machine's Herdr, and through it to the machines Herdr has saved.
+# Whatever is meant for Shepherdr goes into a letter in ~/.shepherdr/outbox, announced by a
+# token on the caller's pane. Shepherdr collects letters over its own SSH connection: nothing
+# here ever connects to the Mac Shepherdr runs on.
+#
+# POSIX sh on purpose: it must run on any machine with Herdr, without installing anything else.
+
+set -u
+umask 077
+
+PROTOCOL=1
+tools=$(CDPATH='' cd -- "$(dirname -- "$0")/.." 2>/dev/null && pwd -P) || tools=.
+root=${SHEPHERDR_HOME:-$HOME/.shepherdr}
+herdr=${HERDR_BIN_PATH:-herdr}
+machines_file=$root/machines
+tab=$(printf '\t')
+nl='
+'
+work=
+letter_dir=
+
+# MARK: Output
+
+say() { printf '%s\n' "$*"; }
+
+fail() {
+    printf 'shepherdr: %s\n' "$*" >&2
+    exit 1
+}
+
+usage_error() {
+    printf 'shepherdr: %s\nRun "shepherdr help" for usage.\n' "$*" >&2
+    exit 2
+}
+
+need_value() {
+    [ $# -ge 2 ] || usage_error "$1 needs a value."
+}
+
+cleanup() {
+    [ -n "$work" ] && rm -rf "$work"
+    case $letter_dir in */.tmp-*) rm -rf "$letter_dir" ;; esac
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
+begin_work() {
+    [ -n "$work" ] && return 0
+    work=$(mktemp -d "${TMPDIR:-/tmp}/shepherdr.XXXXXX") || fail "Could not create a temporary folder."
+}
+
+# MARK: Values
+
+lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
+# A JSON string for text without control characters; fails for anything else.
+json_string() {
+    case $1 in *[[:cntrl:]]*) return 1 ;; esac
+    printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+}
+
+# The first string value of a key in Herdr's compact JSON. Only for values without quotes or
+# escapes, such as IDs: the CLI never needs anything else from Herdr.
+json_value() {
+    printf '%s' "$2" | grep -o "\"$1\":\"[^\"\\\\]*\"" | head -n 1 | sed 's/^"[^"]*":"//; s/"$//'
+}
+
+is_pane_id() { case $1 in '' | *[!A-Za-z0-9:_-]*) return 1 ;; esac; }
+is_terminal_id() { case $1 in '' | *[!A-Za-z0-9_-]*) return 1 ;; esac; }
+is_profile_id() { case $1 in '' | *[!A-Za-z0-9._-]*) return 1 ;; esac; }
+
+# Herdr's rule for agent names, which Shepherdr also uses for workspace labels it creates.
+is_agent_name() {
+    case $1 in [a-z]*) ;; *) return 1 ;; esac
+    case $1 in *[!a-z0-9_-]*) return 1 ;; esac
+    [ ${#1} -le 32 ]
+}
+
+is_agent_kind() { case $1 in '' | *[!a-z0-9_-]*) return 1 ;; esac; }
+
+is_url() {
+    case $1 in http://?* | https://?*) ;; *) return 1 ;; esac
+    case $1 in *[[:space:][:cntrl:]]*) return 1 ;; esac
+    [ ${#1} -le 2048 ]
+}
+
+random_hex() {
+    rh_value=$(od -An -N"$1" -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')
+    [ -n "$rh_value" ] || rh_value=$(printf '%04x%04x' "$$" "$(date +%S)")
+    printf '%s' "$rh_value"
+}
+
+# MARK: Herdr
+
+caller_pane=${HERDR_PANE_ID:-}
+caller_terminal=
+caller_kind=
+
+in_herdr() { [ "${HERDR_ENV:-}" = 1 ] && is_pane_id "$caller_pane"; }
+
+# Runs Herdr. Its answer is left in $out; on failure, its error in $err_code and $err_message.
+call() {
+    begin_work
+    err_code=
+    err_message=
+    if out=$("$herdr" "$@" 2>"$work/err"); then return 0; fi
+    call_err=$(cat "$work/err" 2>/dev/null)
+    err_code=$(json_value code "$call_err")
+    err_message=$(json_value message "$call_err")
+    [ -n "$err_message" ] || err_message=$(printf '%s' "$call_err" | head -n 3)
+    [ -n "$err_message" ] || err_message="Herdr failed."
+    return 1
+}
+
+# Runs Herdr on the chosen machine: this one, or a saved one through --machine.
+on_machine() {
+    if [ -n "$profile" ]; then call --machine "$profile" "$@"; else call "$@"; fi
+}
+
+# The calling pane's terminal and agent kind, which identify this session to Shepherdr.
+learn_caller() {
+    in_herdr || return 0
+    [ -n "$caller_terminal" ] && return 0
+    if call pane current --current; then
+        lc_terminal=$(json_value terminal_id "$out")
+        is_terminal_id "$lc_terminal" && caller_terminal=$lc_terminal
+        lc_kind=$(json_value agent "$out")
+        is_agent_kind "$lc_kind" && caller_kind=$lc_kind
+    fi
+    return 0
+}
+
+# MARK: Machines
+
+# Sets $route, $profile and $machine_name for a machine in Shepherdr's list; this machine when
+# the name is empty. Routes: here (this machine), direct (Herdr reaches it), shepherdr (only
+# Shepherdr does, after the user approves).
+resolve_machine() {
+    route=here
+    profile=
+    machine_name=$(this_machine)
+    [ -n "$1" ] || return 0
+    [ -f "$machines_file" ] || fail "Shepherdr hasn't written its machine list on this machine yet, so only this machine is known. Leave out --machine, or ask the user to open Shepherdr."
+    rm_wanted=$(lower "$1")
+    while IFS="$tab" read -r m_name m_route m_profile; do
+        case $m_name in '#'* | '') continue ;; esac
+        [ "$(lower "$m_name")" = "$rm_wanted" ] || continue
+        machine_name=$m_name
+        route=$m_route
+        profile=
+        case $route in
+        here) ;;
+        direct)
+            is_profile_id "$m_profile" || fail "Shepherdr's machine list has no Herdr profile for $m_name."
+            profile=$m_profile
+            ;;
+        shepherdr) ;;
+        *) fail "Shepherdr's machine list has an unknown route for $m_name: $route" ;;
+        esac
+        return 0
+    done <"$machines_file"
+    fail "No machine named \"$1\". Machines Shepherdr knows: $(machine_names). Run \"shepherdr machines\" for details."
+}
+
+this_machine() {
+    if [ -f "$machines_file" ]; then
+        while IFS="$tab" read -r m_name m_route m_profile; do
+            case $m_name in '#'* | '') continue ;; esac
+            [ "$m_route" = here ] && printf '%s' "$m_name" && return 0
+        done <"$machines_file"
+    fi
+    printf 'this machine'
+}
+
+machine_names() {
+    mn_names=
+    while IFS="$tab" read -r m_name m_route m_profile; do
+        case $m_name in '#'* | '') continue ;; esac
+        mn_names=${mn_names:+$mn_names, }$m_name
+    done <"$machines_file"
+    printf '%s' "$mn_names"
+}
+
+# MARK: Letters
+
+new_id() { printf '%s-%s' "$(date -u +%Y%m%dT%H%M%SZ)" "$(random_hex 3)"; }
+
+# Starts a letter in a private folder of the outbox, which Shepherdr only sees once it is
+# complete. Sets $letter_id, $letter_dir and $from_json.
+begin_letter() {
+    mkdir -p "$root/outbox" || fail "Could not create $root/outbox."
+    learn_caller
+    bl_attempt=0
+    while :; do
+        bl_attempt=$((bl_attempt + 1))
+        letter_id=$(new_id)
+        if [ ! -e "$root/outbox/$letter_id" ] && mkdir "$root/outbox/.tmp-$letter_id" 2>/dev/null; then
+            letter_dir=$root/outbox/.tmp-$letter_id
+            break
+        fi
+        [ "$bl_attempt" -lt 3 ] || fail "Could not start a letter in $root/outbox."
+    done
+    if [ -n "$caller_terminal" ]; then
+        from_json="{\"pane\":\"$caller_pane\",\"terminal\":\"$caller_terminal\"}"
+    else
+        from_json='{}'
+    fi
+}
+
+# Writes letter.json with the kind's own fields, then hands the letter to Shepherdr: moves it
+# into the outbox in one step and rings the doorbell on the caller's pane.
+finish_letter() {
+    printf '{"protocol":%s,"id":"%s","kind":"%s","from":%s%s}\n' \
+        "$PROTOCOL" "$letter_id" "$1" "$from_json" "$2" >"$letter_dir/letter.json" ||
+        fail "Could not write the letter."
+    mv "$letter_dir" "$root/outbox/$letter_id" || fail "Could not put the letter in $root/outbox."
+    letter_dir=$root/outbox/$letter_id
+    if in_herdr; then
+        "$herdr" pane report-metadata "$caller_pane" --source shepherdr --token "shepherdr-mail=$letter_id" \
+            >/dev/null 2>&1 || true
+    fi
+}
+
+# Writes the letter's message, from text or from a file; "-" reads standard input.
+write_message() {
+    if [ -n "$2" ]; then
+        if [ "$2" = - ]; then
+            cat >"$letter_dir/message.md" || fail "Could not read the message."
+        else
+            [ -f "$2" ] || fail "No file at $2."
+            cp "$2" "$letter_dir/message.md" || fail "Could not copy $2."
+        fi
+    else
+        printf '%s\n' "$1" >"$letter_dir/message.md" || fail "Could not write the message."
+    fi
+    wm_size=$(($(wc -c <"$letter_dir/message.md")))
+    [ "$wm_size" -le 262144 ] || fail "The message is over 256 KB. Attach long text as a file with --file."
+}
+
+# A file name that is safe on any machine, keeping its extension.
+safe_name() {
+    sn_name=$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_' | sed 's/^\.*//' | cut -c1-120)
+    printf '%s' "${sn_name:-file}"
+}
+
+# Copies attachments, one path per line, into the letter. Sets $files_json.
+attach_files() {
+    files_json=
+    [ -n "$1" ] || return 0
+    mkdir "$letter_dir/files" || fail "Could not write the letter."
+    af_total=0
+    af_count=0
+    while IFS= read -r af_path; do
+        [ -n "$af_path" ] || continue
+        [ -f "$af_path" ] || fail "No file at $af_path. Attach regular files only."
+        af_count=$((af_count + 1))
+        [ "$af_count" -le 20 ] || fail "A letter takes at most 20 files."
+        af_size=$(($(wc -c <"$af_path")))
+        af_total=$((af_total + af_size))
+        [ "$af_total" -le 5242880 ] || fail "Attachments add up to over 5 MB. Share large files another way, such as a pull request."
+        af_name=$(safe_name "$(basename -- "$af_path")")
+        [ -e "$letter_dir/files/$af_name" ] && af_name=$af_count-$af_name
+        cp "$af_path" "$letter_dir/files/$af_name" || fail "Could not copy $af_path."
+        files_json=${files_json:+$files_json,}\"files/$af_name\"
+    done <<EOF
+$1
+EOF
+}
+
+# A JSON array of strings, one per argument.
+json_array() {
+    ja_array=
+    for ja_item in "$@"; do
+        ja_value=$(json_string "$ja_item") || return 1
+        ja_array=${ja_array:+$ja_array,}$ja_value
+    done
+    printf '[%s]' "$ja_array"
+}
+
+# MARK: Commands
+
+cmd_spawn() {
+    machine='' cwd='' kind='' name='' prompt='' prompt_file='' split='' wait=true shell=false has_prompt=false
+    while [ $# -gt 0 ]; do
+        case $1 in
+        --machine) need_value "$@"; machine=$2; shift 2 ;;
+        --cwd) need_value "$@"; cwd=$2; shift 2 ;;
+        --kind) need_value "$@"; kind=$2; shift 2 ;;
+        --shell) shell=true; shift ;;
+        --name) need_value "$@"; name=$2; shift 2 ;;
+        --prompt) need_value "$@"; prompt=$2; has_prompt=true; shift 2 ;;
+        --prompt-file) need_value "$@"; prompt_file=$2; has_prompt=true; shift 2 ;;
+        --split) need_value "$@"; split=$2; shift 2 ;;
+        --no-wait) wait=false; shift ;;
+        *) usage_error "Unknown option for spawn: $1" ;;
+        esac
+    done
+    if [ -n "$prompt_file" ]; then
+        [ -f "$prompt_file" ] || fail "No file at $prompt_file."
+        prompt=$(cat "$prompt_file") || fail "Could not read $prompt_file."
+    fi
+    if $has_prompt && [ -z "$(printf '%s' "$prompt" | tr -d '[:space:]')" ]; then
+        usage_error "The prompt is empty."
+    fi
+    if $shell; then
+        [ -z "$kind" ] || usage_error "--shell starts no agent, so it doesn't take --kind."
+        $has_prompt && usage_error "A prompt needs an agent: leave out --shell."
+    fi
+    [ -z "$kind" ] || is_agent_kind "$kind" || usage_error "Not an agent kind: $kind. Run \"herdr agent\" to see the kinds."
+    [ -z "$name" ] || is_agent_name "$name" ||
+        usage_error "Names start with a lowercase letter and have up to 32 lowercase letters, digits, - or _."
+    case $split in '' | right | down) ;; *) usage_error "--split takes right or down." ;; esac
+
+    resolve_machine "$machine"
+    # Elsewhere, a relative folder starts at the home folder, as in New Session. The ~ is for
+    # Herdr on that machine to expand.
+    # shellcheck disable=SC2088
+    if [ "$route" != here ] && [ -n "$cwd" ]; then
+        case $cwd in /* | "~" | "~/"*) ;; *) cwd="~/$cwd" ;; esac
+    fi
+    if [ "$route" = shepherdr ]; then
+        [ -z "$split" ] || usage_error "--split only works on this machine."
+        request_spawn
+        return
+    fi
+    if [ -n "$split" ]; then
+        [ "$route" = here ] || usage_error "--split only works on this machine."
+        in_herdr || fail "--split splits your Herdr pane, so run it inside one."
+    fi
+    learn_caller
+    $shell || [ -n "$kind" ] || kind=${caller_kind:-claude}
+
+    if [ "$route" = here ]; then
+        cwd=${cwd:-$PWD}
+        # A quoted ~ that the caller's shell left alone.
+        # shellcheck disable=SC2088
+        case $cwd in "~") cwd=$HOME ;; "~/"*) cwd=$HOME/${cwd#"~/"} ;; esac
+        [ -d "$cwd" ] || fail "No folder at $cwd on $machine_name."
+        cwd=$(cd -- "$cwd" && pwd -P) || fail "Could not open $cwd."
+    else
+        # Herdr expands ~ on the machine itself.
+        cwd=${cwd:-"~"}
+    fi
+    case $cwd in *[[:cntrl:]]*) fail "The folder's path has control characters." ;; esac
+    if [ -z "$name" ]; then
+        base=$(printf '%s' "$(basename -- "$cwd")" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' |
+            sed 's/^[^a-z]*//' | cut -c1-24)
+        [ "$cwd" = "~" ] && base=
+        name=${base:-${kind:-shell}}-$(random_hex 2)
+    fi
+
+    if [ -n "$split" ]; then
+        call pane split "$caller_pane" --direction "$split" --cwd "$cwd" --no-focus ||
+            fail "Herdr could not split your pane: $err_message"
+        placement='split'
+    else
+        on_machine workspace create --cwd "$cwd" --label "$name" --no-focus ||
+            fail "Herdr could not create a workspace on $machine_name: $err_message"
+        placement='workspace'
+    fi
+    child_pane=$(json_value pane_id "$out")
+    child_terminal=$(json_value terminal_id "$out")
+    child_workspace=$(json_value workspace_id "$out")
+    if ! { is_pane_id "$child_pane" && is_terminal_id "$child_terminal" && is_pane_id "$child_workspace"; }; then
+        fail "Herdr's answer didn't name the new pane."
+    fi
+
+    started=none
+    if ! $shell; then
+        if on_machine agent start "$name" --kind "$kind" --pane "$child_pane" --timeout 60000; then
+            started=ready
+        elif [ "$err_code" = agent_not_ready ]; then
+            started=waiting
+        else
+            started=failed
+            start_error=$err_message
+        fi
+    fi
+    prompt_state=none
+    if $has_prompt; then
+        prompt_state=pending
+        if [ "$started" = ready ] && on_machine agent prompt "$name" "$prompt"; then prompt_state=sent; fi
+    fi
+
+    begin_letter
+    [ "$prompt_state" = pending ] && printf '%s\n' "$prompt" >"$letter_dir/message.md"
+    if [ "$route" = here ]; then child_machine=here; else child_machine=profile:$profile; fi
+    if $shell; then agent_json=null; else agent_json="\"$kind\""; fi
+    finish_letter spawned ",\"child\":{\"machine\":\"$child_machine\",\"pane\":\"$child_pane\",\"terminal\":\"$child_terminal\",\"workspace\":\"$child_workspace\"},\"name\":\"$name\",\"agent\":$agent_json,\"placement\":\"$placement\",\"wait\":$wait,\"prompt\":\"$prompt_state\""
+
+    where="on $machine_name, in $cwd"
+    case $started in
+    none) say "Started a shell, $name, $where." ;;
+    ready)
+        if [ "$prompt_state" = sent ]; then
+            say "Started $name ($kind) $where, and sent it your prompt."
+        else
+            say "Started $name ($kind) $where."
+        fi
+        ;;
+    waiting)
+        say "Started $name ($kind) $where. It stopped at a startup question for the user, such as trusting the folder."
+        [ "$prompt_state" = pending ] && say "Shepherdr sends it your prompt once it is ready."
+        ;;
+    failed)
+        say "Created a workspace $where, but $kind did not start: $start_error"
+        [ "$prompt_state" = pending ] && say "Shepherdr sends your prompt if an agent starts there."
+        ;;
+    esac
+    if [ -z "$caller_terminal" ]; then
+        say "You're not in a Herdr pane, so Shepherdr doesn't link it to any session."
+    elif $wait; then
+        say "Shepherdr nests it under this session and keeps this session on hold until it finishes."
+    else
+        say "Shepherdr places it under this session, without putting this session on hold."
+    fi
+    if [ -n "$profile" ]; then
+        say "In Herdr: pane $child_pane, through \"herdr --machine $profile\"."
+    else
+        say "In Herdr: pane $child_pane."
+    fi
+}
+
+# A session on a machine only Shepherdr reaches: a request the user approves in Shepherdr.
+request_spawn() {
+    machine_json=$(json_string "$machine_name") || fail "The machine's name has control characters."
+    cwd_json=$(json_string "${cwd:-"~"}") || fail "The folder's path has control characters."
+    learn_caller
+    if $shell; then agent_json=null; else agent_json="\"${kind:-${caller_kind:-claude}}\""; fi
+    if [ -n "$name" ]; then name_json="\"$name\""; else name_json=null; fi
+    begin_letter
+    prompt_json=null
+    if $has_prompt; then
+        printf '%s\n' "$prompt" >"$letter_dir/message.md"
+        prompt_json='"message.md"'
+    fi
+    finish_letter spawn-request ",\"machine\":$machine_json,\"cwd\":$cwd_json,\"agent\":$agent_json,\"name\":$name_json,\"wait\":$wait,\"prompt\":$prompt_json"
+    say "Asked Shepherdr to start ${name:-a session} on $machine_name. This machine can't reach it, so the user approves the request in Shepherdr first."
+    if [ -n "$caller_terminal" ] && $wait; then
+        say "Once it starts, Shepherdr nests it under this session and keeps this session on hold until it finishes."
+    fi
+}
+
+cmd_machines() {
+    [ $# -eq 0 ] || usage_error "machines takes no arguments."
+    if [ ! -f "$machines_file" ]; then
+        say "Shepherdr hasn't written its machine list on this machine yet."
+        say "Only this machine is known: use spawn without --machine."
+        return 0
+    fi
+    header=$(head -n 1 "$machines_file")
+    updated=$(printf '%s' "$header" | awk '{ print $NF }')
+    say "You are on $(this_machine). Shepherdr's list, written $updated:"
+    printf '%-24s %-10s %s\n' NAME ROUTE "WHAT SPAWN DOES"
+    while IFS="$tab" read -r m_name m_route m_profile; do
+        case $m_name in '#'* | '') continue ;; esac
+        case $m_route in
+        here) what="starts it on this machine" ;;
+        direct) what="starts it there right away" ;;
+        shepherdr) what="asks the user to approve it in Shepherdr" ;;
+        *) what="unknown route" ;;
+        esac
+        printf '%-24s %-10s %s\n' "$m_name" "$m_route" "$what"
+    done <"$machines_file"
+}
+
+cmd_folders() {
+    machine=
+    while [ $# -gt 0 ]; do
+        case $1 in
+        --machine) need_value "$@"; machine=$2; shift 2 ;;
+        *) usage_error "Unknown option for folders: $1" ;;
+        esac
+    done
+    resolve_machine "$machine"
+    [ "$route" != shepherdr ] || fail "This machine can't reach $machine_name, so it can't list its folders. Ask the user where to work there."
+    on_machine pane list || fail "Herdr could not list the panes on $machine_name: $err_message"
+    folders=$(printf '%s' "$out" | grep -o '"foreground_cwd":"[^"\\]*"' | sed 's/^"foreground_cwd":"//; s/"$//' |
+        sort | uniq -c | sort -rn | sed 's/^ *[0-9]* //')
+    if [ -z "$folders" ]; then
+        say "No sessions on $machine_name yet."
+    else
+        say "Folders with sessions on $machine_name, the busiest first:"
+        say "$folders"
+    fi
+}
+
+cmd_handoff() {
+    to='' files='' message_file='' text=''
+    while [ $# -gt 0 ]; do
+        case $1 in
+        --to) need_value "$@"; to=$2; shift 2 ;;
+        --file)
+            need_value "$@"
+            case $2 in *"$nl"*) usage_error "File paths can't have line breaks." ;; esac
+            files=${files:+$files$nl}$2
+            shift 2
+            ;;
+        --message-file) need_value "$@"; message_file=$2; shift 2 ;;
+        --) shift; text=${text:+$text }$*; break ;;
+        -?*) usage_error "Unknown option for handoff: $1" ;;
+        *) text=${text:+$text }$1; shift ;;
+        esac
+    done
+    # A lone - reads the message from standard input.
+    [ "$text" = - ] && text='' && message_file=-
+    [ -z "$text" ] || [ -z "$message_file" ] || usage_error "Give the message as text or with --message-file, not both."
+    if [ -z "$text$message_file$files" ]; then
+        usage_error "Say what you hand off: a message, --message-file or --file."
+    fi
+    learn_caller
+    [ -n "$caller_terminal" ] || [ -n "$to" ] ||
+        fail "Outside a Herdr pane Shepherdr can't tell who you are: name the recipient with --to."
+    if [ -n "$to" ]; then to_json=$(json_string "$to") || usage_error "The recipient's name has control characters."; else to_json=null; fi
+    begin_letter
+    body_json=null
+    if [ -n "$text$message_file" ]; then
+        write_message "$text" "$message_file"
+        body_json='"message.md"'
+    fi
+    attach_files "$files"
+    finish_letter handoff ",\"to\":$to_json,\"body\":$body_json,\"files\":[${files_json}]"
+    say "Handed off to ${to:-the session waiting for you} through Shepherdr."
+    say "Shepherdr delivers it as a prompt once that session is free. From another machine, the user may approve it first."
+}
+
+cmd_wait_for() {
+    [ $# -gt 0 ] || usage_error "Name the sessions to wait for."
+    learn_caller
+    [ -n "$caller_terminal" ] || fail "Run this inside a Herdr pane: it puts that pane's session on hold."
+    names=$(json_array "$@") || usage_error "Session names can't have control characters."
+    begin_letter
+    finish_letter wait ",\"sessions\":$names"
+    say "Shepherdr keeps this session on hold until $* finish."
+}
+
+cmd_resume() {
+    learn_caller
+    [ -n "$caller_terminal" ] || fail "Run this inside a Herdr pane: it resumes that pane's session."
+    names=$(json_array "$@") || usage_error "Session names can't have control characters."
+    begin_letter
+    finish_letter resume ",\"sessions\":$names"
+    if [ $# -eq 0 ]; then say "Shepherdr takes this session off hold."; else say "Shepherdr stops this session waiting for $*."; fi
+}
+
+cmd_pin() {
+    url='' title=''
+    while [ $# -gt 0 ]; do
+        case $1 in
+        --title) need_value "$@"; title=$2; shift 2 ;;
+        -?*) usage_error "Unknown option for pin: $1" ;;
+        *) [ -z "$url" ] || usage_error "pin takes one link."; url=$1; shift ;;
+        esac
+    done
+    is_url "$url" || usage_error "pin takes an http or https link."
+    learn_caller
+    [ -n "$caller_terminal" ] || fail "Run this inside a Herdr pane: the link goes to that pane's session."
+    url_json=$(json_string "$url") || usage_error "Not a link: $url"
+    if [ -n "$title" ]; then title_json=$(json_string "$title") || usage_error "The title has control characters."; else title_json=null; fi
+    begin_letter
+    finish_letter pin ",\"url\":$url_json,\"title\":$title_json"
+    say "Shepherdr adds the link to this session's resources."
+}
+
+cmd_open() {
+    [ $# -eq 1 ] || usage_error "open takes one link."
+    is_url "$1" || usage_error "open takes an http or https link."
+    learn_caller
+    [ -n "$caller_terminal" ] || fail "Run this inside a Herdr pane: the page opens in that pane's session."
+    url_json=$(json_string "$1") || usage_error "Not a link: $1"
+    begin_letter
+    finish_letter open ",\"url\":$url_json"
+    say "Shepherdr opens it in this session's browser. From another machine, it only suggests it to the user."
+}
+
+cmd_notify() {
+    [ $# -gt 0 ] || usage_error "Say what to tell the user."
+    learn_caller
+    begin_letter
+    write_message "$*" ''
+    finish_letter notify ',"body":"message.md"'
+    say "Shepherdr shows the user a notification."
+}
+
+cmd_status() {
+    say "shepherdr $(tools_version) (protocol $PROTOCOL), letters in $root/outbox"
+    say "Machine: $(this_machine)"
+    learn_caller
+    if [ -n "$caller_terminal" ]; then
+        say "Herdr pane: $caller_pane (terminal $caller_terminal)"
+    else
+        say "Not inside a Herdr pane."
+    fi
+    st_waiting=0
+    if [ -d "$root/outbox" ]; then
+        for st_entry in "$root"/outbox/*; do
+            [ -d "$st_entry" ] && st_waiting=$((st_waiting + 1))
+        done
+    fi
+    say "Letters waiting for Shepherdr: $st_waiting"
+}
+
+tools_version() {
+    tv_version=$(head -n 1 "$tools/VERSION" 2>/dev/null)
+    printf '%s' "${tv_version:-unknown}"
+}
+
+cmd_skill() {
+    cat "$tools/skills/shepherdr/SKILL.md" 2>/dev/null || fail "The skill is missing from $tools/skills."
+}
+
+cmd_help() {
+    cat <<'EOF'
+shepherdr: start sessions that Shepherdr links to yours, wait for them and hand work back.
+
+Usage:
+  shepherdr machines                   Machines Shepherdr knows, and how to reach each one
+  shepherdr folders [--machine NAME]   Folders where sessions already work on a machine
+  shepherdr spawn [options]            Start a session, linked to this one
+      --machine NAME                   Another machine (default: this one)
+      --cwd DIR                        Its folder (default: here; ~ on other machines)
+      --kind KIND | --shell            Its agent (default: yours), or a plain shell
+      --name NAME                      Its agent and workspace name (lowercase)
+      --prompt TEXT | --prompt-file F  Its first prompt
+      --split right|down               Beside this pane instead of a new workspace
+      --no-wait                        Don't put this session on hold for it
+  shepherdr handoff [--to NAME] [--file F]... [--message-file F | MESSAGE]
+                                       Hand work back to the session waiting for you
+  shepherdr wait-for NAME...           Put this session on hold until those finish
+  shepherdr resume [NAME...]           Stop waiting for them, or for all
+  shepherdr pin URL [--title TEXT]     Add a link to this session's resources
+  shepherdr open URL                   Open a page in this session's browser
+  shepherdr notify MESSAGE             Show the user a notification
+  shepherdr status                     This machine, this pane and letters not collected yet
+  shepherdr skill                      Print the instructions for agents
+  shepherdr version
+
+Nothing here connects to the user's Mac: letters wait in ~/.shepherdr/outbox until Shepherdr
+collects them.
+EOF
+}
+
+command=${1:-help}
+[ $# -gt 0 ] && shift
+case $command in
+spawn) cmd_spawn "$@" ;;
+machines) cmd_machines "$@" ;;
+folders) cmd_folders "$@" ;;
+handoff) cmd_handoff "$@" ;;
+wait-for) cmd_wait_for "$@" ;;
+resume) cmd_resume "$@" ;;
+pin) cmd_pin "$@" ;;
+open) cmd_open "$@" ;;
+notify) cmd_notify "$@" ;;
+status) cmd_status "$@" ;;
+skill) cmd_skill ;;
+version | --version) say "shepherdr $(tools_version) (protocol $PROTOCOL)" ;;
+help | --help | -h) cmd_help ;;
+*) usage_error "Unknown command: $command" ;;
+esac

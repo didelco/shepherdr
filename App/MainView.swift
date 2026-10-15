@@ -54,7 +54,10 @@ struct MainView: View {
             model.order.synchronize(with: cluster.agents.map(\.id))
         }
         .onChange(of: cluster.agents, initial: true) { model.notifier.observe(cluster.agents) }
-        .onChange(of: cluster.lastRefresh, initial: true) { model.restoreSelection() }
+        .onChange(of: cluster.lastRefresh, initial: true) {
+            model.restoreSelection()
+            model.courier.observe()
+        }
         .onAppear { model.openMainWindow = { [openWindow] in openWindow(id: "main") } }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
             if cluster.automaticRefresh { Task { await cluster.refresh() } }

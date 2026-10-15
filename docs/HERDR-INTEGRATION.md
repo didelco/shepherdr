@@ -48,7 +48,7 @@ Queries run concurrently, each with a 12-second process deadline and an 8 MB out
 - Local is the default session. Remote profiles each identify one session.
 - No cluster event subscriptions; terminal windows do consume live CLI frame streams.
 - No persistence of cached session data across launches.
-- No workspace/agent creation, machine configuration or server lifecycle management. Enabled terminal input and resizing affect the selected existing terminal through Herdr's API.
+- No server lifecycle management. Shepherdr creates workspaces, closes panes and changes saved machines only when you ask; enabled terminal input and resizing affect the selected existing terminal through Herdr's API. The [agent tools](AGENT-TOOLS.md) also prompt agents with the handoffs their sessions receive.
 - Actual multi-host SSH validation needs configured machines; automated tests exercise multiple synthetic machines and failures through the same store/client boundary.
 
 ## Existing terminals (0.2)
@@ -69,3 +69,15 @@ Both commands stream newline-delimited JSON: `terminal.frame` includes `encoding
 `HerdrTerminalClient` and `HerdrTerminalConnection` carry domain frames/input independently of the renderer. `TerminalStore` owns observation/control state, input ordering, resize debounce and reconnect. Each connection drains stdout/stderr asynchronously, requires an initial frame within 15 seconds, bounds records to 4 MB, diagnostics to 16 KB, pending writes to 1 MB, and buffered frames to eight. Backpressure fails visibly rather than silently discarding ANSI deltas. Reconnect starts with Herdr's fresh full frame. After a dropped connection, `TerminalStore` reconnects on its own under a `ReconnectPolicy`: waits that double from 1 second to 5 minutes, for up to an hour, on `SuspendingClock` so time asleep doesn't count. It doesn't retry a terminal Herdr reports as not found, an incompatible failure, or another client's control: that still falls back to observing. No terminal contents are logged or persisted by Shepherdr.
 
 The window supports keyboard input, paste, text selection and copying, scrolling through Herdr's history, and plain clicks for programs that read the mouse; dragging always selects natively. Terminal escape sequences cannot write to the system clipboard through OSC 52. Clicked links are restricted to HTTP(S).
+
+## Agent tools (0.9)
+
+Checked on 2026-10-15 with Herdr 0.9.3 in disposable sessions. The [agent tools](AGENT-TOOLS.md) use these parts of Herdr:
+
+- **Doorbells.** `herdr pane report-metadata <pane> --source shepherdr --token shepherdr-mail=<id>` sets a token that the snapshot reports in `panes[].tokens`, on shell panes too, and in `agents[].tokens`. The same source can rewrite it any number of times. Values are cut at 80 characters and names must match `[A-Za-z0-9_-]{1,32}`. Tokens follow the terminal across agent start, release and replacement and `pane move`; a server restart drops them, and changes terminal IDs too. Shepherdr reads only well-formed letter IDs from them.
+- **Caller context.** Herdr gives every pane `HERDR_ENV`, `HERDR_PANE_ID` and `HERDR_BIN_PATH`. `herdr pane current --current` answers with the caller's `terminal_id` and, when an agent runs there, its `agent` label. The API records no parent for a pane, so links come from what `shepherdr` writes, never from guesses.
+- **Creating sessions.** `workspace create --cwd … --label … --no-focus` answers with `.result.root_pane`, and `pane split <pane> --direction right|down --cwd … --no-focus` with `.result.pane`. Both name the new pane's `pane_id`, `terminal_id` and `workspace_id` once in compact JSON, so the command reads them with a fixed pattern instead of parsing JSON in sh. Herdr expands `~` in `--cwd` on its own machine, and opens a missing folder's workspace in the home folder without an error, so the command checks local folders first.
+- **Agents.** `agent start <name> --kind <kind> --pane <pane> --timeout 60000` returns once the agent is ready, or `agent_not_ready` when it stopped at a startup question. Names must match `[a-z][a-z0-9_-]{0,31}`; the timeout must be over 3,000 ms and at most 300,000 ms. `agent prompt <pane> <text>` takes a text starting with `-` as text; it fails with `agent_not_ready` when the agent isn't the pane's foreground process, and refuses one that shows a question.
+- **Other machines.** All of these go through `--machine <profile>`, which Herdr forwards over its own SSH connection. Errors are JSON on stderr, `{"error":{"code":…,"message":…}}`.
+
+`Tests/AgentTools/herdr-live.sh` checks the command against a real Herdr in a server of its own, and CI runs it with Herdr from Homebrew.

@@ -56,6 +56,7 @@ struct PaneDTO: Decodable, Sendable {
     let tabId: String
     let cwd: String?
     let foregroundCwd: String?
+    let tokens: [String: String]?
 }
 
 struct AgentDTO: Decodable, Sendable {
@@ -125,6 +126,8 @@ struct ServerStatusDTO: Decodable {
 }
 
 enum HerdrJSON {
+    static let doorbellToken = "shepherdr-mail"
+
     static func decoder() -> JSONDecoder {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -199,6 +202,14 @@ enum HerdrJSON {
                 isLaunchPending: item.launchPending ?? false
             )
         }
+        // `shepherdr` rings a pane's doorbell with the ID of the letter it just left.
+        var doorbells: [String: String] = [:]
+        for pane in dto.panes {
+            if let bell = pane.tokens?[Self.doorbellToken], Letter.isValidID(bell) { doorbells[pane.terminalId] = bell }
+        }
+        for agent in dto.agents where doorbells[agent.terminalId] == nil {
+            if let bell = agent.tokens?[Self.doorbellToken], Letter.isValidID(bell) { doorbells[agent.terminalId] = bell }
+        }
         return MachineSnapshot(version: dto.version, protocolVersion: dto.protocol,
             workspaces: dto.workspaces.map { item in
                 Workspace(id: item.workspaceId, name: item.label.nonempty ?? item.workspaceId,
@@ -212,7 +223,7 @@ enum HerdrJSON {
                              title: agents.first { $0.id.terminalID == pane.terminalId }?.name
                                 ?? "\(tabs[pane.tabId]?.label.nonempty ?? pane.tabId) · \(pane.paneId)",
                              directory: pane.foregroundCwd?.nonempty ?? pane.cwd?.nonempty)
-            })
+            }, doorbells: doorbells)
     }
 
     private static func requireUnique(_ ids: [String], resource: String) throws {

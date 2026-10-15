@@ -70,6 +70,11 @@ public final class ClusterStore {
         return try? await client.recentOutput(paneID: paneID, on: machine, lines: lines)
     }
 
+    /// Submits a prompt to the agent in a pane. Herdr refuses while the agent asks a question.
+    public func prompt(paneID: String, text: String, onMachine id: String) async throws {
+        try await client.prompt(paneID: paneID, text: text, on: try machine(id))
+    }
+
     public func renameWorkspace(_ workspaceID: String, to name: String, onMachine id: String) async throws {
         try await client.renameWorkspace(workspaceID, to: name, on: try machine(id))
         await refreshAfterChange()

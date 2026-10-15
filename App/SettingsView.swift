@@ -13,8 +13,10 @@ struct SettingsView: View {
                 .tabItem { Label("General", systemImage: "slider.horizontal.3") }
             MachineSettings(model: model)
                 .tabItem { Label("Machines", systemImage: "server.rack") }
+            AgentSettings(model: model)
+                .tabItem { Label("Agents", systemImage: "envelope") }
         }
-        .frame(width: 580, height: 480)
+        .frame(width: 580, height: 520)
         .preferredColorScheme(.dark)
         .tint(Theme.phosphor)
     }
@@ -219,6 +221,130 @@ private struct MachineRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// The agent tools on each machine: the `shepherdr` command and its skill, which let agents start
+/// sessions and hand work back through Shepherdr.
+private struct AgentSettings: View {
+    @Bindable var model: AppModel
+    @ViewState<String> private var macName = ""
+
+    private var courier: Courier { model.courier }
+    private var tools: AgentToolsStore { courier.tools }
+
+    var body: some View {
+        Form {
+            Section {
+                Text("Agents use the shepherdr command and its skill for Claude Code and Codex to start sessions that Shepherdr links to theirs, and to hand work back. Shepherdr installs them over SSH, in ~/.shepherdr and the agents' skill folders. Machines never connect to this Mac: agents leave letters in ~/.shepherdr there, and Shepherdr collects them.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Machines") {
+                ForEach(model.cluster.machines.filter(\.machine.isEnabled)) { state in
+                    AgentMachineRow(state: state, courier: courier, name: name(of: state.machine))
+                }
+            }
+            Section("Updates") {
+                Picker("When Shepherdr brings newer tools", selection: Binding { tools.updatePolicy } set: { tools.updatePolicy = $0 }) {
+                    Text("Ask in the machine's sessions").tag(AgentToolsStore.UpdatePolicy.ask)
+                    Text("Update them").tag(AgentToolsStore.UpdatePolicy.always)
+                    Text("Leave them as they are").tag(AgentToolsStore.UpdatePolicy.never)
+                }
+            }
+            Section("This Mac") {
+                TextField("Name in the machine lists", text: $macName, prompt: Text(MachineList.defaultMacName))
+                    .onSubmit { tools.setMacName(macName) }
+                Text("Agents on other machines use this name to ask for a session here. Press Return to save it; leave it empty for the computer's name.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { macName = tools.macName == MachineList.defaultMacName ? "" : tools.macName }
+    }
+
+    private func name(of machine: Machine) -> String {
+        MachineList.name(of: machine, among: model.cluster.machines.map(\.machine), macName: tools.macName)
+    }
+}
+
+private struct AgentMachineRow: View {
+    let state: MachineState
+    let courier: Courier
+    let name: String
+
+    private var tools: AgentToolsStore { courier.tools }
+    private var id: String { state.id }
+    private var status: AgentToolsStore.Status { tools.status(on: id) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: state.machine.isLocal ? "laptopcomputer" : "server.rack").frame(width: 18).foregroundStyle(.secondary)
+                Text(name).fontWeight(.medium)
+                Text(statusText).font(.callout).foregroundStyle(.secondary)
+                Spacer()
+                actions
+            }
+            if let check = tools.tools(on: id).check, check.version != nil {
+                Text(details(check)).font(.caption).foregroundStyle(.secondary).padding(.leading, 26)
+            }
+            if let failure = courier.installFailures[id] {
+                Text(failure).font(.caption).foregroundStyle(.orange).padding(.leading, 26).textSelection(.enabled)
+            }
+            HStack(spacing: 16) {
+                if !state.machine.isLocal {
+                    Toggle("Trust its letters", isOn: Binding { tools.trusted.contains(id) } set: { tools.setTrusted(id, $0) })
+                        .help("Its handoffs to sessions on other machines, its requests for sessions and the pages it suggests go through without asking you")
+                    Toggle("Share the machine list", isOn: Binding { tools.shares(id) } set: { tools.setShares(id, $0) })
+                        .help("Off: it only learns its own name, not your other machines'")
+                }
+                if tools.declined.contains(id) {
+                    Button("Offer Again") { tools.setDeclined(id, false) }
+                        .help("Offer the tools in this machine's sessions again")
+                }
+            }
+            .toggleStyle(.checkbox).font(.caption).padding(.leading, 26)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var statusText: String {
+        guard state.connection == .online || status.isInstalled else { return state.connection.title }
+        switch status {
+        case .unknown: return "Not checked yet"
+        case .checking: return "Checking…"
+        case .missing: return tools.declined.contains(id) ? "Not installed · not offered" : "Not installed"
+        case .outdated(let version): return "Version \(version) · update to \(courier.kit?.version ?? version)"
+        case .current: return "Installed"
+        case .newer(let version): return "Version \(version), from a newer Shepherdr"
+        case .installing: return "Installing…"
+        case .removing: return "Removing…"
+        case .failed(let message): return message
+        }
+    }
+
+    private func details(_ check: AgentTools.Check) -> String {
+        let agents = check.agents.filter(\.isPresent).map { "\($0.name == "claude" ? "Claude Code" : "Codex") \($0.hasSkill ? "✓" : "without the skill")" }
+        return ([check.system].compactMap { $0 } + agents + (check.waitingLetters > 0 ? ["\(check.waitingLetters) letters waiting"] : []))
+            .joined(separator: " · ")
+    }
+
+    @ViewBuilder private var actions: some View {
+        let online = state.connection == .online
+        switch status {
+        case .installing, .removing, .checking:
+            ProgressView().controlSize(.small)
+        case .missing, .failed:
+            Button("Install") { courier.install(id) }.disabled(!online)
+        case .outdated:
+            Button("Update") { courier.install(id) }.disabled(!online)
+            Button("Remove") { courier.uninstall(id) }.disabled(!online)
+        case .current, .newer:
+            Button("Remove") { courier.uninstall(id) }.disabled(!online)
+                .help("Removes the command and its skills; letters stay in ~/.shepherdr")
+        case .unknown:
+            Button("Check") { courier.check(id) }.disabled(!online)
+        }
     }
 }
 

@@ -1,0 +1,58 @@
+#!/bin/sh
+# A stand-in for herdr in the agent tools' tests: answers like Herdr 0.9 does, and logs every
+# call, one argument per line and a blank line after each call, to $FAKE_HERDR_LOG.
+#   FAKE_CALLER_AGENT   the calling pane's agent kind (default claude; empty for a shell)
+#   FAKE_AGENT_START    ok, not_ready or fail
+#   FAKE_FAIL           a subcommand, such as "workspace create", that fails
+
+log=${FAKE_HERDR_LOG:-/dev/null}
+for argument in "$@"; do printf '%s\n' "$argument" >>"$log"; done
+printf '\n' >>"$log"
+
+machine=
+if [ "${1:-}" = --machine ]; then
+    machine=$2
+    shift 2
+fi
+command="${1:-} ${2:-}"
+
+error() {
+    printf '{"error":{"code":"%s","message":"%s"},"id":"cli"}\n' "$1" "$2" >&2
+    exit 1
+}
+
+[ "$command" = "${FAKE_FAIL:-}" ] && error failed "fake failure of $command"
+
+case $command in
+"pane current")
+    agent=${FAKE_CALLER_AGENT-claude}
+    printf '{"id":"cli:pane:current","result":{"pane":{%s"agent_status":"idle","cwd":"/tmp","pane_id":"%s","terminal_id":"term_caller1","workspace_id":"w1"},"type":"pane_current"}}\n' \
+        "${agent:+\"agent\":\"$agent\",}" "${HERDR_PANE_ID:-w1:p1}"
+    ;;
+"workspace create")
+    printf '{"id":"cli:workspace:create","result":{"root_pane":{"agent_status":"unknown","cwd":"/tmp","pane_id":"w9:p1","terminal_id":"term_child%s","workspace_id":"w9"},"tab":{"label":"1","tab_id":"w9:t1","workspace_id":"w9"},"type":"workspace_created","workspace":{"label":"x","workspace_id":"w9"}}}\n' \
+        "${machine:+remote}"
+    ;;
+"pane split")
+    printf '{"id":"cli:pane:split","result":{"pane":{"agent_status":"unknown","cwd":"/tmp","pane_id":"w1:p2","terminal_id":"term_split1","workspace_id":"w1"},"type":"pane_info"}}\n'
+    ;;
+"agent start")
+    case ${FAKE_AGENT_START:-ok} in
+    ok) printf '{"id":"cli:agent:start","result":{"agent":{"name":"%s"},"type":"agent_info"}}\n' "$3" ;;
+    not_ready) error agent_not_ready "agent is waiting at a startup prompt" ;;
+    *) error agent_not_found "claude was not found on PATH" ;;
+    esac
+    ;;
+"agent prompt")
+    printf '{"id":"cli:agent:prompt","result":{"type":"agent_prompted"}}\n'
+    ;;
+"pane report-metadata")
+    printf '{"id":"cli:pane:report_metadata","result":{"type":"ok"}}\n'
+    ;;
+"pane list")
+    printf '{"id":"cli:pane:list","result":{"panes":[{"foreground_cwd":"/srv/api","pane_id":"w1:p1"},{"foreground_cwd":"/srv/web","pane_id":"w2:p1"},{"foreground_cwd":"/srv/api","pane_id":"w3:p1"}],"type":"pane_list"}}\n'
+    ;;
+*)
+    error unknown_command "fake herdr doesn't know $command"
+    ;;
+esac

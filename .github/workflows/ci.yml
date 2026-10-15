@@ -18,3 +18,33 @@ jobs:
         run: swift test -c release
       - name: Build and test native app
         run: xcodebuild -project Shepherdr.xcodeproj -scheme Shepherdr -configuration Debug -destination 'platform=macOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO test
+      - name: Agent tools command line
+        run: sh Tests/AgentTools/test.sh
+  # The command line Shepherdr installs on other machines must run on Linux too, in the shells
+  # agents meet there.
+  agent-tools-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: ShellCheck
+        run: shellcheck -s sh Sources/ShepherdrCore/Resources/AgentTools/bin/shepherdr Tests/AgentTools/test.sh Tests/AgentTools/herdr-live.sh Tests/AgentTools/fake-herdr
+      - name: Command line with dash
+        run: TEST_SHELL=dash dash Tests/AgentTools/test.sh
+      - name: Command line with BusyBox
+        run: docker run --rm -v "$PWD":/src:ro -w /src alpine:3.20 sh Tests/AgentTools/test.sh
+  # What Herdr answers is the command line's contract: a change in Herdr fails here, not in your sessions.
+  agent-tools-herdr:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install Herdr
+        run: brew install herdr
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      - name: Command line against Herdr
+        run: sh Tests/AgentTools/herdr-live.sh

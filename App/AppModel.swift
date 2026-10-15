@@ -8,6 +8,8 @@ enum Destination: Hashable {
     case overview
     /// An agent session or a plain shell pane; both are addressed by machine and terminal ID.
     case session(Agent.ID)
+
+    var sessionID: Agent.ID? { if case .session(let id) = self { id } else { nil } }
 }
 
 /// A pane without a detected agent. It can be opened, but it is not part of the priority queue.
@@ -210,6 +212,7 @@ final class AppModel {
         didSet {
             sessionStates.lastSelection = selectedID
             checksMonitor.watch(selectedID)
+            if let selectedID, selectedID != oldValue.sessionID { courier.sessionOpened(selectedID) }
         }
     }
     /// Until the session open at the last quit is back, or known to be gone.
@@ -258,6 +261,8 @@ final class AppModel {
     let usageMonitor = MachineUsageMonitor()
     /// What agents that aren't working left running, such as watchers.
     let background = BackgroundWorkStore()
+    /// The agent tools on each machine, and the letters agents send through them.
+    let courier = Courier()
 
     init(cluster: ClusterStore = ClusterStore(), order: SessionOrderStore = SessionOrderStore(),
          relations: SessionRelationStore = SessionRelationStore(), sessionStates: SessionStateStore = SessionStateStore()) {
@@ -267,6 +272,13 @@ final class AppModel {
         self.sessionStates = sessionStates
         notifier.model = self
         checksMonitor.model = self
+        courier.model = self
+    }
+
+    /// A refresh you asked for: also looks in every outbox for letters whose doorbell was lost.
+    func refreshNow() async {
+        await cluster.refresh()
+        courier.sweep()
     }
 
     /// Whether `window` is Shepherdr's one window. Any other window closes in favor of it.
@@ -589,6 +601,13 @@ final class AppModel {
             }
         }
         let page = await pageProbe.load(resource.url)
+        // A page an agent pinned stays whatever it answers: its server may be down, or the page private.
+        if resource.kind == .link {
+            let loaded = page.status.map { (200..<400).contains($0) } ?? false
+            let title = loaded ? page.title.flatMap { ResourceTitles.clean($0, for: resource) } : nil
+            workspace.update(resource.key) { $0.found(title: title) }
+            return
+        }
         if page.hostMissing || page.status == 404 || page.status == 410 || page.title.map(ResourceTitles.isNotFoundPage) == true {
             // GitHub answers 404 for private repositories to visitors who aren't signed in.
             if resource.github != nil, !(await PageProbe.isSignedIntoGitHub()) { return }
