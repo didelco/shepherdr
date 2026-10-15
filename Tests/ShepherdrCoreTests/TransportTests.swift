@@ -142,6 +142,47 @@ import Foundation
         #expect(await shell.recordedArguments().count == 1)
     }
 
+    @Test func testAWorktreeSessionOpensTheBranchsWorktreeOrCreatesIt() async throws {
+        let notFound = #"{"error":{"code":"worktree_not_found","message":"worktree branch not found"},"id":"cli:worktree:open"}"#
+        let worktreeCreated = #"{"id":"cli:worktree:create","result":{"type":"worktree_created","workspace":{"workspace_id":"w9","label":"shepherdr#12"},"root_pane":{"pane_id":"w9:p1","terminal_id":"term-new","workspace_id":"w9"},"tab":{"tab_id":"w9:t1"}}}"#
+        let runner = RecordingRunner([output(notFound), output(worktreeCreated)])
+        let request = NewSessionRequest(directory: "/srv/shepherdr", name: "shepherdr#12", agentKind: nil,
+                                        worktree: .init(branch: "fix-login", base: "origin/fix-login"))
+        let session = try await CLIHerdrClient(runner: runner, executable: executable).createSession(request, on: Fixture.remote)
+        #expect(session == CreatedSession(workspaceID: "w9", paneID: "w9:p1", terminalID: "term-new"))
+        #expect(await runner.recordedArguments() == [
+            ["--machine", "remote-1", "worktree", "open", "--cwd", "/srv/shepherdr", "--branch", "fix-login",
+             "--label", "shepherdr#12", "--no-focus"],
+            ["--machine", "remote-1", "worktree", "create", "--cwd", "/srv/shepherdr", "--branch", "fix-login",
+             "--base", "origin/fix-login", "--label", "shepherdr#12", "--no-focus"],
+        ])
+
+        // A worktree Herdr already has open is the session, agent and all.
+        let open = #"{"id":"cli:worktree:open","result":{"already_open":true,"type":"worktree_opened","workspace":{"workspace_id":"w4"},"root_pane":{"pane_id":"w4:p1","terminal_id":"term_open","workspace_id":"w4"}}}"#
+        let reopening = RecordingRunner([output(open)])
+        let existing = try await CLIHerdrClient(runner: reopening, executable: executable)
+            .createSession(.init(directory: "/tmp/app", name: "fix", agentKind: "claude", worktree: .init(branch: "fix")), on: .local)
+        #expect(existing == CreatedSession(workspaceID: "w4", paneID: "w4:p1", terminalID: "term_open", isExisting: true))
+        #expect(await reopening.recordedArguments().count == 1)
+
+        // Git's own complaints, such as a branch checked out elsewhere, reach the user.
+        let used = #"{"error":{"code":"worktree_create_failed","message":"fatal: 'main' is already used by worktree at '/srv/app'"},"id":"cli:worktree:create"}"#
+        let failing = RecordingRunner([output(notFound), output(used)])
+        do {
+            _ = try await CLIHerdrClient(runner: failing, executable: executable)
+                .createSession(.init(directory: "/srv/app", name: "main", agentKind: nil, worktree: .init(branch: "main")), on: .local)
+            Issue.record("Expected a failure")
+        } catch let failure as HerdrFailure {
+            #expect(failure.message.contains("already used by worktree"))
+        }
+        let refused = RecordingRunner([])
+        await #expect(throws: HerdrFailure.self) {
+            _ = try await CLIHerdrClient(runner: refused, executable: executable)
+                .createSession(.init(directory: "/srv/app", name: "x", agentKind: nil, worktree: .init(branch: "--orphan")), on: .local)
+        }
+        #expect(await refused.recordedArguments().isEmpty)
+    }
+
     @Test func testCloseAndMachineChangesUseLiteralArguments() async throws {
         let ok = output(#"{"result":{"type":"ok"}}"#)
         let runner = RecordingRunner([ok, ok, ok, ok, ok])

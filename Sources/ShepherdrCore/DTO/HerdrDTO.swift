@@ -82,6 +82,8 @@ struct WorkspaceCreatedDTO: Decodable {
         struct RootPane: Decodable { let paneId: String; let terminalId: String }
         let workspace: Workspace
         let rootPane: RootPane
+        /// Set by `worktree open` when a workspace already has the worktree open.
+        let alreadyOpen: Bool?
     }
     let result: Result
 }

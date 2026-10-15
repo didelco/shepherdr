@@ -110,13 +110,23 @@ You can reorder while filtering the queue (**⌘F**): movement is relative to th
 
 ## Create and close sessions
 
-**⌘N** (or **+** in the sidebar) opens **New Session**: choose a folder (on the selected machine) and an optional name. Shepherdr runs `herdr workspace create --cwd … --label …` and opens its shell. Start an agent there as you would in any terminal: Herdr detects it, and the session joins the queue within one refresh.
+**⌘N** (or **+** in the sidebar) opens **New Session**: choose a folder (on the selected machine), or paste a GitHub repository or pull request, and an optional name. Shepherdr runs `herdr workspace create --cwd … --label …` and opens its shell. Start an agent there as you would in any terminal: Herdr detects it, and the session joins the queue within one refresh.
 
 Below the folder, the folders agents on the selected machine work in are one click away, the most used first, followed by those of shells still waiting for an agent. Git worktrees are left out: they belong to the session that made them.
 
-Shepherdr checks the folder on its machine first, over SSH for other machines, where `~` means that machine's home and a relative path starts there. If it doesn't exist, New Session offers to start a new project there: **NEW PROJECT** makes the folder, runs `git init` in it and opens the session. Herdr itself would open a missing folder's workspace in the home folder without a word.
+Shepherdr checks the folder on its machine first, over SSH for other machines, where `~` means that machine's home. If it doesn't exist, New Session offers to start a new project there: **NEW PROJECT** makes the folder, runs `git init` in it and opens the session. Herdr itself would open a missing folder's workspace in the home folder without a word.
 
-On this Mac, **CHOOSE…** always starts in your projects folder, `~/projects` unless you change it in **Settings → General**, and a folder name alone means a folder inside it. **New Session in Same Folder…** in a session's or shell's context menu, or **⇧⌘N** for the one on screen, prefills its folder and machine and places the new session right after it, in the same group. A group header's **+** places it in that group.
+Each machine has a projects folder, `~/projects` unless you change it: this Mac's in **Settings → General**, other machines' in **Settings → Machines**, where `~` is that machine's home. A folder name alone means a folder inside it, and GitHub repositories are cloned into it. On this Mac, **CHOOSE…** starts there. **New Session in Same Folder…** in a session's or shell's context menu, or **⇧⌘N** for the one on screen, prefills its folder and machine and places the new session right after it, in the same group. A group header's **+** places it in that group.
+
+### In a worktree
+
+Tick **IN A NEW WORKTREE** and name a branch to work apart from the folder's own checkout. Shepherdr asks Herdr to open the branch's worktree (`herdr worktree open --branch …`) and, when it has none yet, to create one (`herdr worktree create --cwd … --branch …`). Herdr checks the branch out if it exists, or creates it from the folder's current commit, in a checkout of its own under its worktrees folder: `~/.herdr/worktrees/<repository>/<branch>` unless Herdr's `worktrees.directory` says otherwise. It also opens the repository's own workspace beside it when that isn't open yet, as it groups worktrees with their repository. A worktree Herdr already has open is simply opened: no second session. The session is named after the branch unless you name it.
+
+### From GitHub
+
+Paste a repository's link, such as `https://github.com/theam/shepherdr` or an SSH remote like `git@github.com:theam/shepherdr.git`, instead of a folder. Shepherdr opens your clone of it on the selected machine: the folder of that name in its projects folder, or one a session there already works in, when one of its remotes points at the repository. Without one, it clones the repository into the projects folder first: from the SSH remote you gave, else over HTTPS, through the GitHub CLI when it's signed in on that machine. A folder of that name holding something else stops it with a message. Git never asks for anything: a clone that needs a password or an unknown host key fails with Git's own message. **IN A NEW WORKTREE** works here too.
+
+Paste a pull request's link (`…/pull/12`) and the session opens in a worktree of its branch. Shepherdr asks GitHub which branch it comes from, through the GitHub CLI on this Mac (which sees private repositories) or else GitHub's public API, and shows its title. It finds or clones the repository as above, fetches the branch and checks it out in a worktree, so the agent can push to the pull request. A fork's pull request, whose branch could be named anything, goes to a branch `pr-12` instead, from GitHub's `pull/12/head`, which also covers pull requests whose branch was deleted. The session is named `repository#12` unless you name it, and starts with the pull request in its **Resources**. Asking again for the same pull request opens the same worktree.
 
 **Close Session…** in a session's context menu asks for confirmation, then runs `herdr pane close`. It is deliberately only in the context menu, away from everyday controls. This ends the agent process. When it is the workspace's last pane, Herdr closes the workspace too.
 
