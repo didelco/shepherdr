@@ -267,6 +267,61 @@ public struct GitHubLookup: Sendable {
         guard fields.count == 2, ["true", "false"].contains(fields[0]) else { return .unknown }
         return .found(isPullRequest: fields[0] == "true", title: fields[1])
     }
+
+    /// The branch a pull request comes from: through the CLI, which sees private repositories, else
+    /// through GitHub's public API. Nil when neither answers.
+    public func pullRequest(_ repository: GitHubRepository, number: Int) async -> PullRequestHead? {
+        let path = "repos/\(repository.fullName)/pulls/\(number)"
+        if let executable,
+           let output = try? await runner.run(executable: executable,
+                                              arguments: ["api", path, "--jq", Self.headFields], timeout: 20),
+           output.exitCode == 0,
+           let head = Self.head(fromFields: String(decoding: output.stdout, as: UTF8.self), in: repository) {
+            return head
+        }
+        var request = URLRequest(url: URL(string: "https://api.github.com/\(path)")!, timeoutInterval: 15)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return Self.head(fromJSON: data, in: repository)
+    }
+
+    /// The branch, the repository it lives in, whether it merged, the state and the title, as tab-separated fields.
+    static let headFields = #"[.head.ref, (.head.repo.full_name // ""), (.merged_at != null), .state, .title] | @tsv"#
+
+    static func head(fromFields text: String, in repository: GitHubRepository) -> PullRequestHead? {
+        let fields = text.trimmingCharacters(in: .newlines).split(separator: "\t", maxSplits: 4, omittingEmptySubsequences: false)
+            .map(String.init)
+        guard fields.count == 5 else { return nil }
+        return head(branch: fields[0], fullName: fields[1], merged: fields[2] == "true", state: fields[3], title: fields[4],
+                    in: repository)
+    }
+
+    static func head(fromJSON data: Data, in repository: GitHubRepository) -> PullRequestHead? {
+        struct Pull: Decodable {
+            struct Head: Decodable {
+                struct Repo: Decodable { let full_name: String }
+                let ref: String
+                let repo: Repo?
+            }
+            let head: Head
+            let state: String
+            let title: String
+            let merged_at: String?
+        }
+        guard let pull = try? JSONDecoder().decode(Pull.self, from: data) else { return nil }
+        return head(branch: pull.head.ref, fullName: pull.head.repo?.full_name ?? "", merged: pull.merged_at != nil,
+                    state: pull.state, title: pull.title, in: repository)
+    }
+
+    /// A branch Git could take as an argument: never an option, never a control character.
+    private static func head(branch: String, fullName: String, merged: Bool, state: String, title: String,
+                             in repository: GitHubRepository) -> PullRequestHead? {
+        guard !branch.isEmpty, !branch.hasPrefix("-"), branch.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
+              branch.rangeOfCharacter(from: .controlCharacters) == nil else { return nil }
+        return PullRequestHead(branch: branch, isSameRepository: fullName.lowercased() == repository.fullName.lowercased(),
+                               title: title, state: merged ? "merged" : state)
+    }
 }
 
 /// Page titles without the site's own decoration: `Fix login · Pull Request #12 · theam/shepherdr`

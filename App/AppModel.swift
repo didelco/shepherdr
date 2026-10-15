@@ -846,16 +846,29 @@ final class AppModel {
             .first { $0.terminalID == id.terminalID }?.directory
     }
 
+    /// The main checkouts sessions on a machine work in whose repository has this name, where a
+    /// clone of it may already be.
+    func clones(named name: String, on machineID: String) -> [String] {
+        let prefix = machineID + "/"
+        let paths = cluster.checkouts.filter { key, checkout in
+            key.hasPrefix(prefix) && !checkout.isLinkedWorktree && checkout.repository.lowercased() == name.lowercased()
+        }.map(\.value.path)
+        return Array(Set(paths)).sorted()
+    }
+
     /// Creates a workspace with a shell in Herdr, then opens it. Returns the failure for the sheet to show.
+    /// - Parameter pins: links the session starts with in its resources, such as its pull request.
     func createSession(_ request: NewSessionRequest, onMachine machineID: String,
-                       placement: QueueDrop? = nil) async -> HerdrFailure? {
+                       placement: QueueDrop? = nil, pins: [URL] = []) async -> HerdrFailure? {
         isCreatingSession = true
         defer { isCreatingSession = false }
         do {
             let created = try await cluster.createSession(request, onMachine: machineID)
             let id = Agent.ID(machineID: machineID, terminalID: created.terminalID)
             if let notice = created.notice { sessionNotices[id] = notice }
-            if let placement { order.insert(id, placement) }
+            // A worktree Herdr already had open keeps its place in the queue.
+            if let placement, !created.isExisting { order.insert(id, placement) }
+            collectResources(pins.compactMap(SessionResource.init(url:)), for: id)
             newSession = nil
             open(id)
             return nil

@@ -246,7 +246,9 @@ herdr status</code></pre>
 <li>Haz clic en el <b>nombre de otra sesión</b> o en su ID de panel (<code>w3:p1</code>) en la terminal para ir a ella, como en lo que imprime <code>shepherdr</code> al lanzar una. <code>nombre@máquina</code> elige la máquina.</li>
 </ul>
 <h3>Crear y cerrar</h3>
-<p><kbd>⌘N</kbd> abre <b>New Session</b>: una carpeta (en la máquina elegida) y un nombre opcional. <i>New Session in Same Folder…</i> la crea justo después de otra, en su grupo. <i>Rename…</i> cambia el nombre del workspace. <i>Close Session…</i> pide confirmación y termina el proceso del agente; solo está en el menú contextual.</p>
+<p><kbd>⌘N</kbd> abre <b>New Session</b>: una carpeta (en la máquina elegida) y un nombre opcional. <i>New Session in Same Folder…</i> la crea justo después de otra, en su grupo. <b>IN A NEW WORKTREE</b> la abre en un worktree de la rama que elijas, que Herdr crea en su carpeta de worktrees.</p>
+<p>En lugar de una carpeta, pega un enlace de GitHub. Un <b>repositorio</b> abre tu clon, o lo clona antes en la carpeta de proyectos de esa máquina (<code>~/projects</code>; cada máquina tiene la suya en <i>Settings</i>). Un <b>pull request</b> abre un worktree de su rama, clonando el repositorio si hace falta, con el PR ya en <i>Resources</i>.</p>
+<p><i>Rename…</i> cambia el nombre del workspace. <i>Close Session…</i> pide confirmación y termina el proceso del agente; solo está en el menú contextual.</p>
 <p>No hay scroll del histórico ni ratón dentro de apps de pantalla completa. Para eso usa el cliente <code>herdr</code>: comparte las sesiones.</p>
 </div>
 <div class="en">
@@ -263,7 +265,9 @@ herdr status</code></pre>
 <li>Click <b>another session's name</b> or its pane ID (<code>w3:p1</code>) in the terminal to go to it, as in what <code>shepherdr</code> prints when it starts one. <code>name@machine</code> picks the machine.</li>
 </ul>
 <h3>Create and close</h3>
-<p><kbd>⌘N</kbd> opens <b>New Session</b>: a folder (on the chosen machine) and an optional name. <i>New Session in Same Folder…</i> creates it right after another, in its group. <i>Rename…</i> renames the workspace. <i>Close Session…</i> asks for confirmation and ends the agent process; it lives only in the context menu.</p>
+<p><kbd>⌘N</kbd> opens <b>New Session</b>: a folder (on the chosen machine) and an optional name. <i>New Session in Same Folder…</i> creates it right after another, in its group. <b>IN A NEW WORKTREE</b> opens it in a worktree of the branch you name, which Herdr creates in its worktrees folder.</p>
+<p>Instead of a folder, paste a GitHub link. A <b>repository</b> opens your clone, or clones it first into that machine's projects folder (<code>~/projects</code>; each machine has its own in <i>Settings</i>). A <b>pull request</b> opens a worktree of its branch, cloning the repository if needed, with the PR already in <i>Resources</i>.</p>
+<p><i>Rename…</i> renames the workspace. <i>Close Session…</i> asks for confirmation and ends the agent process; it lives only in the context menu.</p>
 <p>There's no scrollback browsing or mouse reporting inside full-screen apps. For that, use the <code>herdr</code> client: it shares the sessions.</p>
 </div>
 </section>
