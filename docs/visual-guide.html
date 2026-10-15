@@ -151,7 +151,7 @@ herdr status</code></pre>
 <div class="es">
 <h2>Qué hace</h2>
 <ul>
-<li><b>Una cola para todos los agentes.</b> Sesiones de todas tus máquinas, en tu orden de prioridad, con grupos.</li>
+<li><b>Una cola para todos los agentes.</b> Sesiones de todas tus máquinas, en tu orden de prioridad, con grupos y, si quieres, reunidas por proyecto.</li>
 <li><b>La terminal real, embebida.</b> Escribe en la TUI del agente; suelta ficheros e imágenes; usa el editor de prompts o dicta.</li>
 <li><b>Un navegador por sesión.</b> Los enlaces se abren junto a la terminal y las pestañas se conservan. Los ficheros locales también se abren.</li>
 <li><b>Recursos a mano.</b> PRs, issues y artefactos de Claude de cada sesión, en un panel lateral.</li>
@@ -165,7 +165,7 @@ herdr status</code></pre>
 <div class="en">
 <h2>Features</h2>
 <ul>
-<li><b>One queue for every agent.</b> Sessions from all your machines, in your own priority order, with groups.</li>
+<li><b>One queue for every agent.</b> Sessions from all your machines, in your own priority order, with groups and, if you like, gathered by project.</li>
 <li><b>The real terminal, embedded.</b> Type into the agent's TUI; drop files and images; use the prompt editor or dictate.</li>
 <li><b>A browser per session.</b> Links open next to the terminal and tabs stay put. Local files open too.</li>
 <li><b>Resources at hand.</b> The PRs, issues and Claude artifacts each session links to, in a side panel.</li>
@@ -211,6 +211,13 @@ herdr status</code></pre>
 <li>Un grupo plegado sigue mostrando cuántas de sus sesiones te necesitan, y sus sesiones se saltan con <kbd>⌘1…⌘9</kbd>.</li>
 <li><b>+</b> en la cabecera crea una sesión dentro del grupo. <i>Ungroup</i> nunca cierra sesiones.</li>
 </ul>
+<h3>Proyectos</h3>
+<p>Activa <i>View → Gather Sessions by Project</i>, o <b>[ ] projects</b> en la cabecera de la cola, para reunir bajo una cabecera las sesiones de cada proyecto (un repositorio de Git: su checkout principal y sus worktrees, en cualquier máquina), arriba en la cola y dentro de cada grupo. Viene desactivado.</p>
+<ul>
+<li>La cabecera ocupa el lugar de la sesión más prioritaria del proyecto; una sesión sola sigue siendo una fila normal. Los números y <kbd>⌘1…⌘9</kbd> siguen lo que ves.</li>
+<li>Bajo una cabecera, ▲▼ y arrastrar reordenan las sesiones del proyecto; las ▲▼ de la cabecera mueven el proyecto entero.</li>
+<li>Haz clic en una cabecera para plegarla. Sigue mostrando cuántas de sus sesiones te necesitan.</li>
+</ul>
 </div>
 <div class="en">
 <h2>The queue</h2>
@@ -228,6 +235,13 @@ herdr status</code></pre>
 <li>Drop a session on a header to add it. Groups don't nest.</li>
 <li>A collapsed group still shows how many of its sessions need you, and its sessions are skipped by <kbd>⌘1…⌘9</kbd>.</li>
 <li><b>+</b> on the header creates a session in the group. <i>Ungroup</i> never closes sessions.</li>
+</ul>
+<h3>Projects</h3>
+<p>Turn on <i>View → Gather Sessions by Project</i>, or <b>[ ] projects</b> in the queue header, to gather each project's sessions (a Git repository: its main checkout and its worktrees, on any machine) under a heading, at the top of the queue and inside each group. It's off by default.</p>
+<ul>
+<li>A heading sits where the project's highest-priority session was; a lone session stays a plain row. Numbers and <kbd>⌘1…⌘9</kbd> follow what you see.</li>
+<li>Under a heading, ▲▼ and dragging reorder the project's sessions; the heading's ▲▼ move the whole project.</li>
+<li>Click a heading to collapse it. It still shows how many of its sessions need you.</li>
 </ul>
 </div>
 </section>

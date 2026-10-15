@@ -69,8 +69,8 @@ App/                              SwiftUI presentation: queue sidebar, work area
 Sources/ShepherdrCore/
   Transport/                      CLI adapters, executable discovery, bounded process/stream transports, agent tools and mailbox
   DTO/                            JSON wire types, validation and domain mapping
-  Domain/                         Machine, Workspace, Agent, lifecycle and failure models, letters and machine lists
-  Store/                          MainActor cluster state, local priorities, groups and holds, terminal connections, agent tools and mail
+  Domain/                         Machine, Workspace, Agent, lifecycle and failure models, project gathering, letters and machine lists
+  Store/                          MainActor cluster state, local priorities, groups, project headings and holds, terminal connections, agent tools and mail
   Resources/AgentTools/           The shepherdr command and skill installed on each machine
 Sources/ShepherdrTerminalUI/       Embeddable SwiftTerm AppKit terminal surface, palette and link handling
 Sources/ShepherdrDictation/        On-device dictation: microphone capture and Parakeet transcription via FluidAudio

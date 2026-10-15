@@ -8,7 +8,7 @@ A bilingual (English/Spanish) quick guide with the same content comes with the a
 
 ## Features
 
-- **Session queue:** every agent session in your own priority order, shown by workspace, what the agent is doing, which agent it is, by the mark its own interface shows (✻ Claude Code, >_ Codex, ✦ Gemini CLI, ◇ the rest), and where it works: its folder, or for a Git worktree its project, in cyan. Overview cards show the agent too, and the session's header names it. When a session has a pull request among its resources, its number is there too, or how many it has; click it to open the session with the pull request in its browser, or the ten most relevant in tabs. An agent that isn't working but left commands running, such as a dev server or a watcher, shows a turning clock **◴** instead of its state's mark. Drag to reorder, use the ▲▼ controls, **⌥⌘↑ / ⌥⌘↓**, or jump with **⌘1…⌘9**. Gather sessions into **groups** that you prioritize like a single session, each with its own internal order.
+- **Session queue:** every agent session in your own priority order, shown by workspace, what the agent is doing, which agent it is, by the mark its own interface shows (✻ Claude Code, >_ Codex, ✦ Gemini CLI, ◇ the rest), and where it works: its folder, or for a Git worktree its project, in cyan. Overview cards show the agent too, and the session's header names it. When a session has a pull request among its resources, its number is there too, or how many it has; click it to open the session with the pull request in its browser, or the ten most relevant in tabs. An agent that isn't working but left commands running, such as a dev server or a watcher, shows a turning clock **◴** instead of its state's mark. Drag to reorder, use the ▲▼ controls, **⌥⌘↑ / ⌥⌘↓**, or jump with **⌘1…⌘9**. Gather sessions into **groups** that you prioritize like a single session, each with its own internal order, and optionally gather each project's sessions under a heading.
 - **Work area:** the selected session's live terminal, embedded in the main window like Herdr's own client. Switching sessions detaches the previous one; the pane keeps running in Herdr.
 - **Type in the terminal:** work in the agent's own TUI; **⇧⏎** adds a line instead of sending. Drop files or images on it to paste their paths, so Claude Code and Codex attach them. A bottom bar has quick keys (Esc, ^C, Tab, arrows, Return).
 - **Optional prompt editor:** open it (**⌘L**) for long prompts you want to think through and edit with the mouse. **⏎** sends, **⇧⏎** adds a line, **↑/↓** recall this session's prompts.
@@ -107,7 +107,19 @@ Groups gather sessions however you like: a project, a client, personal work. Cre
 
 Numbers run through the whole queue, groups included, so they always reflect overall priority.
 
-You can reorder while filtering the queue (**⌘F**): movement is relative to the visible sessions, and hidden sessions retain their saved slots, so a filtered list can have gaps in its numbers. Only stable identifiers, their order, and group names and collapse state are stored in the app's local preferences. Priorities are independent of Herdr state and are not synchronized between Macs.
+You can reorder while filtering the queue (**⌘F**): movement is relative to the visible sessions, and hidden sessions retain their saved slots, so a filtered list can have gaps in its numbers. Only stable identifiers, their order, group names, whether projects are gathered, and which groups and project headings are collapsed are stored in the app's local preferences. Priorities are independent of Herdr state and are not synchronized between Macs.
+
+### Projects
+
+Turn on **View → Gather Sessions by Project**, or click **[ ] projects** in the queue header, to gather each project's sessions under a heading. A project is a Git repository: its main checkout and all its worktrees, on any machine. Outside Git, sessions in folders with the same name share one. The option is off by default, and turning it off shows the queue as before.
+
+- Projects gather within each list: the top of the queue, and each group. Two or more sessions of a project in the same list share a heading, in the place of its highest-priority session; a lone session stays a plain row. Your groups stay as they are, and a project can have a heading in more than one of them.
+- Numbers follow the queue as it shows, so **⌘1…⌘9** and **⌘[ / ⌘]** go down the list you see.
+- Under a heading, a session moves among its project's sessions: its ▲▼, **⌥⌘↑ / ⌥⌘↓** and its context menu reorder them there. Anything else steps over the whole project. Hover a heading and use its ▲▼, or its context menu, to move the project with all its sessions.
+- Drag a session among its project's sessions to reorder them. Anything else dropped on a project lands just before or after it. Within the same list a session can't leave its project's heading, since it would only come back; move it to another group instead. Headings move with ▲▼, not by dragging.
+- Click a heading to collapse or expand it. A collapsed heading still shows how many of its sessions need you, and **⌘1…⌘9** skip its sessions. Filtering shows matching sessions even under collapsed headings, and a heading only while two or more of its sessions match.
+- Sessions on hold still list the sessions they wait for under them, whatever their project.
+- Moving or dropping sessions while projects are gathered saves the order as it shows, so those moves stay when you turn the option off.
 
 ## Create and close sessions
 

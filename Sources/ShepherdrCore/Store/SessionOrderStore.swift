@@ -88,10 +88,18 @@ public final class SessionOrderStore {
     }
 
     public private(set) var entries: [Entry]
+    /// Whether each project's sessions gather under a heading, at the top level and in each group.
+    public var gathersProjects: Bool {
+        didSet { if gathersProjects != oldValue { defaults.set(gathersProjects, forKey: Self.gathersProjectsKey) } }
+    }
+    /// Project headings the user collapsed.
+    public private(set) var collapsedProjects: Set<ProjectRunID>
     @ObservationIgnored private let defaults: UserDefaults
     static let storageKey = "sessionOrder.v2"
     /// 0.3–0.5 saved a flat list of session identifiers.
     static let legacyStorageKey = "sessionOrder.v1"
+    static let gathersProjectsKey = "gathersProjects"
+    static let collapsedProjectsKey = "collapsedProjects.v1"
 
     private struct Record: Codable {
         var session: Agent.ID?
@@ -110,6 +118,9 @@ public final class SessionOrderStore {
             saved = legacy.map(Entry.session)
         }
         entries = Self.normalized(saved)
+        gathersProjects = defaults.bool(forKey: Self.gathersProjectsKey)
+        collapsedProjects = Set(defaults.data(forKey: Self.collapsedProjectsKey)
+            .flatMap { try? JSONDecoder().decode([ProjectRunID].self, from: $0) } ?? [])
     }
 
     /// Every saved session in priority order, with groups expanded in place.
@@ -142,8 +153,10 @@ public final class SessionOrderStore {
 
     /// The queue as presented: current sessions numbered in priority order, inside their groups.
     /// Vanished sessions leave no gaps, groups remain when empty, and rows not yet synchronized
-    /// follow in the caller's order.
-    public func layout(_ rows: [AgentRow]) -> [QueueItem] {
+    /// follow in the caller's order. With `projects`, each session's project, the sessions of a
+    /// project gather where its first one is, at the top level and in each group, and are
+    /// numbered as they show.
+    public func layout(_ rows: [AgentRow], projects: [Agent.ID: String]? = nil) -> [QueueItem] {
         let current = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var placed = Set<Agent.ID>()
         var priority = 0
@@ -154,7 +167,9 @@ public final class SessionOrderStore {
             row.groupID = group
             return row
         }
-        var items: [QueueItem] = entries.compactMap { entry in
+        let saved = Set(orderedIDs)
+        let top = gathered(entries + rows.map(\.id).filter { !saved.contains($0) }.map(Entry.session), projects)
+        return top.compactMap { entry in
             switch entry {
             case .session(let id):
                 numbered(id, in: nil).map(QueueItem.session)
@@ -162,48 +177,39 @@ public final class SessionOrderStore {
                 .group(QueueGroupRow(group: group, rows: group.members.compactMap { numbered($0, in: group.id) }))
             }
         }
-        for row in rows {
-            if let row = numbered(row.id, in: nil) { items.append(.session(row)) }
-        }
-        return items
     }
 
     /// Current sessions in priority order, numbered from 1.
-    public func ranked(_ rows: [AgentRow]) -> [AgentRow] {
-        layout(rows).flatMap(\.rows)
+    public func ranked(_ rows: [AgentRow], projects: [Agent.ID: String]? = nil) -> [AgentRow] {
+        layout(rows, projects: projects).flatMap(\.rows)
     }
 
     // MARK: Keyboard and menu moves
 
     /// Sessions move among their group's members, or among top-level positions. Moves are
     /// relative to `visible` items, so filtering never changes the slots of hidden items.
-    public func canMove(_ item: QueueItemID?, _ direction: Move, visible: Set<QueueItemID>) -> Bool {
-        guard let item, let found = siblings(of: item) else { return false }
-        let subset = found.items.filter(visible.contains)
-        guard let index = subset.firstIndex(of: item) else { return false }
-        return destination(from: index, count: subset.count, direction: direction) != index
+    ///
+    /// With `projects` gathered, a project's heading is one position in its list: a session moves
+    /// among the visible sessions of its project when the heading shows (two or more of them),
+    /// and anything else steps over the whole project.
+    public func canMove(_ item: QueueItemID?, _ direction: Move, visible: Set<QueueItemID>,
+                        projects: [Agent.ID: String]? = nil) -> Bool {
+        guard let item else { return false }
+        return moved(.item(item), direction, visible: visible, projects: projects) != nil
     }
 
-    public func move(_ item: QueueItemID, _ direction: Move, visible: Set<QueueItemID>) {
-        guard let found = siblings(of: item) else { return }
-        let slots = found.items.indices.filter { visible.contains(found.items[$0]) }
-        var subset = slots.map { found.items[$0] }
-        guard let index = subset.firstIndex(of: item) else { return }
-        let target = destination(from: index, count: subset.count, direction: direction)
-        guard index != target else { return }
-        subset.remove(at: index)
-        subset.insert(item, at: target)
-        var reordered = found.items
-        for (slot, value) in zip(slots, subset) { reordered[slot] = value }
-        if let groupID = found.group {
-            updateGroup(groupID) { group in
-                group.members = reordered.compactMap { if case .session(let id) = $0 { id } else { nil } }
-            }
-        } else {
-            let byID = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0) })
-            entries = reordered.compactMap { byID[$0] }
-            save()
-        }
+    public func move(_ item: QueueItemID, _ direction: Move, visible: Set<QueueItemID>, projects: [Agent.ID: String]? = nil) {
+        if let change = moved(.item(item), direction, visible: visible, projects: projects) { apply(change) }
+    }
+
+    /// Whether a project's heading can move: it shows only with two or more visible sessions.
+    public func canMove(_ project: ProjectRunID, _ direction: Move, visible: Set<QueueItemID>, projects: [Agent.ID: String]) -> Bool {
+        moved(.project(project), direction, visible: visible, projects: projects) != nil
+    }
+
+    /// Moves a project's heading, with all its sessions, among the positions of its list.
+    public func move(_ project: ProjectRunID, _ direction: Move, visible: Set<QueueItemID>, projects: [Agent.ID: String]) {
+        if let change = moved(.project(project), direction, visible: visible, projects: projects) { apply(change) }
     }
 
     public func canMove(_ id: Agent.ID?, _ direction: Move, visibleIDs: [Agent.ID]) -> Bool {
@@ -221,20 +227,113 @@ public final class SessionOrderStore {
         return Set(ids.map(QueueItemID.session)).union(shownGroups)
     }
 
-    private func siblings(of item: QueueItemID) -> (group: String?, items: [QueueItemID])? {
-        if case .session(let id) = item, let group = group(containing: id) {
-            return (group.id, group.members.map(QueueItemID.session))
+    private enum Mover {
+        case item(QueueItemID)
+        case project(ProjectRunID)
+    }
+
+    /// The list a move reorders, and its new order; nil when nothing would move.
+    private func moved(_ mover: Mover, _ direction: Move, visible: Set<QueueItemID>,
+                       projects: [Agent.ID: String]?) -> (group: String?, items: [QueueItemID])? {
+        let scope: String?
+        switch mover {
+        case .item(let item):
+            guard visible.contains(item) else { return nil }
+            if case .session(let id) = item { scope = group(containing: id)?.id } else { scope = nil }
+        case .project(let run):
+            scope = run.group
         }
-        let top = entries.map(\.id)
-        return top.contains(item) ? (nil, top) : nil
+        let list: [QueueItemID]
+        if let scope {
+            guard let group = groups.first(where: { $0.id == scope }) else { return nil }
+            list = group.members.map(QueueItemID.session)
+        } else {
+            list = entries.map(\.id)
+        }
+        let segments = ProjectRuns.segments(list) { item in
+            if case .session(let id) = item { projects?[id] } else { nil }
+        }
+        func shown(_ items: [QueueItemID]) -> Int { items.filter(visible.contains).count }
+        let index: Int
+        switch mover {
+        case .item(let item):
+            guard let found = segments.firstIndex(where: { $0.items.contains(item) }) else { return nil }
+            // Under a heading, a session moves among its project's sessions.
+            if case .project(let name, let members) = segments[found], shown(members) > 1 {
+                guard let position = members.firstIndex(of: item),
+                      let reordered = Self.reordered(members, moving: position, direction, isShown: visible.contains) else { return nil }
+                var result = segments
+                result[found] = .project(name, reordered)
+                return (scope, result.flatMap(\.items))
+            }
+            index = found
+        case .project(let run):
+            guard let found = segments.firstIndex(where: {
+                if case .project(let name, let members) = $0 { name == run.project && shown(members) > 1 } else { false }
+            }) else { return nil }
+            index = found
+        }
+        guard let reordered = Self.reordered(segments, moving: index, direction, isShown: { shown($0.items) > 0 }) else { return nil }
+        return (scope, reordered.flatMap(\.items))
+    }
+
+    /// Moves an element among the shown ones, which take each other's slots; hidden ones keep
+    /// theirs. Nil when the element is hidden or already where the move would take it.
+    static func reordered<Element>(_ items: [Element], moving index: Int, _ direction: Move,
+                                   isShown: (Element) -> Bool) -> [Element]? {
+        let slots = items.indices.filter { isShown(items[$0]) }
+        guard let position = slots.firstIndex(of: index) else { return nil }
+        let target = destination(from: position, count: slots.count, direction: direction)
+        guard target != position else { return nil }
+        var shown = slots.map { items[$0] }
+        shown.insert(shown.remove(at: position), at: target)
+        var result = items
+        for (slot, value) in zip(slots, shown) { result[slot] = value }
+        return result
+    }
+
+    private func apply(_ change: (group: String?, items: [QueueItemID])) {
+        if let groupID = change.group {
+            updateGroup(groupID) { group in
+                group.members = change.items.compactMap { if case .session(let id) = $0 { id } else { nil } }
+            }
+        } else {
+            let byID = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0) })
+            let reordered = change.items.compactMap { byID[$0] }
+            guard reordered != entries else { return }
+            entries = reordered
+            save()
+        }
+    }
+
+    /// Entries with each project's sessions gathered, at the top level and in each group.
+    private func gathered(_ entries: [Entry], _ projects: [Agent.ID: String]?) -> [Entry] {
+        guard let projects else { return entries }
+        return ProjectRuns.gathered(entries) { entry in
+            if case .session(let id) = entry { projects[id] } else { nil }
+        }.map { entry in
+            guard case .group(var group) = entry else { return entry }
+            group.members = ProjectRuns.gathered(group.members) { projects[$0] }
+            return .group(group)
+        }
+    }
+
+    /// Saves the order as it shows while projects are gathered, so drops land where they are shown.
+    private func gather(_ projects: [Agent.ID: String]) {
+        let result = gathered(entries, projects)
+        guard result != entries else { return }
+        entries = result
+        save()
     }
 
     // MARK: Drag and drop
 
     /// Moves a session or group next to a target, or a session into a group. Groups never
-    /// nest: a group dropped among another group's sessions lands next to that group.
-    public func place(_ item: QueueItemID, _ drop: QueueDrop) {
+    /// nest: a group dropped among another group's sessions lands next to that group. With
+    /// `projects` gathered, the order is first saved as it shows.
+    public func place(_ item: QueueItemID, _ drop: QueueDrop, projects: [Agent.ID: String]? = nil) {
         guard item != drop.target else { return }
+        if let projects { gather(projects) }
         var result = entries
         let moving: Entry
         switch item {
@@ -291,12 +390,12 @@ public final class SessionOrderStore {
 
     /// Places a session Herdr may not report as an agent yet, such as a shell just created, so
     /// it takes that spot once it does. Until then it keeps the spot like a missing session.
-    public func insert(_ id: Agent.ID, _ drop: QueueDrop) {
+    public func insert(_ id: Agent.ID, _ drop: QueueDrop, projects: [Agent.ID: String]? = nil) {
         if !orderedIDs.contains(id) {
             entries.append(.session(id))
             save()
         }
-        place(.session(id), drop)
+        place(.session(id), drop, projects: projects)
     }
 
     // MARK: Groups
@@ -346,6 +445,18 @@ public final class SessionOrderStore {
         save()
     }
 
+    // MARK: Projects
+
+    public func isCollapsed(_ project: ProjectRunID) -> Bool { collapsedProjects.contains(project) }
+
+    public func setCollapsed(_ project: ProjectRunID, _ isCollapsed: Bool) {
+        guard collapsedProjects.contains(project) != isCollapsed else { return }
+        if isCollapsed { collapsedProjects.insert(project) } else { collapsedProjects.remove(project) }
+        // Group identifiers and project names only, like the rest of the order.
+        let sorted = collapsedProjects.sorted { ($0.group ?? "", $0.project) < ($1.group ?? "", $1.project) }
+        if let data = try? JSONEncoder().encode(sorted) { defaults.set(data, forKey: Self.collapsedProjectsKey) }
+    }
+
     private func updateGroup(_ id: String, _ change: (inout SessionGroup) -> Void) {
         guard let index = entries.firstIndex(where: { $0.id == .group(id) }),
               case .group(var group) = entries[index] else { return }
@@ -377,7 +488,7 @@ public final class SessionOrderStore {
         }
     }
 
-    private func destination(from index: Int, count: Int, direction: Move) -> Int {
+    private static func destination(from index: Int, count: Int, direction: Move) -> Int {
         switch direction {
         case .up: max(0, index - 1)
         case .down: min(count - 1, index + 1)
