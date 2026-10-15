@@ -36,6 +36,8 @@ public struct TerminalSurface: NSViewRepresentable {
     let openLink: (_ url: URL, _ external: Bool) -> Void
     /// The existing local file a printed path names, if any.
     let resolveFile: (_ path: String) -> URL?
+    /// A link to the session or pane that the text at a column of a row names, if any.
+    let resolveSession: (_ row: [Character], _ column: Int) -> URL?
     /// Pull requests, issues and Claude artifacts seen on screen.
     let onResources: (_ found: [SessionResource]) -> Void
     /// Files and images dropped on the terminal; nil refuses drops.
@@ -43,6 +45,7 @@ public struct TerminalSurface: NSViewRepresentable {
 
     public init(store: TerminalStore, palette: TerminalPalette, font: NSFont, focusRequest: Int = 0,
                 resolveFile: @escaping (_ path: String) -> URL? = { _ in nil },
+                resolveSession: @escaping (_ row: [Character], _ column: Int) -> URL? = { _, _ in nil },
                 onResources: @escaping (_ found: [SessionResource]) -> Void = { _ in },
                 onDropFiles: ((_ files: [URL]) -> Void)? = nil,
                 openLink: @escaping (_ url: URL, _ external: Bool) -> Void = { url, _ in NSWorkspace.shared.open(url) }) {
@@ -51,6 +54,7 @@ public struct TerminalSurface: NSViewRepresentable {
         self.font = font
         self.focusRequest = focusRequest
         self.resolveFile = resolveFile
+        self.resolveSession = resolveSession
         self.onResources = onResources
         self.onDropFiles = onDropFiles
         self.openLink = openLink
@@ -84,6 +88,7 @@ public struct TerminalSurface: NSViewRepresentable {
     public func updateNSView(_ view: ConsoleTerminalView, context: Context) {
         view.openLink = openLink
         view.resolveFile = resolveFile
+        view.resolveSession = resolveSession
         view.onResources = onResources
         view.onDropFiles = onDropFiles
         if context.coordinator.focusRequest != focusRequest {
@@ -150,6 +155,7 @@ public struct TerminalSurface: NSViewRepresentable {
 public final class ConsoleTerminalView: SwiftTerm.TerminalView {
     var openLink: ((_ url: URL, _ external: Bool) -> Void)?
     var resolveFile: ((_ path: String) -> URL?)?
+    var resolveSession: ((_ row: [Character], _ column: Int) -> URL?)?
     var onResources: ((_ found: [SessionResource]) -> Void)?
     var onDropFiles: ((_ files: [URL]) -> Void)?
     /// Scrolls Herdr's history: up toward earlier output, by whole lines.
@@ -512,8 +518,8 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
         }
     }
 
-    /// A click opens the link or file under it (⌘: in the default browser or app), or chooses the
-    /// option of an agent's menu under it. Any other plain click goes to the program, which Herdr
+    /// A click opens the link or file under it (⌘: in the default browser or app), or the session
+    /// named there, or chooses the option of an agent's menu under it. Any other plain click goes to the program, which Herdr
     /// drops unless the program reads the mouse.
     func clicked(at point: NSPoint, count: Int, modifiers: NSEvent.ModifierFlags) {
         let command = modifiers.contains(.command)
@@ -591,8 +597,8 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
         }
     }
 
-    /// The link at a point in this view: one an agent marked up explicitly, a plain-text URL, or the
-    /// path of an existing local file.
+    /// The link at a point in this view: one an agent marked up explicitly, a plain-text URL, the
+    /// path of an existing local file, or another session or pane named in the text.
     func link(at point: NSPoint) -> (url: URL, explicit: Bool)? {
         let terminal = getTerminal()
         guard let (row, column) = cell(at: point) else { return nil }
@@ -606,7 +612,10 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
         let first = max(0, row - 8), last = min(terminal.rows - 1, row + 8)
         let rows = screenRows(first...last)
         if let url = TerminalLinks.url(in: rows, row: row - first, column: column) { return (url, false) }
-        return TerminalPaths.path(in: rows, row: row - first, column: column).flatMap { resolveFile?($0) }.map { ($0, false) }
+        if let file = TerminalPaths.path(in: rows, row: row - first, column: column).flatMap({ resolveFile?($0) }) {
+            return (file, false)
+        }
+        return resolveSession?(rows[row - first], column).map { ($0, false) }
     }
 }
 
@@ -664,7 +673,7 @@ extension ConsoleTerminalView {
     }
 }
 
-/// Shows a pointing hand over links, files and menu options.
+/// Shows a pointing hand over links, files, sessions and menu options.
 @MainActor private final class LinkTracker: NSResponder {
     weak var view: ConsoleTerminalView?
 

@@ -70,6 +70,8 @@ Both commands stream newline-delimited JSON: `terminal.frame` includes `encoding
 
 The window supports keyboard input, paste, text selection and copying, scrolling through Herdr's history, and plain clicks for programs that read the mouse; dragging always selects natively. Terminal escape sequences cannot write to the system clipboard through OSC 52. Clicked links are restricted to HTTP(S).
 
+Pane IDs such as `w3:p1` are numbered per Herdr server, so the same one exists on several machines; terminal IDs look like `term_65de5e979051a2` in 0.9.3. `SessionDirectory` turns either, or a session's agent or workspace name, written in a terminal into a link to that session: a pane ID on the session's own machine, unless `@machine` or a `--machine PROFILE` option on the same line names another, which only this Mac's Herdr profiles can. Agents Herdr didn't name report their program's name, such as `Claude Code`, which Shepherdr never takes for a session's name.
+
 ## Agent tools (0.9)
 
 Checked on 2026-10-15 with Herdr 0.9.3 in disposable sessions. The [agent tools](AGENT-TOOLS.md) use these parts of Herdr:
