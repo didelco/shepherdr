@@ -315,6 +315,7 @@ private struct SessionRowView: View {
                     if showsMachine {
                         Text("@\(row.machineName)").font(Theme.mono(10)).foregroundStyle(Theme.faint).lineLimit(1)
                     }
+                    MailMark(session: row.id, courier: model.courier)
                 }
                 Text(row.title).font(Theme.mono(10.5)).foregroundStyle(Theme.dim).lineLimit(1)
                 whereabouts

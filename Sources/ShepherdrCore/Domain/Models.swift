@@ -106,13 +106,17 @@ public struct MachineSnapshot: Equatable, Sendable {
     public let workspaces: [Workspace]
     public let agents: [Agent]
     public let panes: [TerminalPane]
+    /// The letter each pane last announced with `shepherdr`, by terminal ID.
+    public let doorbells: [String: String]
 
-    public init(version: String, protocolVersion: Int, workspaces: [Workspace], agents: [Agent], panes: [TerminalPane] = []) {
+    public init(version: String, protocolVersion: Int, workspaces: [Workspace], agents: [Agent], panes: [TerminalPane] = [],
+                doorbells: [String: String] = [:]) {
         self.version = version
         self.protocolVersion = protocolVersion
         self.workspaces = workspaces
         self.agents = agents
         self.panes = panes
+        self.doorbells = doorbells
     }
 }
 

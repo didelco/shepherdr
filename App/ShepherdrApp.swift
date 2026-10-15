@@ -34,7 +34,7 @@ struct ShepherdrApp: App {
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(!(model.selectedID.map(model.canStartNewSession(besides:)) ?? false))
                 Divider()
-                Button("Refresh Sessions") { Task { await model.cluster.refresh() } }
+                Button("Refresh Sessions") { Task { await model.refreshNow() } }
                     .keyboardShortcut("r", modifiers: .command)
                     .disabled(model.cluster.isRefreshing)
             }

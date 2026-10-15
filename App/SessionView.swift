@@ -33,6 +33,7 @@ struct SessionView: View {
             header
             Rectangle().fill(Theme.line).frame(height: 1)
             RelationsPanel(id: id, model: model)
+            MailPanel(session: id, model: model)
             HStack(spacing: 0) {
                 workArea
                 if showsResources && !workspace.visibleResources.isEmpty {
@@ -86,6 +87,9 @@ struct SessionView: View {
     }
 
     @ViewBuilder private var banners: some View {
+        ToolsOfferBanner(machineID: context.machine.id, courier: model.courier,
+                         machineName: MachineList.name(of: context.machine.machine, among: model.cluster.machines.map(\.machine),
+                                                       macName: model.courier.tools.macName))
         if let notice = model.sessionNotices[id] {
             banner(notice, dismiss: { model.sessionNotices[id] = nil })
         }

@@ -21,6 +21,7 @@ A bilingual (English/Spanish) quick guide with the same content comes with the a
 - **Picks up where you left off:** after a restart, the session you had open comes back, and every session keeps its browser tabs, prompt editor and resources.
 - **Notifications:** a macOS notification tells you when an agent finishes or needs you, with what it last said, and when a pull request's checks finish. Click it to open the session.
 - **Sessions on hold:** mark a session as waiting for others, such as a planner waiting for the subagents it launched. It shows an hourglass, and the sessions it waits for are listed under it, in a tree you can collapse.
+- **Agents that coordinate:** Shepherdr installs a small `shepherdr` command and a skill for Claude Code and Codex on each machine, Linux included. An agent asked to "start a session on buildbox" starts it there, nested under its own session, which goes on hold until the new one finishes. The new session hands its result back with `shepherdr handoff`, and Shepherdr delivers it as a prompt once the coordinator is free. Machines never connect to your Mac: Shepherdr collects what agents leave for it.
 - **Create and close sessions:** **⌘N** creates a Herdr workspace with a shell in a folder; start Claude Code, Codex or any other supported agent in it and it joins the queue. Create one in a group with its **+**, or next to a session with **New Session in Same Folder…** (**⇧⌘N**). **Close Session…** in a session's context menu ends its pane after confirmation. **Rename…** renames its Herdr workspace.
 - **Overview:** how many sessions need you, are working, done or idle, and a card per machine with its sessions and its processor, memory and disk use. Click states and machines to list the sessions in any combination of them. Plain shell panes are listed separately.
 - **Lid status:** the foot of the sidebar tells you whether it's safe to close the lid. While agents work on this Mac it warns you not to, since sleep would pause them; remote sessions don't count, they keep going.
@@ -29,7 +30,7 @@ A bilingual (English/Spanish) quick guide with the same content comes with the a
 - Automatic refresh (5, 15, 30 or 60 seconds), pause, manual refresh with **⌘R**, and refresh after wake.
 - A dark phosphor console theme in [Fira Code](https://github.com/tonsky/FiraCode) (bundled), any installed monospaced font for the terminal, an 8-bit logo of a German Shepherd watching its flock, and a pixel-art app icon of a German Shepherd in Matrix digital rain.
 
-No worktree management, notifications, or menu-bar UI. Input goes only to the session you are viewing, while it is unlocked; creating, closing and machine changes happen only when you ask, and closing asks for confirmation.
+No worktree management or menu-bar UI. Input goes only to the session you are viewing, while it is unlocked, and to sessions agents hand work to through the agent tools; Shepherdr creates sessions, closes them and changes machines only when you ask, or when an agent on a machine you trust asks for a session. Closing asks for confirmation.
 
 ## Download and install
 
@@ -181,3 +182,50 @@ For remote terminals, Shepherdr invokes the remote installed Herdr CLI through `
 
 When a terminal's connection drops, Shepherdr reconnects on its own. The banner keeps the error and counts down to the next attempt; the wait doubles after each one, from 1 second up to 5 minutes, and **RECONNECT** stays disabled meanwhile. After an hour of trying it stops, says how many times it tried, and **RECONNECT** tries again. Time asleep with the lid closed doesn't count toward the hour. A terminal Herdr no longer has, or an incompatible Herdr, isn't retried.
 
+## Agents that coordinate
+
+Agents can start sessions, wait for them and hand work back through Shepherdr, on any of your machines. They do it with `~/.shepherdr/bin/shepherdr`, a small command Shepherdr installs on each machine, and a skill that teaches Claude Code and Codex when to use it. Say "start a session on buildbox that fixes the failing test" to an agent, and it starts one there with your prompt. The new session nests under the agent's own, which goes on hold until it finishes. When the new session is done, its result comes back to the agent as a prompt.
+
+### Install the agent tools
+
+The first time Shepherdr reaches a machine without the tools, its sessions show a banner: **INSTALL** copies them there over the SSH connection Shepherdr already uses; **NOT NOW** asks again next launch; **DON'T ASK HERE** never offers them for that machine. This Mac is a machine too. **Settings → Agents** installs, updates and removes them on any machine, and shows what each one has: its system, and whether Claude Code and Codex have the skill.
+
+Installing writes only `~/.shepherdr` (the command, its skill and the machine list) and the skill folders of the agents installed there, `~/.claude/skills/shepherdr` and `~/.codex/skills/shepherdr` (or under `$CODEX_HOME`). It changes no shell startup files, needs no `sudo` and doesn't touch `PATH`: agents run the command by its full path. Everything is readable only by you. The command is a POSIX `sh` script that only needs Herdr, so it runs on Linux and macOS alike. Agents already running pick up the skill when they restart; the command works right away.
+
+When Shepherdr brings newer tools, the machine's sessions offer **UPDATE**. **Settings → Agents → Updates** can update them without asking, or never. If you install Claude Code or Codex on a machine after the tools, Shepherdr adds the skill the next time it checks that machine. **Remove** deletes the command and the skills; the letters stay in `~/.shepherdr` until you delete it.
+
+### What agents can do
+
+| Command | What it does |
+| --- | --- |
+| `shepherdr machines` | Which machine this is, and how each other machine is reached |
+| `shepherdr folders [--machine NAME]` | The folders where sessions already work on a machine |
+| `shepherdr spawn [--machine NAME] [--cwd DIR] [--kind KIND \| --shell] [--name NAME] [--prompt TEXT \| --prompt-file F] [--split right\|down] [--no-wait]` | Starts a session and links it to the caller |
+| `shepherdr handoff [--to NAME] [--file F]… [MESSAGE \| --message-file F]` | Hands work back to the session waiting for the caller, or to a named one |
+| `shepherdr wait-for NAME…` / `resume [NAME…]` | Puts the caller on hold for other sessions, or takes it off |
+| `shepherdr pin URL [--title TEXT]` | Adds a link to the caller's resources |
+| `shepherdr open URL` | Opens a page in the caller's browser in Shepherdr |
+| `shepherdr notify MESSAGE` | Shows you a notification |
+| `shepherdr status` | This machine, the caller's pane and letters not collected yet |
+
+`spawn` creates a Herdr workspace in the folder (or splits the caller's pane with `--split`), starts the agent, by default the caller's own kind, and sends it the prompt. Shepherdr puts the new session right after the caller, in its group, nested under it, and keeps the caller on hold until the new one finishes; `--no-wait` only places it. If the agent stops at a startup question, such as trusting the folder, Shepherdr sends the prompt once it is ready. Names are Herdr agent names, and the workspace gets the same one.
+
+A handoff goes to the sessions waiting for its sender, unless `--to` names another by its agent or workspace name, with `@machine` to tell machines apart. Shepherdr delivers it as a prompt once that session is free (idle or done), one at a time, with the message and the paths of its files. The files are kept on this Mac in `~/.shepherdr/inbox`; for a session on another machine, Shepherdr copies them there first. If nobody waits for its sender, the handoff waits in the session's mail panel with **SEND TO**.
+
+### Machine lists
+
+The skill doesn't name your machines: they change, it doesn't. Instead, Shepherdr writes `~/.shepherdr/machines` on each machine that has the tools, with that machine's own view: its name, and how it reaches each of the others. From this Mac, Herdr reaches every saved machine directly. From another machine, only Shepherdr reaches the rest: `spawn` there files a request that you approve. Shepherdr rewrites a machine's list only when it changes, such as when you add, rename or disable a machine.
+
+The lists only hold names and routes: never hosts, users, ports or keys. Herdr profile IDs only go into this Mac's own list. This Mac goes by its computer name unless you set another in **Settings → Agents → This Mac**. Turn off **Share the machine list** for a machine to let it know only its own name.
+
+### Letters
+
+Machines never connect to this Mac. The command leaves each request as a letter in `~/.shepherdr/outbox` on its machine, and rings a doorbell: a token on the caller's Herdr pane, which Shepherdr sees in its next refresh. Shepherdr then collects the machine's letters over SSH, keeps them in `~/.shepherdr/inbox` on this Mac, and moves them to `outbox/.collected` there. A manual refresh (**⌘R**) also looks in every outbox, for letters whose doorbell was lost when Herdr restarted. While Shepherdr is closed, letters wait.
+
+Letters are data: Shepherdr checks every field, accepts only http and https links and plain files with safe names, and never runs anything in them. Letters from this Mac apply on their own. From another machine, three things wait for you in the session's mail panel, on the overview and as a notification, with an amber envelope in the queue:
+
+- **Handoffs to a session on a different machine**, since their text becomes a prompt for an agent there: **LET THROUGH** delivers them, **VIEW** shows the message first.
+- **Requests for sessions** on machines it can't reach: **START** starts it with the requested folder, agent and prompt, linked to the session that asked.
+- **Pages to open:** **OPEN** opens it in the session's browser.
+
+**Settings → Agents → Trust its letters** lets a machine's letters through without asking. A cyan envelope means mail waits for its session to be free. Shepherdr keeps the letters' files for a month.

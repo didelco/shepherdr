@@ -17,6 +17,7 @@ struct OverviewView: View {
                     stateTiles
                     machineTiles
                 }
+                MailPanel(session: nil, model: model)
                 if let failure = cluster.discoveryFailure, failure.state != .notInstalled {
                     NoticeView(title: "Saved machines could not be refreshed", message: failure.message, detail: failure.detail)
                 }

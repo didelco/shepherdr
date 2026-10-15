@@ -1,15 +1,17 @@
 import Foundation
 
-/// A link worth keeping at hand while a session works: a pull request, an issue or a Claude artifact.
+/// A link worth keeping at hand while a session works: a pull request, an issue, a Claude artifact,
+/// or any page an agent pinned with `shepherdr pin`.
 public struct SessionResource: Identifiable, Hashable, Codable, Sendable {
     public enum Kind: String, Codable, CaseIterable, Sendable {
-        case pullRequest, issue, artifact
+        case pullRequest, issue, artifact, link
 
         public var title: String {
             switch self {
             case .pullRequest: "Pull requests"
             case .issue: "Issues"
             case .artifact: "Claude artifacts"
+            case .link: "Links"
             }
         }
     }
@@ -65,7 +67,8 @@ public struct SessionResource: Identifiable, Hashable, Codable, Sendable {
     /// The repository and number of a GitHub pull request or issue.
     public var github: (owner: String, repository: String, number: Int)? {
         let path = url.path().split(separator: "/").map(String.init)
-        guard url.host()?.lowercased() == "github.com", kind != .artifact, path.count >= 4, let number = Int(path[3]) else { return nil }
+        guard url.host()?.lowercased() == "github.com", kind == .pullRequest || kind == .issue, path.count >= 4,
+              let number = Int(path[3]) else { return nil }
         return (path[0], path[1], number)
     }
 
@@ -97,6 +100,21 @@ public struct SessionResource: Identifiable, Hashable, Codable, Sendable {
         resource.kind = isPullRequest ? .pullRequest : .issue
         resource.isVerified = true
         return resource
+    }
+
+    /// A page an agent pinned: a pull request, issue or artifact when it is one, else a plain link
+    /// named by its title or address. Only http and https.
+    public init?(pinned url: URL, title: String?) {
+        guard let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme), let host = url.host(), !host.isEmpty else { return nil }
+        if let known = SessionResource(url: url) {
+            self = known
+        } else {
+            let path = url.path() == "/" ? "" : url.path()
+            self.init(url: url, kind: .link, name: String((host + path).prefix(80)))
+        }
+        if let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+            self.title = String(title.prefix(200))
+        }
     }
 
     /// Recognizes the links worth keeping: GitHub, GitLab and Bitbucket pull requests and issues,

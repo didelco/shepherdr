@@ -14,8 +14,17 @@ extension Machine {
         if isLocal { return (URL(fileURLWithPath: "/bin/sh"), ["-c", script, "sh"] + arguments) }
         guard isEnabled, let target = checkedSSHTarget else { return nil }
         let command = (["sh -c", TerminalCommand.quote(script), "sh"] + arguments.map(TerminalCommand.quote)).joined(separator: " ")
-        return (URL(fileURLWithPath: "/usr/bin/ssh"),
-                ["-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=10",
-                 "-o", "ClearAllForwardings=yes", "-o", "ForwardAgent=no", "--", target, command])
+        return (URL(fileURLWithPath: "/usr/bin/ssh"), Self.sshOptions + ["--", target, command])
     }
+
+    /// Runs a POSIX sh script read from standard input, the same way: for scripts too long for a
+    /// command line, such as the agent tools' installer.
+    func shellReadingStandardInput() -> (executable: URL, arguments: [String])? {
+        if isLocal { return (URL(fileURLWithPath: "/bin/sh"), ["-s"]) }
+        guard isEnabled, let target = checkedSSHTarget else { return nil }
+        return (URL(fileURLWithPath: "/usr/bin/ssh"), Self.sshOptions + ["--", target, "sh -s"])
+    }
+
+    private static let sshOptions = ["-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=10",
+                                     "-o", "ClearAllForwardings=yes", "-o", "ForwardAgent=no"]
 }

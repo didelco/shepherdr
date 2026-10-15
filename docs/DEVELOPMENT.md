@@ -51,7 +51,12 @@ xcodebuild -project Shepherdr.xcodeproj \
   -derivedDataPath build CODE_SIGNING_ALLOWED=NO test
 # Read-only live transport/store smoke test; exits 1 when no machine is online:
 swift run shepherdr-probe
+# The agent tools' command line, against a fake herdr and then a real one in a server of its own:
+sh Tests/AgentTools/test.sh
+sh Tests/AgentTools/herdr-live.sh
 ```
+
+The agent tools' command line is a POSIX `sh` script that runs on Linux too: check changes to it with dash or BusyBox (`docker run --rm -v "$PWD":/src -w /src alpine sh Tests/AgentTools/test.sh`) and ShellCheck, as CI does. Bump `Sources/ShepherdrCore/Resources/AgentTools/VERSION` whenever you change the kit, so machines update. See [agent tools](AGENT-TOOLS.md).
 
 Tests use Swift Testing, synthetic JSON fixtures, mock cluster/terminal clients, isolated preferences, an injected command runner, and bounded real subprocess tests. They cover decoding, domain joins, all states, future states, duplicate IDs, aggregation, partial failures, stale retention, recovery, catalog failures, disabled/removed profiles, incremental results, cancellation, literal arguments, pipe draining, terminal JSON streams, observation/input boundaries, detach/reconnect, priority persistence and filtered reordering. No running Herdr or SSH access is needed for the test suite.
 
@@ -62,14 +67,16 @@ Use **Settings → Machines** for failure details. A malformed response is **Inc
 ```text
 App/                              SwiftUI presentation: queue sidebar, work area, prompt editor, browser, settings, theme
 Sources/ShepherdrCore/
-  Transport/                      CLI adapters, executable discovery, bounded process/stream transports
+  Transport/                      CLI adapters, executable discovery, bounded process/stream transports, agent tools and mailbox
   DTO/                            JSON wire types, validation and domain mapping
-  Domain/                         Machine, Workspace, Agent, lifecycle and failure models
-  Store/                          MainActor cluster state, local priorities, groups and holds, terminal connections
+  Domain/                         Machine, Workspace, Agent, lifecycle and failure models, letters and machine lists
+  Store/                          MainActor cluster state, local priorities, groups and holds, terminal connections, agent tools and mail
+  Resources/AgentTools/           The shepherdr command and skill installed on each machine
 Sources/ShepherdrTerminalUI/       Embeddable SwiftTerm AppKit terminal surface, palette and link handling
 Sources/ShepherdrDictation/        On-device dictation: microphone capture and Parakeet transcription via FluidAudio
 Sources/ShepherdrProbe/            Read-only integration diagnostic
 Tests/ShepherdrCoreTests/          Protocol, transport and store regression tests
+Tests/AgentTools/                  The agent tools' command line, against a fake herdr and a real one
 scripts/make-artwork.sh            Regenerates the icon, README header and social preview (see Artwork)
 scripts/pixelate.swift             Turns art into strict pixel art in App/Theme.swift's palette
 scripts/make-icon.swift            Renders App/Assets.xcassets/AppIcon.appiconset from docs/assets/icon.png

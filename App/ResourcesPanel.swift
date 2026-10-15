@@ -97,6 +97,7 @@ struct ResourcesPanel: View {
         case .pullRequest: "⇄"
         case .issue: "◎"
         case .artifact: "◆"
+        case .link: "↗"
         }
     }
 
@@ -111,6 +112,7 @@ struct ResourcesPanel: View {
             case .pullRequest: Theme.phosphor
             case .issue: Theme.amber
             case .artifact: Theme.cyan
+            case .link: Theme.text
             }
         }
     }

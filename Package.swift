@@ -19,7 +19,8 @@ let package = Package(
         .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.13.4")
     ],
     targets: [
-        .target(name: "ShepherdrCore", resources: [.copy("Resources/Markdown")]),
+        // AgentTools: the command line and skill Shepherdr installs on each machine for agents.
+        .target(name: "ShepherdrCore", resources: [.copy("Resources/Markdown"), .copy("Resources/AgentTools")]),
         .target(name: "ShepherdrTerminalUI",
                 dependencies: ["ShepherdrCore", .product(name: "SwiftTerm", package: "SwiftTerm")],
                 resources: [.copy("Resources/SwiftTerm-LICENSE"), .copy("Resources/Fonts")]),

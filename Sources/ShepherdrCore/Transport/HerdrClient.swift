@@ -24,6 +24,9 @@ public protocol HerdrClient: Sendable {
 
     /// The process ID of the shell a pane started with, under which its agent runs.
     func shellPID(paneID: String, on machine: Machine) async throws -> Int?
+
+    /// Submits a prompt to the agent in a pane, as typing it and pressing Return would.
+    func prompt(paneID: String, text: String, on machine: Machine) async throws
 }
 
 extension HerdrClient {
@@ -37,6 +40,7 @@ extension HerdrClient {
     public func renameWorkspace(_ workspaceID: String, to name: String, on machine: Machine) async throws { throw unsupported }
     public func checkouts(around workspaceID: String, on machine: Machine) async throws -> [String: WorkspaceCheckout] { throw unsupported }
     public func shellPID(paneID: String, on machine: Machine) async throws -> Int? { throw unsupported }
+    public func prompt(paneID: String, text: String, on machine: Machine) async throws { throw unsupported }
 }
 
 public struct ExecutableLocator: Sendable {
