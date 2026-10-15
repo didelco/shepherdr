@@ -49,10 +49,7 @@ public enum FileDrop {
 
     /// Copies a file to a remote machine over SSH and returns its path there.
     public static func upload(_ file: URL, to machine: Machine) async throws -> String {
-        guard let target = machine.target, !target.isEmpty, !target.hasPrefix("-"),
-              target.rangeOfCharacter(from: CharacterSet.whitespacesAndNewlines.union(.controlCharacters)) == nil else {
-            throw HerdrFailure(.incompatible, "The saved SSH target is invalid.")
-        }
+        guard let target = machine.checkedSSHTarget else { throw HerdrFailure(.incompatible, "The saved SSH target is invalid.") }
         let values = try file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
         guard values.isRegularFile == true else { throw HerdrFailure(.incompatible, "Only files can be copied to \(machine.name).") }
         guard (values.fileSize ?? 0) <= 200_000_000 else { throw HerdrFailure(.incompatible, "\(file.lastPathComponent) is over 200 MB.") }

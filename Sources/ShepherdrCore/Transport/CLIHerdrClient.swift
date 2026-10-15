@@ -27,6 +27,14 @@ public struct CLIHerdrClient: HerdrClient, HerdrTerminalClient {
         return try await CLITerminalConnection.start(command: command, mode: mode)
     }
 
+    public func linesBack(in target: TerminalTarget) async throws -> Int? {
+        let prefix = target.machine.profileID.map { ["--machine", $0] } ?? []
+        let output = try await execute(prefix + ["pane", "list"])
+        try validate(output, machine: target.machine)
+        do { return try HerdrJSON.linesBack(output.stdout, terminalID: target.terminalID) }
+        catch { throw decodingFailure(error) }
+    }
+
     public func snapshot(for machine: Machine) async throws -> MachineSnapshot {
         let prefix = machine.profileID.map { ["--machine", $0] } ?? []
         let output = try await execute(prefix + ["api", "snapshot"])
@@ -115,6 +123,15 @@ public struct CLIHerdrClient: HerdrClient, HerdrTerminalClient {
         // Outside a Git repository Herdr answers with an error: no checkouts.
         guard (try? validate(output, machine: machine)) != nil else { return [:] }
         do { return try HerdrJSON.checkouts(output.stdout) }
+        catch { throw decodingFailure(error) }
+    }
+
+    public func shellPID(paneID: String, on machine: Machine) async throws -> Int? {
+        try requireArgument(paneID, "pane")
+        let prefix = machine.profileID.map { ["--machine", $0] } ?? []
+        let output = try await execute(prefix + ["pane", "process-info", "--pane", paneID])
+        try validate(output, machine: machine)
+        do { return try HerdrJSON.shellPID(output.stdout) }
         catch { throw decodingFailure(error) }
     }
 

@@ -11,7 +11,9 @@ import Foundation
         #expect(snapshot.agents.count == 4) // Ordinary shell pane is not an agent.
         let reviewer = snapshot.agents[0]
         #expect(reviewer.name == "API reviewer")
-        #expect(reviewer.kind == "Claude Code")
+        // The agent comes from Herdr's label, not from the name its pane reports for display.
+        #expect(reviewer.kind == "claude")
+        #expect(reviewer.program.name == "Claude Code" && reviewer.program.glyph == "✻")
         #expect(reviewer.workspaceName == "Orchard")
         #expect(reviewer.tabName == "Development")
         #expect(reviewer.directory == "/srv/orchard/packages/api")
@@ -21,6 +23,18 @@ import Foundation
         #expect(snapshot.agents[1].directory == "/srv/orchard/web")
         #expect(snapshot.agents[2].directory == "/srv/orchard-review")
         #expect(snapshot.agents[2].name == "opencode")
+        // Without a name of its own, a session goes by its agent's name.
+        #expect(snapshot.agents[1].name == "Codex" && snapshot.agents[1].program.glyph == ">_")
+    }
+
+    @Test func eachAgentShowsItsOwnMark() {
+        #expect(AgentProgram(label: " Claude ").name == "Claude Code")
+        #expect(AgentProgram(label: "gemini").glyph == "✦")
+        #expect(AgentProgram(label: "agy").name == "Antigravity")
+        // Agents Herdr doesn't know keep the name they report.
+        let custom = AgentProgram(label: "my-bot")
+        #expect(custom.name == "my-bot" && custom.label == "my-bot" && custom.glyph == "◇")
+        #expect(AgentProgram(label: "").name == "Unknown agent")
     }
 
     @Test func testEveryLifecycleStateAndFutureState() {
@@ -83,5 +97,18 @@ import Foundation
         let remote = try Fixture.snapshot(machine: Fixture.remote)
         #expect(local.agents[0].id != remote.agents[0].id)
         #expect(local.agents[0].id.terminalID == remote.agents[0].id.terminalID)
+    }
+
+    @Test func howFarBackHerdrShowsATerminal() throws {
+        // As `herdr pane list` answers, trimmed to what matters.
+        let list = Data("""
+        {"id":"cli:pane:list","result":{"type":"pane_list","panes":[
+          {"pane_id":"w1:p1","terminal_id":"term_a","focused":true,
+           "scroll":{"max_offset_from_bottom":126,"offset_from_bottom":42,"viewport_rows":24}},
+          {"pane_id":"w2:p1","terminal_id":"term_b"}]}}
+        """.utf8)
+        #expect(try HerdrJSON.linesBack(list, terminalID: "term_a") == 42)
+        #expect(try HerdrJSON.linesBack(list, terminalID: "term_b") == nil)
+        #expect(try HerdrJSON.linesBack(list, terminalID: "term_gone") == nil)
     }
 }

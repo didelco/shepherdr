@@ -57,6 +57,7 @@ public struct Agent: Identifiable, Equatable, Sendable {
     }
     public let id: ID
     public let name: String
+    /// Herdr's label for the agent, such as `claude`; see `program` for its name and mark.
     public let kind: String
     public let state: AgentState
     public let reportedState: String
@@ -180,7 +181,7 @@ public struct AgentRow: Identifiable, Equatable, Sendable {
     public var stateTitle: String { agent.state.title }
 
     public func matches(_ query: String) -> Bool {
-        query.isEmpty || [name, agent.kind, workspace, project, machineName, agent.paneID,
+        query.isEmpty || [name, agent.kind, agent.program.name, workspace, project, machineName, agent.paneID,
                           agent.summary ?? "", stateTitle].contains {
             $0.localizedStandardContains(query)
         }

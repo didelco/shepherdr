@@ -4,6 +4,18 @@ import Observation
 @MainActor @Observable
 public final class TerminalStore {
     public enum Status: Equatable { case disconnected, connecting, observing, interactive, ended, failed }
+
+    /// Reconnecting on its own after the connection dropped, from the drop until a frame arrives again.
+    public struct Reconnection: Equatable, Sendable {
+        /// Attempts made since the connection dropped.
+        public fileprivate(set) var attempts = 0
+        /// When the next attempt starts, on a clock that stops while the Mac sleeps. Nil while an attempt runs.
+        public fileprivate(set) var next: SuspendingClock.Instant?
+        /// Tried for the whole budget without success: only a manual reconnect tries again.
+        public fileprivate(set) var gaveUp = false
+        fileprivate let started: SuspendingClock.Instant
+    }
+
     public let target: TerminalTarget
     public private(set) var status: Status = .disconnected
     public private(set) var mode: TerminalMode = .observe
@@ -24,22 +36,40 @@ public final class TerminalStore {
     /// Another client already controls this terminal; Shepherdr fell back to observing it.
     public private(set) var isControlledElsewhere = false
 
+    public private(set) var reconnection: Reconnection?
+    @ObservationIgnored private let reconnecting: ReconnectPolicy
+    @ObservationIgnored private var reconnectTask: Task<Void, Never>?
+
+    /// How many lines above the latest output Herdr shows: 0 at the bottom. Herdr keeps the history.
+    public private(set) var linesBack = 0
+    @ObservationIgnored private var scrollCheck: Task<Void, Never>?
+    @ObservationIgnored private var scrolledSinceCheck = false
+
     public init(target: TerminalTarget, mode: TerminalMode = .observe,
-                client: any HerdrTerminalClient = CLIHerdrClient()) {
+                client: any HerdrTerminalClient = CLIHerdrClient(), reconnecting: ReconnectPolicy = .standard) {
         self.target = target
         self.mode = mode == .takeover ? .control : mode
         self.client = client
+        self.reconnecting = reconnecting
     }
 
+    /// Connects afresh, as the user asks: any reconnection in progress starts over.
     public func open(mode: TerminalMode? = nil) {
-        let mode = mode ?? self.mode
-        disconnect()
+        reconnection = nil
+        connect(mode: mode ?? self.mode)
+    }
+
+    private func connect(mode: TerminalMode) {
+        detach()
         self.mode = mode
         status = .connecting
-        message = nil
-        detail = nil
         if mode != .observe { isControlledElsewhere = false }
-        resetDisplay?()
+        // While reconnecting, the banner keeps the last failure and the screen its last frame.
+        if reconnection == nil {
+            message = nil
+            detail = nil
+            resetDisplay?()
+        }
         let attempt = generation
         task = Task { [weak self, client, target, size] in
             do {
@@ -47,11 +77,20 @@ public final class TerminalStore {
                 guard let self, attempt == self.generation, !Task.isCancelled else { stream.close(); return }
                 self.connection = stream
                 defer { stream.close() }
+                // Herdr may still show history someone scrolled to earlier.
+                self.checkLinesBack()
+                var closedBecause: String?
                 for try await event in stream.events {
                     guard attempt == self.generation, !Task.isCancelled else { return }
                     switch event {
                     case .frame(let frame):
                         self.busyRetries = 0
+                        if self.reconnection != nil {
+                            self.reconnection = nil
+                            self.message = nil
+                            self.detail = nil
+                            self.resetDisplay?()
+                        }
                         // Written only on change: every write invalidates the views that read it.
                         let status: Status = mode.acceptsInput ? .interactive : .observing
                         if self.status != status { self.status = status }
@@ -66,7 +105,7 @@ public final class TerminalStore {
                             Task { [weak self] in
                                 try? await Task.sleep(for: delay)
                                 guard let self, attempt == self.generation else { return }
-                                self.open(mode: mode)
+                                self.connect(mode: mode)
                             }
                             return
                         }
@@ -74,17 +113,21 @@ public final class TerminalStore {
                         if mode.acceptsInput, rejected || Self.wasTakenOver(reason) {
                             // Never steal input implicitly: keep watching and let the user decide.
                             self.isControlledElsewhere = true
-                            self.open(mode: .observe)
+                            self.connect(mode: .observe)
                             return
                         }
+                        closedBecause = reason
                         self.message = reason
+                        self.detail = nil
                         self.status = .ended
                     }
                 }
                 if attempt == self.generation, self.status != .failed {
                     self.status = .ended
-                    self.message = self.message ?? "Detached. The terminal continues in Herdr."
+                    self.message = closedBecause ?? "Detached. The terminal continues in Herdr."
                     self.connection = nil
+                    // A terminal that no longer exists won't come back.
+                    if closedBecause.map(Self.isGone) == true { self.reconnection = nil } else { self.reconnectLater() }
                 }
             } catch {
                 guard let self, attempt == self.generation, !Task.isCancelled else { return }
@@ -92,16 +135,54 @@ public final class TerminalStore {
                 self.message = error.localizedDescription
                 self.detail = (error as? HerdrFailure)?.detail
                 self.connection = nil
+                // An incompatible Herdr or an invalid target fails the same way every time.
+                if (error as? HerdrFailure)?.state == .incompatible { self.reconnection = nil } else { self.reconnectLater() }
             }
         }
     }
 
+    /// Tries again after a wait that doubles with each attempt, until it has tried for the policy's
+    /// budget. The waits and the budget run on the suspending clock, so time asleep doesn't count.
+    private func reconnectLater() {
+        let now = SuspendingClock.now
+        var reconnection = reconnection ?? Reconnection(started: now)
+        guard reconnection.started.duration(to: now) < reconnecting.budget else {
+            reconnection.gaveUp = true
+            self.reconnection = reconnection
+            return
+        }
+        let next = now.advanced(by: reconnecting.delay(after: reconnection.attempts))
+        reconnection.next = next
+        self.reconnection = reconnection
+        let attempt = generation
+        reconnectTask = Task { [weak self] in
+            do { try await Task.sleep(until: next, clock: .suspending) } catch { return }
+            guard let self, attempt == self.generation, var reconnection = self.reconnection else { return }
+            reconnection.attempts += 1
+            reconnection.next = nil
+            self.reconnection = reconnection
+            self.reconnectTask = nil
+            // Reconnecting never takes over another client's input on its own.
+            self.connect(mode: self.mode == .takeover ? .control : self.mode)
+        }
+    }
+
+    /// Detaches and stops reconnecting.
     public func disconnect() {
+        reconnection = nil
+        detach()
+    }
+
+    private func detach() {
         generation += 1
+        reconnectTask?.cancel()
+        reconnectTask = nil
         resizeTask?.cancel()
         resizeTask = nil
         inputTask?.cancel()
         inputTask = nil
+        scrollCheck?.cancel()
+        scrollCheck = nil
         task?.cancel()
         task = nil
         connection?.close()
@@ -124,8 +205,51 @@ public final class TerminalStore {
 
     public func press(_ key: TerminalKey) { send(.bytes(key.bytes)) }
 
+    /// Clicks a cell for programs that read the mouse, such as Claude Code in full screen, which
+    /// moves its cursor there. Herdr 0.9.2 and later deliver it; earlier versions ignore it.
+    public func click(column: Int, row: Int) {
+        send(.mouse(pressed: true, column: column, row: row))
+        send(.mouse(pressed: false, column: column, row: row))
+    }
+
+    /// Scrolls through the history Herdr keeps, which Herdr then paints; in a full-screen program,
+    /// such as less, Herdr scrolls the program instead. Herdr takes scrolling only from a client in control.
+    public func scroll(up: Bool, lines: Int) {
+        guard status == .interactive, lines > 0 else { return }
+        send(.scroll(up: up, lines: lines))
+        checkLinesBack()
+    }
+
+    /// Back to the latest output, as typing also does.
+    public func scrollToLatest() {
+        guard status == .interactive else { return }
+        // Herdr scrolls up to 500 lines at a time.
+        for _ in 0...(linesBack / 500) { send(.scroll(up: false, lines: 500)) }
+        if linesBack != 0 { linesBack = 0 }
+        checkLinesBack()
+    }
+
+    /// Asks Herdr how far back it shows the terminal once scrolling pauses, and again while it goes on.
+    private func checkLinesBack() {
+        scrolledSinceCheck = true
+        guard scrollCheck == nil else { return }
+        let attempt = generation
+        scrollCheck = Task { [weak self, client, target] in
+            while let self, self.scrolledSinceCheck, attempt == self.generation {
+                self.scrolledSinceCheck = false
+                do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+                if let lines = try? await client.linesBack(in: target), attempt == self.generation, lines != self.linesBack {
+                    self.linesBack = lines
+                }
+            }
+            if let self, attempt == self.generation { self.scrollCheck = nil }
+        }
+    }
+
     public func send(_ input: TerminalInput) {
         guard status == .interactive, let connection else { return }
+        // Herdr returns to the latest output whenever the terminal gets input.
+        if case .bytes = input, linesBack != 0 { linesBack = 0 }
         let previous = inputTask
         let attempt = generation
         // Keep keyboard/paste/resize order even though the transport API is asynchronous.
@@ -154,7 +278,7 @@ public final class TerminalStore {
             guard let self else { return }
             if self.status == .interactive { self.send(.resize(self.size)) }
             // Observe has no stdin resize authority. Reopen just this observer at its new viewport.
-            else if self.status == .observing || self.status == .connecting { self.open(mode: self.mode) }
+            else if self.status == .observing || self.status == .connecting { self.connect(mode: self.mode) }
         }
     }
 
@@ -164,6 +288,10 @@ public final class TerminalStore {
 
     nonisolated static func isBusy(_ reason: String) -> Bool {
         reason.localizedCaseInsensitiveContains("in progress; retry")
+    }
+
+    nonisolated static func isGone(_ reason: String) -> Bool {
+        reason.localizedCaseInsensitiveContains("not found")
     }
 
     nonisolated static func isControlConflict(_ reason: String) -> Bool {

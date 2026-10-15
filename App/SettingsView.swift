@@ -25,6 +25,7 @@ private struct GeneralSettings: View {
     @AppStorage("openMode") private var openMode = TerminalMode.control.rawValue
     @AppStorage("terminalFontSize") private var fontSize = 13.0
     @AppStorage("terminalFontFamily") private var fontFamily = ConsoleFonts.defaultFamily
+    @AppStorage(ConsoleFonts.ligaturesKey) private var ligatures = false
     @AppStorage(ProjectsFolder.key) private var projectsFolder = ProjectsFolder.defaultPath
     @AppStorage(SessionNotifier.enabledKey) private var notifies = true
     @ViewState<[String]> private var families: [String] = [ConsoleFonts.defaultFamily]
@@ -68,13 +69,15 @@ private struct GeneralSettings: View {
                 Stepper(value: $fontSize, in: 10...22, step: 1) {
                     Text("Size: \(Int(fontSize)) pt")
                 }
+                Toggle("Ligatures", isOn: $ligatures)
+                    .help("Join characters such as -> and != into single symbols, in fonts that have them")
                 Text("❯ claude --resume  # -> != === 0x1F")
-                    .font(Font(ConsoleFonts.font(family: fontFamily, size: fontSize)))
+                    .font(Font(ConsoleFonts.font(family: fontFamily, size: fontSize, ligatures: ligatures)))
                     .foregroundStyle(Theme.phosphor)
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.background, in: RoundedRectangle(cornerRadius: 4))
-                Text("Used by the terminal and the prompt composer. Only monospaced fonts are listed.")
+                Text("Used by the terminal and the prompt composer. Only monospaced fonts are listed. Ligatures make busy terminals redraw more slowly.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

@@ -103,6 +103,22 @@ struct WorktreeListDTO: Decodable {
     let worktrees: [Worktree]?
 }
 
+struct ProcessInfoDTO: Decodable {
+    struct Envelope: Decodable { let result: Result }
+    struct Result: Decodable { let processInfo: ProcessInfoDTO }
+    let shellPid: Int?
+}
+
+struct PaneListDTO: Decodable {
+    struct Envelope: Decodable { let result: PaneListDTO }
+    struct Pane: Decodable {
+        struct Scroll: Decodable { let offsetFromBottom: Int }
+        let terminalId: String
+        let scroll: Scroll?
+    }
+    let panes: [Pane]
+}
+
 struct ServerStatusDTO: Decodable {
     let running: Bool
     let compatible: Bool?
@@ -127,6 +143,17 @@ enum HerdrJSON {
                                                   isLinkedWorktree: worktree.isLinkedWorktree ?? false, path: worktree.path)
         }
         return result
+    }
+
+    /// The process ID of the shell a pane started with; nil when Herdr doesn't say.
+    static func shellPID(_ data: Data) throws -> Int? {
+        try decoder().decode(ProcessInfoDTO.Envelope.self, from: data).result.processInfo.shellPid
+    }
+
+    /// How many lines above its latest output Herdr shows a terminal; nil when Herdr doesn't say.
+    static func linesBack(_ data: Data, terminalID: String) throws -> Int? {
+        let panes = try decoder().decode(PaneListDTO.Envelope.self, from: data).result.panes
+        return panes.first { $0.terminalId == terminalID }?.scroll.map { max(0, $0.offsetFromBottom) }
     }
 
     static func machines(_ data: Data) throws -> [Machine] {
@@ -155,12 +182,14 @@ enum HerdrJSON {
         let agents = dto.agents.map { item in
             let workspace = workspaces[item.workspaceId]
             let pane = panes[item.paneId]
-            let kind = item.displayAgent?.nonempty ?? item.agent?.nonempty ?? "Unknown agent"
+            // Herdr's label names the agent; what a pane reports for display only names the session.
+            let kind = item.agent?.nonempty ?? item.displayAgent?.nonempty ?? ""
+            let display = item.displayAgent?.nonempty ?? AgentProgram(label: kind).name
             let directory = item.foregroundCwd?.nonempty ?? pane?.foregroundCwd?.nonempty
                 ?? item.cwd?.nonempty ?? pane?.cwd?.nonempty ?? workspace?.worktree?.checkoutPath
             return Agent(
                 id: .init(machineID: machine.id, terminalID: item.terminalId),
-                name: item.name?.nonempty ?? kind, kind: kind,
+                name: item.name?.nonempty ?? display, kind: kind,
                 state: AgentState(reportedValue: item.agentStatus), reportedState: item.agentStatus,
                 workspaceID: item.workspaceId, workspaceName: workspace?.label.nonempty ?? item.workspaceId,
                 tabID: item.tabId, tabName: tabs[item.tabId]?.label.nonempty ?? item.tabId,

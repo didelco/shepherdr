@@ -48,6 +48,7 @@ struct MainView: View {
             configureRefresh()
             await cluster.monitor()
         }
+        .task { await model.watchBackgroundWork() }
         .onChange(of: refreshSeconds) { configureRefresh() }
         .onChange(of: cluster.agents.map(\.id), initial: true) {
             model.order.synchronize(with: cluster.agents.map(\.id))
@@ -64,7 +65,10 @@ struct MainView: View {
         view
         .alert("Rename Session", isPresented: Binding { model.renaming != nil } set: { if !$0 { model.renaming = nil } }) {
             TextField("Name", text: Binding { model.renaming?.name ?? "" } set: { model.renaming?.name = $0 })
-            Button("Rename") { Task { await model.commitRename() } }
+            Button("Rename") {
+                guard let prompt = model.renaming else { return }
+                Task { await model.commitRename(prompt) }
+            }
             Button("Cancel", role: .cancel) { model.renaming = nil }
         } message: {
             Text("Renames its Herdr workspace. Other panes in the same workspace share the name.")
@@ -121,7 +125,7 @@ struct MainView: View {
 
     private func closeMessage(_ id: Agent.ID) -> String {
         guard let context = model.context(for: id) else { return "" }
-        let what = context.agent.map { "ends \($0.agent.kind) and closes" } ?? "closes"
+        let what = context.agent.map { "ends \($0.agent.program.name) and closes" } ?? "closes"
         return "This \(what) pane \(context.paneID) in Herdr\(context.machine.machine.isLocal ? "" : " on \(context.machine.machine.name)"). "
             + "If it is the workspace's last pane, the workspace closes too. This cannot be undone."
     }

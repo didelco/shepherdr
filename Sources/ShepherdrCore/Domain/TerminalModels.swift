@@ -85,6 +85,28 @@ public struct TerminalSize: Equatable, Sendable {
     }
 }
 
+/// How a terminal reconnects on its own after its connection drops: the wait doubles after each
+/// attempt up to the longest, and it stops trying once it has tried for the whole budget.
+/// Time counts only while the Mac is awake.
+public struct ReconnectPolicy: Sendable {
+    public let first: Duration
+    public let longest: Duration
+    public let budget: Duration
+
+    public init(first: Duration, longest: Duration, budget: Duration) {
+        self.first = first
+        self.longest = longest
+        self.budget = budget
+    }
+
+    public static let standard = ReconnectPolicy(first: .seconds(1), longest: .seconds(300), budget: .seconds(3_600))
+
+    /// The wait before the next attempt, after this many failed ones.
+    public func delay(after attempts: Int) -> Duration {
+        min(first * (1 << min(max(attempts, 0), 20)), longest)
+    }
+}
+
 public struct TerminalFrame: Equatable, Sendable {
     public let bytes: Data
     public let columns: Int
@@ -101,6 +123,9 @@ public enum TerminalInput: Sendable {
     case bytes(Data)
     case resize(TerminalSize)
     case scroll(up: Bool, lines: Int)
+    /// The left button pressed or released at a zero-based cell of the visible terminal. Herdr
+    /// encodes it for the program's mouse mode and drops it when the program doesn't read the mouse.
+    case mouse(pressed: Bool, column: Int, row: Int)
     case release
     /// Local pacing between queued inputs; never written to the terminal.
     case pause(Duration)
@@ -115,4 +140,11 @@ public protocol HerdrTerminalConnection: Sendable {
 
 public protocol HerdrTerminalClient: Sendable {
     func connect(to target: TerminalTarget, mode: TerminalMode, size: TerminalSize) async throws -> any HerdrTerminalConnection
+    /// How many lines above its latest output Herdr shows the terminal: 0 at the bottom; nil when
+    /// Herdr cannot tell. Herdr keeps the history and scrolls it, for every client at once.
+    func linesBack(in target: TerminalTarget) async throws -> Int?
+}
+
+extension HerdrTerminalClient {
+    public func linesBack(in target: TerminalTarget) async throws -> Int? { nil }
 }

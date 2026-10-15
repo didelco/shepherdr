@@ -16,6 +16,8 @@ enum Theme {
     static let amber = Color(hex: 0xFFB547)
     static let cyan = Color(hex: 0x5CD6FF)
     static let red = Color(hex: 0xFF5F57)
+    /// The terminal's magenta: merged pull requests, as GitHub marks them.
+    static let lilac = Color(hex: 0xD77CFF)
 
     /// In-between shades for the pixel-art artwork (app icon, README header): the logo's amber coat
     /// and the terminal's pinks, filled out so lightness steps stay small. scripts/pixelate.swift reads
@@ -186,9 +188,20 @@ struct PixelFace: View {
 
     var body: some View {
         if mood == .working && !reduceMotion {
-            TimelineView(.periodic(from: .now, by: 0.35)) { timeline in
-                face(drop: Int(timeline.date.timeIntervalSinceReferenceDate / 0.35) % 3)
+            let pixel = pixel
+            FrameCycle(count: 3, interval: 0.35, size: CGSize(width: 11 * pixel, height: 9 * pixel), key: pixel) { drop, context in
+                for (row, line) in Self.working.enumerated() {
+                    for (column, character) in line.enumerated() {
+                        guard let color = Self.colors[character] else { continue }
+                        context.setFillColor(NSColor(color).cgColor)
+                        context.fill(CGRect(x: CGFloat(column) * pixel, y: CGFloat(row) * pixel, width: pixel, height: pixel))
+                    }
+                }
+                context.setFillColor(NSColor(Theme.cyan).cgColor)
+                context.fill(CGRect(x: 10 * pixel, y: CGFloat(1 + drop * 2) * pixel, width: pixel, height: pixel * 2))
             }
+            .frame(width: 11 * pixel, height: 9 * pixel)
+            .accessibilityHidden(true)
         } else {
             face(drop: mood == .working ? 0 : nil)
         }
@@ -219,21 +232,33 @@ struct PixelFace: View {
 struct StateGlyph: View {
     let state: AgentState
     var stale = false
+    /// Whether the agent left commands running, such as a watcher: a slow clock instead of its state's mark.
+    var background = false
     private static let spinner = Array("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+    private static let clock = Array("◴◷◶◵")
 
     var body: some View {
         Group {
             if stale {
                 Text("◌")
-            } else if state == .working || state == .blocked {
-                TimelineView(.periodic(from: .now, by: state == .working ? 0.1 : 0.5)) { timeline in
-                    let tick = Int(timeline.date.timeIntervalSinceReferenceDate * (state == .working ? 10 : 2))
-                    if state == .working {
-                        Text(String(Self.spinner[tick % Self.spinner.count]))
-                    } else {
-                        Text("!").opacity(tick % 2 == 0 ? 1 : 0.35)
-                    }
+            } else if background && state != .working && state != .blocked {
+                let color = NSColor(Theme.color(for: state))
+                FrameCycle(count: Self.clock.count, interval: 0.4, size: CGSize(width: 14, height: 16), key: "clock-\(state)") { tick, context in
+                    FrameCycle.draw(String(Self.clock[tick]), in: context, size: CGSize(width: 14, height: 16),
+                                    font: ConsoleFonts.font(family: ConsoleFonts.defaultFamily, size: 13, weight: .bold), color: color)
                 }
+                .frame(height: 16)
+            } else if state == .working || state == .blocked {
+                let working = state == .working
+                let color = NSColor(Theme.color(for: state))
+                FrameCycle(count: working ? Self.spinner.count : 2, interval: working ? 0.1 : 0.5,
+                           size: CGSize(width: 14, height: 16), key: state) { tick, context in
+                    let glyph = working ? String(Self.spinner[tick]) : "!"
+                    FrameCycle.draw(glyph, in: context, size: CGSize(width: 14, height: 16),
+                                    font: ConsoleFonts.font(family: ConsoleFonts.defaultFamily, size: 12, weight: .bold),
+                                    color: working || tick == 0 ? color : color.withAlphaComponent(0.35))
+                }
+                .frame(height: 16)
             } else {
                 Text(state == .done ? "✓" : state == .idle ? "○" : "?")
             }
@@ -241,7 +266,35 @@ struct StateGlyph: View {
         .font(Theme.mono(12, .bold))
         .foregroundStyle(Theme.color(for: state, stale: stale))
         .frame(width: 14)
-        .accessibilityLabel(stale ? "\(state.title), stale" : state.title)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(stale ? "\(state.title), stale" : background ? "\(state.title), with commands running" : state.title)
+    }
+}
+
+/// What an agent left running, such as `◴ npm run dev +1`; its help lists every command.
+struct BackgroundLabel: View {
+    let commands: [BackgroundCommand]
+
+    var body: some View {
+        if let first = commands.first {
+            Text("◴ \(first.command)" + (commands.count > 1 ? " +\(commands.count - 1)" : ""))
+                .lineLimit(1).truncationMode(.tail)
+                .help(Self.help(commands))
+        }
+    }
+
+    static func help(_ commands: [BackgroundCommand]) -> String {
+        let lines = commands.map { "• \($0.command)  (\(duration(Int(-$0.started.timeIntervalSinceNow))))" }
+        return (["The agent isn't working, but it left these running:"] + lines).joined(separator: "\n")
+    }
+
+    static func duration(_ seconds: Int) -> String {
+        switch seconds {
+        case ..<60: "\(seconds) s"
+        case ..<3_600: "\(seconds / 60) min"
+        case ..<86_400: "\(seconds / 3_600) h \(seconds % 3_600 / 60) min"
+        default: "\(seconds / 86_400) d \(seconds % 86_400 / 3_600) h"
+        }
     }
 }
 
@@ -260,6 +313,55 @@ struct StateTag: View {
             .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
             .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(color.opacity(0.35), lineWidth: 1))
             .help(state == .blocked ? "Herdr reports this agent needs attention" : state.title)
+    }
+}
+
+/// The agent working in a session, by the mark its own interface shows: `✻ claude` in a row, and a
+/// tag with its name in the session's header.
+struct AgentMark: View {
+    enum Style { case label, tag }
+    let program: AgentProgram
+    var style: Style = .label
+
+    var body: some View {
+        HStack(spacing: style == .tag ? 5 : 3) {
+            Text(program.glyph).fontWeight(.bold).foregroundStyle(Self.tint(program))
+            if style == .tag {
+                Text(program.name.uppercased()).tracking(1).foregroundStyle(Theme.dim)
+            } else {
+                Text(program.label).lineLimit(1)
+            }
+        }
+        .modifier(TagFrame(isTag: style == .tag))
+        .help(program.name)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(program.name)
+    }
+
+    /// The agents' own accent where the palette has one close by; the rest stay neutral.
+    static func tint(_ program: AgentProgram) -> Color {
+        switch program.label {
+        case "claude": Color(hex: 0xFFA99F)
+        case "codex": Theme.text
+        case "gemini": Theme.lilac
+        default: Theme.dim
+        }
+    }
+
+    private struct TagFrame: ViewModifier {
+        let isTag: Bool
+
+        func body(content: Content) -> some View {
+            if isTag {
+                content
+                    .font(Theme.mono(10, .bold))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Theme.raised, in: RoundedRectangle(cornerRadius: 3))
+                    .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(Theme.line, lineWidth: 1))
+            } else {
+                content
+            }
+        }
     }
 }
 
@@ -307,3 +409,84 @@ struct ConnectionDot: View {
             .accessibilityHidden(true)
     }
 }
+
+/// Still frames shown in turn by Core Animation, in the window server. A SwiftUI timeline would lay
+/// out the whole window on every tick: a tenth of a core for one spinner, for as long as agents work.
+struct FrameCycle: NSViewRepresentable {
+    let count: Int
+    /// How long each frame shows. Frames follow the clock, so every cycle of this pace is in step.
+    let interval: TimeInterval
+    let size: CGSize
+    /// Changing it draws the frames again.
+    let key: AnyHashable
+    /// Draws one frame, with the origin at the top left.
+    let draw: (_ frame: Int, _ context: CGContext) -> Void
+
+    func makeNSView(context: Context) -> FrameCycleView { FrameCycleView(cycle: self) }
+
+    func updateNSView(_ view: FrameCycleView, context: Context) {
+        guard view.cycle.key != key || view.cycle.count != count || view.cycle.size != size else { return }
+        view.cycle = self
+        view.render()
+    }
+
+    /// A glyph centered in a frame.
+    static func draw(_ text: String, in context: CGContext, size: CGSize, font: NSFont, color: NSColor) {
+        let string = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color])
+        let bounds = string.size()
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        string.draw(at: CGPoint(x: (size.width - bounds.width) / 2, y: (size.height - bounds.height) / 2))
+        NSGraphicsContext.restoreGraphicsState()
+    }
+}
+
+final class FrameCycleView: NSView {
+    var cycle: FrameCycle
+
+    init(cycle: FrameCycle) {
+        self.cycle = cycle
+        super.init(frame: CGRect(origin: .zero, size: cycle.size))
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var intrinsicContentSize: NSSize { cycle.size }
+    override var wantsUpdateLayer: Bool { true }
+    override func viewDidMoveToWindow() { render() }
+    override func viewDidChangeBackingProperties() { render() }
+
+    func render() {
+        guard let layer, let window else { return }
+        let scale = window.backingScaleFactor
+        let frames = (0..<cycle.count).compactMap { image($0, scale: scale) }
+        layer.contentsScale = scale
+        layer.contentsGravity = .center
+        layer.contents = frames.first
+        layer.removeAnimation(forKey: "frames")
+        guard frames.count > 1 else { return }
+        let animation = CAKeyframeAnimation(keyPath: "contents")
+        animation.values = frames
+        animation.keyTimes = (0...frames.count).map { NSNumber(value: Double($0) / Double(frames.count)) }
+        animation.calculationMode = .discrete
+        animation.duration = cycle.interval * Double(frames.count)
+        animation.repeatCount = .infinity
+        animation.isRemovedOnCompletion = false
+        let now = layer.convertTime(CACurrentMediaTime(), from: nil)
+        animation.beginTime = now - now.truncatingRemainder(dividingBy: animation.duration)
+        layer.add(animation, forKey: "frames")
+    }
+
+    private func image(_ frame: Int, scale: CGFloat) -> CGImage? {
+        guard let context = CGContext(data: nil, width: Int(ceil(cycle.size.width * scale)),
+                                      height: Int(ceil(cycle.size.height * scale)), bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.translateBy(x: 0, y: CGFloat(context.height))
+        context.scaleBy(x: scale, y: -scale)
+        cycle.draw(frame, context)
+        return context.makeImage()
+    }
+}
+

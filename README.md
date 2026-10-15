@@ -38,19 +38,20 @@ If it fits the way you work, take it. If it doesn't, fork it and make it yours, 
 - **The real terminal, embedded.** Pick a session and type straight into its agent's TUI (⇧⏎ for a new line), or drop files and images on it for the agent to pick up, even on remote machines. Open the prompt editor when a prompt deserves more thought, or dictate it and edit the transcript.
 - **A browser per session.** Click a link and it opens next to the terminal, in tabs that stay put while you hop between sessions and come back after a restart. Paths to local files open too: Markdown rendered, HTML as a page.
 - **Resources at hand.** The pull requests, issues and Claude artifacts each session links to gather in a side panel, one click away.
+- **See where the work is.** The overview counts sessions by state and machine, shows how busy each machine's processor, memory and disk are, and lists the sessions in any mix of states and machines you click.
 - **Know when it's your turn.** A notification tells you when an agent finishes or needs you, with what it last said.
 - **Sessions on hold.** Mark a planner as waiting for its subagents; they nest under it in a collapsible tree, and its hourglass turns green when they're done.
 - **Drive or just watch.** Sessions open unlocked; one click on the padlock makes them read-only. Shepherdr never steals input from another client: taking over is always your explicit call.
 - **Spawn and dismiss sessions.** **⌘N**: pick a folder and get a shell; start any agent in it and the queue picks it up.
 - **Phosphor green, 8-bit soul.** Bundled Fira Code, a pixel-art flock, and a German Shepherd keeping watch.
 
-No accounts, no telemetry, no server. Shepherdr drives the `herdr` CLI you already have (plus `ssh` for remote terminals). Prompts, terminal output and your voice never touch the disk: Shepherdr only remembers your queue and, per session, its browser tabs and collected links. Dictation runs entirely on your Mac.
+No accounts, no telemetry, no server. Shepherdr drives the `herdr` CLI you already have (plus `ssh` for remote terminals, dropped files and machine load). Prompts, terminal output and your voice never touch the disk: Shepherdr only remembers your queue and, per session, its browser tabs and collected links. Dictation runs entirely on your Mac.
 
 ## Get it
 
-1. Install and start [Herdr](https://herdr.dev/docs/) (CLI 0.9.3 or later for remote machines and terminals).
-2. Grab the `.dmg` from the [latest release](../../releases/latest) and drag **Shepherdr.app** to Applications. You need an Apple Silicon Mac with macOS 14 or later.
-3. Builds aren't notarized by Apple, so the first launch needs **System Settings → Privacy & Security → Open Anyway**.
+1. Install and start [Herdr](https://herdr.dev/docs/), which Shepherdr needs (CLI 0.9.3 or later for remote machines and terminals).
+2. Recommended: install the [GitHub CLI](https://cli.github.com) and sign in with `gh auth login`. Shepherdr uses it to confirm pull requests and issues, private ones included, fetch their titles, and watch pull requests' CI checks; without it, those features are limited or off.
+3. Grab the `.dmg` from the [latest release](../../releases/latest) and drag **Shepherdr.app** to Applications. You need an Apple Silicon Mac with macOS 14 or later. It's signed and notarized by Apple, so it opens like any other download.
 
 Prefer to build it yourself? `open Shepherdr.xcodeproj` and hit **⌘R**. More in [DEVELOPMENT](docs/DEVELOPMENT.md).
 

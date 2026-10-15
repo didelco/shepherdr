@@ -284,7 +284,7 @@ private struct SessionRowView: View {
             .contentShape(Rectangle())
             .onTapGesture { model.open(row.id) }
             .onHover { hovering = $0 }
-            .help("\(row.agent.kind) · \(row.project)")
+            .help("\(row.agent.program.name) · \(row.project)")
             .queueDraggable(item, model: model, enabled: !isNested)
             .onDrop(of: [.plainText], delegate: QueueDropDelegate(model: model, hint: $hint) { dragged, y in
                 drop(of: dragged, at: y)
@@ -331,7 +331,7 @@ private struct SessionRowView: View {
                 .frame(width: 14)
                 .help(wait == .ready ? "On hold; the sessions it waits for have finished" : "On hold, waiting for other sessions")
         } else {
-            StateGlyph(state: row.agent.state, stale: row.isStale)
+            StateGlyph(state: row.agent.state, stale: row.isStale, background: !model.backgroundCommands(of: row).isEmpty)
         }
     }
 
@@ -435,31 +435,40 @@ private struct SessionRowView: View {
         var text = isNested ? "" : "Priority \(row.manualPriority), "
         text += "\(row.workspace), \(row.title), \(row.agent.state.title)"
         if tree.nestedCount > 0 { text += ", waits for \(tree.nestedCount)" + (tree.isCollapsed ? ", hidden" : "") }
+        let background = model.backgroundCommands(of: row)
+        if !background.isEmpty { text += ", left running: " + background.map(\.command).joined(separator: ", ") }
         return text
     }
 
-    /// The session's pull request, when it has one, and where it works: its folder, or for a worktree
-    /// its project.
-    @ViewBuilder private var whereabouts: some View {
+    /// The session's agent, its pull request when it has one, where it works: its folder, or for a
+    /// worktree its project, and what its agent left running.
+    private var whereabouts: some View {
         let pulls = model.pullRequests(of: row.id)
         let checkout = model.cluster.checkout(machineID: row.id.machineID, workspaceID: row.agent.workspaceID)
         let folder: String? = checkout?.name ?? row.agent.directory.map { ($0 as NSString).lastPathComponent }
-        if !pulls.isEmpty || folder != nil {
-            HStack(spacing: 9) {
-                if !pulls.isEmpty { pullsButton(pulls) }
-                if let folder { folderLabel(folder, checkout: checkout) }
-            }
-            .font(Theme.mono(9.5))
-            .foregroundStyle(Theme.faint)
-            .padding(.top, 1)
+        let background = model.backgroundCommands(of: row)
+        return HStack(spacing: 9) {
+            AgentMark(program: row.agent.program).foregroundStyle(Theme.dim)
+            if !pulls.isEmpty { pullsButton(pulls) }
+            if let folder { folderLabel(folder, checkout: checkout) }
+            BackgroundLabel(commands: background).foregroundStyle(Theme.dim).layoutPriority(-1)
         }
+        .font(Theme.mono(9.5))
+        .foregroundStyle(Theme.faint)
+        .padding(.top, 1)
     }
 
     private func pullsButton(_ pulls: [SessionResource]) -> some View {
         let label = pulls.count == 1 ? Self.number(of: pulls[0]) : "\(pulls.count) PRs"
+        // Lilac once its pull requests landed, as in Resources: the session's work is in.
+        let tint = switch model.checksMonitor.outcome(of: pulls) {
+        case .landed: Theme.lilac
+        case .dropped: Theme.dim
+        case nil: Theme.phosphor
+        }
         return Button { model.openPullRequests(of: row.id) } label: {
             HStack(spacing: 4) {
-                Text("⇄ " + label).foregroundStyle(Theme.phosphor.opacity(0.85))
+                Text("⇄ " + label).foregroundStyle(tint.opacity(0.85))
                 ChecksMark(state: model.checksMonitor.state(of: pulls))
             }
             .contentShape(Rectangle())

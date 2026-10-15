@@ -252,6 +252,12 @@ final class AppModel {
     @ObservationIgnored let notifier = SessionNotifier()
     /// CI checks of the pull requests of the session on screen.
     let checksMonitor = ChecksMonitor()
+    /// The overview's choice of states and machines.
+    var sessionFilter = SessionFilter()
+    /// How busy each machine is, measured while the overview is on screen.
+    let usageMonitor = MachineUsageMonitor()
+    /// What agents that aren't working left running, such as watchers.
+    let background = BackgroundWorkStore()
 
     init(cluster: ClusterStore = ClusterStore(), order: SessionOrderStore = SessionOrderStore(),
          relations: SessionRelationStore = SessionRelationStore(), sessionStates: SessionStateStore = SessionStateStore()) {
@@ -314,6 +320,8 @@ final class AppModel {
     var rankedRows: [AgentRow] { order.ranked(cluster.agents) }
     /// Sessions matching the filter, in priority order, whether or not their group is collapsed.
     var matchingRows: [AgentRow] { rankedRows.filter { $0.matches(search) } }
+    /// The overview's sessions: those matching the search, in the chosen states and on the chosen machines.
+    var overviewRows: [AgentRow] { matchingRows.filter(sessionFilter.includes) }
 
     /// The queue as the sidebar shows it. While filtering, groups list only their matching
     /// sessions, unless the group's own name matches.
@@ -521,6 +529,11 @@ final class AppModel {
         SessionResources.ranked(resources(for: id), kind: .pullRequest)
     }
 
+    /// The session's issues, most relevant first.
+    func issues(of id: Agent.ID) -> [SessionResource] {
+        SessionResources.ranked(resources(for: id), kind: .issue)
+    }
+
     /// Opens the session with one of its links in its browser, such as a pull request a notification is about.
     func openLink(_ url: URL, in id: Agent.ID) {
         open(id)
@@ -619,9 +632,9 @@ final class AppModel {
         renaming = RenamePrompt(session: id, workspaceID: workspaceID, name: context.target.workspace)
     }
 
-    func commitRename() async {
-        guard let prompt = renaming else { return }
-        renaming = nil
+    /// Takes the prompt as it was when the button was tapped: dismissing the alert clears
+    /// `renaming` right away, before an awaited `Task` would get a chance to read it.
+    func commitRename(_ prompt: RenamePrompt) async {
         let name = prompt.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name != context(for: prompt.session)?.target.workspace else { return }
         do { try await cluster.renameWorkspace(prompt.workspaceID, to: name, onMachine: prompt.session.machineID) }
@@ -714,6 +727,33 @@ final class AppModel {
     // MARK: Creating and closing sessions
 
     var onlineMachines: [MachineState] { cluster.machines.filter { $0.connection == .online } }
+
+    /// What a session's agent left running, while it isn't working.
+    func backgroundCommands(of row: AgentRow) -> [BackgroundCommand] {
+        row.isStale || row.agent.state == .working ? [] : background.commands[row.id] ?? []
+    }
+
+    /// Looks for commands agents left running every 10 seconds while the window shows, and as soon
+    /// as it shows again.
+    func watchBackgroundWork() async {
+        while !Task.isCancelled {
+            let looks = cluster.lastRefresh != nil && NSApp.occlusionState.contains(.visible)
+            if looks { await background.refresh(cluster.agents, machines: onlineMachines.map(\.machine)) }
+            do { try await Task.sleep(for: .seconds(looks ? 10 : 1)) } catch { return }
+        }
+    }
+
+    /// The folders agents on a machine work in, the most used first, then those of shells still
+    /// waiting for an agent. Worktrees are left out: they belong to the session that made them.
+    func folders(on machineID: String) -> [FolderUse] {
+        func isWorktree(_ workspaceID: String) -> Bool {
+            cluster.checkout(machineID: machineID, workspaceID: workspaceID)?.isLinkedWorktree == true
+        }
+        let shells = allShells.filter { $0.machine.id == machineID && !isWorktree($0.pane.workspaceID) }
+        return FolderUse.ranked(cluster.agents.filter { $0.id.machineID == machineID }, shells: shells.map(\.pane.directory)) { row in
+            isWorktree(row.agent.workspaceID)
+        }
+    }
 
     func startNewSession() {
         newSession = NewSessionDraft()

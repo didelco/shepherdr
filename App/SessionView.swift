@@ -15,6 +15,7 @@ struct SessionView: View {
     @ViewState<CGFloat> private var editorHeight: CGFloat = 60
     @AppStorage("terminalFontSize") private var fontSize = 13.0
     @AppStorage("terminalFontFamily") private var fontFamily = ConsoleFonts.defaultFamily
+    @AppStorage(ConsoleFonts.ligaturesKey) private var ligatures = false
     @AppStorage("showsResources") private var showsResources = true
 
     init(context: SessionContext, model: AppModel, mode: TerminalMode) {
@@ -61,7 +62,7 @@ struct SessionView: View {
                 banners
                 if context.canConnect {
                     TerminalSurface(store: terminal, palette: Theme.terminal,
-                                    font: ConsoleFonts.font(family: fontFamily, size: fontSize),
+                                    font: ConsoleFonts.font(family: fontFamily, size: fontSize, ligatures: ligatures),
                                     focusRequest: model.terminalFocusRequest,
                                     resolveFile: { [model, id] path in model.file(at: path, for: id) },
                                     onResources: { [model, id] found in model.collectResources(found, for: id) },
@@ -72,6 +73,7 @@ struct SessionView: View {
                     .padding(.leading, 10).padding(.top, 6)
                     .background(Theme.background)
                     .overlay { if terminal.status == .connecting { connecting } }
+                    .overlay(alignment: .bottomTrailing) { HistoryBadge(terminal: terminal) }
                 } else {
                     offline
                 }
@@ -103,7 +105,7 @@ struct SessionView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
             if let agent = context.agent {
-                StateGlyph(state: agent.agent.state, stale: agent.isStale)
+                StateGlyph(state: agent.agent.state, stale: agent.isStale, background: !model.backgroundCommands(of: agent).isEmpty)
             } else {
                 Text("$").font(Theme.mono(13, .bold)).foregroundStyle(Theme.phosphor)
             }
@@ -121,12 +123,16 @@ struct SessionView: View {
                 }
             }
             Spacer(minLength: 8)
-            if let agent = context.agent { StateTag(state: agent.agent.state, stale: agent.isStale) }
+            if let agent = context.agent {
+                let background = model.backgroundCommands(of: agent)
+                if !background.isEmpty {
+                    BackgroundLabel(commands: background)
+                        .font(Theme.mono(10)).foregroundStyle(Theme.dim).frame(maxWidth: 220, alignment: .trailing)
+                }
+                AgentMark(program: agent.agent.program, style: .tag)
+                StateTag(state: agent.agent.state, stale: agent.isStale)
+            }
             lockButton
-            Button { terminal.open() } label: { Text("↻") }
-                .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
-                .disabled(terminal.status == .connecting || !context.canConnect)
-                .help("Reconnect to this terminal")
             Button { showDetails.toggle() } label: { Text("i") }
                 .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
                 .help("Session details")
@@ -164,7 +170,9 @@ struct SessionView: View {
     // MARK: Banners and states
 
     private func banner(_ message: String, dismiss: (() -> Void)? = nil, action: (String, () -> Void)? = nil) -> some View {
-        let failed = terminal.status == .failed
+        // A connection that drops stays red while it reconnects, even between attempts.
+        let failed = terminal.status == .failed || terminal.reconnection != nil
+        let reconnection = dismiss == nil && action == nil ? terminal.reconnection : nil
         return HStack(alignment: .top, spacing: 10) {
             Text(failed ? "✗" : "!").font(Theme.mono(12, .bold))
             VStack(alignment: .leading, spacing: 3) {
@@ -172,6 +180,7 @@ struct SessionView: View {
                 if let detail = terminal.detail {
                     Text(detail).font(Theme.mono(10)).foregroundStyle(Theme.dim).lineLimit(4).textSelection(.enabled)
                 }
+                if let reconnection { ReconnectionLine(reconnection: reconnection) }
             }
             Spacer(minLength: 8)
             if let dismiss {
@@ -180,8 +189,10 @@ struct SessionView: View {
                 Button(action.0, action: action.1).buttonStyle(ConsoleButtonStyle(tint: Theme.amber))
                     .disabled(terminal.status == .connecting)
                     .help("Detach the other client's input and control this terminal from Shepherdr")
-            } else if terminal.status == .failed || terminal.status == .ended {
+            } else if terminal.status == .failed || terminal.status == .ended || reconnection != nil {
                 Button("RECONNECT") { terminal.open() }.buttonStyle(ConsoleButtonStyle(tint: Theme.amber))
+                    .disabled(reconnection?.gaveUp == false)
+                    .help(reconnection?.gaveUp == false ? "Shepherdr is reconnecting on its own" : "Reconnect to this terminal")
             }
         }
         .foregroundStyle(failed ? Theme.red : Theme.amber)
@@ -223,11 +234,12 @@ struct SessionView: View {
                 .padding(.top, 3)
             ZStack(alignment: .topLeading) {
                 if draft.wrappedValue.isEmpty {
-                    Text(placeholder).font(Font(ConsoleFonts.font(family: fontFamily, size: 13))).foregroundStyle(Theme.faint)
+                    Text(placeholder).font(Font(ConsoleFonts.font(family: fontFamily, size: 13, ligatures: ligatures)))
+                        .foregroundStyle(Theme.faint)
                         .padding(.top, 5).allowsHitTesting(false)
                 }
                 PromptEditor(text: draft, height: $editorHeight, isEnabled: true,
-                             font: ConsoleFonts.font(family: fontFamily, size: 13),
+                             font: ConsoleFonts.font(family: fontFamily, size: 13, ligatures: ligatures),
                              focusRequest: model.promptFocusRequest, history: model.prompts(for: id),
                              onSubmit: submit)
                     .frame(height: max(editorHeight, 60))
@@ -338,7 +350,7 @@ private struct SessionDetails: View {
         VStack(alignment: .leading, spacing: 12) {
             ConsoleHeader(title: "Session")
             if let row = context.agent {
-                field("Agent", row.agent.kind)
+                field("Agent", "\(row.agent.program.name) · \(row.agent.program.label)")
                 field("State", row.agent.state == .unknown ? "Unknown (\(row.agent.reportedState))" : row.agent.state.title)
                 field("Tab", "\(row.agent.tabName) · \(row.agent.tabID)")
                 field("Pane", row.agent.paneID)
@@ -417,7 +429,7 @@ struct RelationsPanel: View {
         let row = model.row(for: other)
         return HStack(spacing: 6) {
             if let row {
-                StateGlyph(state: row.agent.state, stale: row.isStale)
+                StateGlyph(state: row.agent.state, stale: row.isStale, background: !model.backgroundCommands(of: row).isEmpty)
                 Text(row.workspace).foregroundStyle(Theme.text)
                 if model.showsMachineNames { Text("@\(row.machineName)").foregroundStyle(Theme.faint) }
                 Text(row.agent.state == .blocked ? "needs you" : row.agent.state.title.lowercased())
@@ -524,6 +536,48 @@ struct DictationButton: View {
 
 /// The terminal beside its browser. The browser opens at half the width (an HSplitView would open it
 /// at its minimum), and the divider between them can be dragged.
+/// Shown while Herdr shows earlier output, so new output arriving out of sight is not mistaken for a
+/// frozen terminal.
+private struct HistoryBadge: View {
+    let terminal: TerminalStore
+
+    var body: some View {
+        if terminal.linesBack > 0 {
+            let live = terminal.status == .interactive
+            Button { terminal.scrollToLatest() } label: { Text("↓ LATEST") }
+                .buttonStyle(ConsoleButtonStyle(tint: Theme.amber))
+                .background(Theme.panel, in: RoundedRectangle(cornerRadius: 4))
+                .disabled(!live)
+                .help(live ? "You're reading earlier output. Back to the latest; typing also brings you back."
+                           : "Herdr shows earlier output here. Unlock the session to scroll back down.")
+                .padding(.trailing, 24).padding(.bottom, 10)
+        }
+    }
+}
+
+/// When the dropped terminal tries again, or how many times it tried before giving up.
+private struct ReconnectionLine: View {
+    let reconnection: TerminalStore.Reconnection
+
+    var body: some View {
+        Group {
+            if reconnection.gaveUp {
+                Text("Tried to reconnect \(reconnection.attempts) time\(reconnection.attempts == 1 ? "" : "s") over an hour. Please reconnect manually.")
+            } else if let next = reconnection.next {
+                // The countdown stops while the Mac sleeps, as the wait does.
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    let left = SuspendingClock.now.duration(to: next)
+                    let seconds = max(1, Int(left.components.seconds) + (left.components.attoseconds > 0 ? 1 : 0))
+                    Text("Reconnecting in \(Duration.seconds(seconds).formatted(.units(allowed: [.minutes, .seconds], width: .narrow))) (attempt \(reconnection.attempts + 1))")
+                }
+            } else {
+                Text("Reconnecting… (attempt \(reconnection.attempts))")
+            }
+        }
+        .font(Theme.mono(10.5)).foregroundStyle(Theme.amber)
+    }
+}
+
 private struct BrowserSplit<Terminal: View, Browser: View>: View {
     let showsBrowser: Bool
     @ViewBuilder let terminal: Terminal

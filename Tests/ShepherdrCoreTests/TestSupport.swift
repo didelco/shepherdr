@@ -50,6 +50,15 @@ actor MockHerdrClient: HerdrClient {
     }
     func closeSession(paneID: String, on machine: Machine) async throws { changes.append("close \(machine.id) \(paneID)") }
     func recordedChanges() -> [String] { changes }
+
+    var shellPIDs: [String: Int] = [:]
+    var shellQueries: [String] = []
+    func setShellPID(_ pid: Int, for paneID: String) { shellPIDs[paneID] = pid }
+    func shellPID(paneID: String, on machine: Machine) async throws -> Int? {
+        shellQueries.append(paneID)
+        return shellPIDs[paneID]
+    }
+    func recordedShellQueries() -> [String] { shellQueries }
 }
 
 actor RecordingRunner: CommandRunning {
