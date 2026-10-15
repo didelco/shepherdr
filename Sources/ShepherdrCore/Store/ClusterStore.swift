@@ -75,6 +75,13 @@ public final class ClusterStore {
         try await client.prompt(paneID: paneID, text: text, on: try machine(id))
     }
 
+    /// Starts an agent in a pane that has none, such as Compass's after its agent exited.
+    public func startAgent(_ name: String, kind: String, paneID: String, onMachine id: String) async throws -> String? {
+        let notice = try await client.startAgent(name, kind: kind, paneID: paneID, on: try machine(id))
+        await refreshAfterChange()
+        return notice
+    }
+
     public func renameWorkspace(_ workspaceID: String, to name: String, onMachine id: String) async throws {
         try await client.renameWorkspace(workspaceID, to: name, on: try machine(id))
         await refreshAfterChange()

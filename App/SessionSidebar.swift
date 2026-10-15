@@ -61,7 +61,7 @@ struct SessionSidebar: View {
     }
 
     private var summaryLine: String {
-        let live = cluster.agents.filter { !$0.isStale }
+        let live = model.agents.filter { !$0.isStale }
         let working = live.filter { $0.agent.state == .working }.count
         let blocked = live.filter { $0.agent.state == .blocked }.count
         return blocked > 0 ? "\(blocked) need you · \(working) working" : "\(live.count) agent\(live.count == 1 ? "" : "s") · \(working) working"

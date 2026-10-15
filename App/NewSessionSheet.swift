@@ -44,6 +44,12 @@ struct NewSessionSheet: View {
     /// What GitHub said about the pull request in the folder field.
     @ViewState<PullLookup?> private var pull: PullLookup? = nil
     @FocusState private var focus: Field?
+    /// An agent to start and its first prompt, when something asked for them, such as a Compass page.
+    @ViewState<String?> private var agentKind: String?
+    @ViewState<String> private var prompt: String
+    @ViewState<Bool> private var handsBack: Bool
+    @ViewState<QueueDrop?> private var placement: QueueDrop?
+    @ViewState<CGFloat> private var promptHeight: CGFloat = 90
 
     private enum Field { case directory, branch, name }
 
@@ -58,7 +64,15 @@ struct NewSessionSheet: View {
         self.draft = draft
         _machineID = ViewState(initialValue: draft.machineID)
         _directory = ViewState(initialValue: draft.directory.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "")
+        _name = ViewState(initialValue: draft.name ?? "")
+        _agentKind = ViewState(initialValue: draft.agentKind)
+        _prompt = ViewState(initialValue: draft.prompt ?? "")
+        _handsBack = ViewState(initialValue: draft.compass?.handsBack ?? false)
+        _placement = ViewState(initialValue: draft.placement)
     }
+
+    /// Asked for with an agent or a prompt: the sheet starts the agent too.
+    private var startsAgent: Bool { draft.compass != nil || draft.agentKind != nil || draft.prompt != nil }
 
     private var machine: MachineState? {
         let id = machineID ?? lastMachineID
@@ -91,6 +105,13 @@ struct NewSessionSheet: View {
         return inWorktree ? trimmedBranch : nil
     }
     private var resolvedName: String {
+        let base = suggestedName
+        // Herdr names agents with lowercase letters, digits, - and _.
+        return startsAgent && agentKind != nil && !base.isEmpty ? Self.agentName(from: base, kind: agentKind ?? "agent") : base
+    }
+
+    /// The name typed, or one made from the link, the branch or the folder.
+    private var suggestedName: String {
         if let typed = name.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty { return typed }
         switch reference {
         case .pullRequest(let repository, let number)?: return "\(repository.name)#\(number)"
@@ -99,6 +120,14 @@ struct NewSessionSheet: View {
         }
         if inWorktree, let branch = trimmedBranch.nonEmpty { return branch }
         return reference == nil ? URL(fileURLWithPath: resolvedDirectory).lastPathComponent : ""
+    }
+
+    /// `My App` becomes `my-app`: a name Herdr takes for an agent.
+    static func agentName(from text: String, kind: String) -> String {
+        guard !CompassAction.isAgentName(text) else { return text }
+        let cleaned = text.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") ? $0 : "-" }
+        let name = String(String(cleaned.drop { !($0.isASCII && $0.isLetter) }).prefix(32))
+        return name.isEmpty ? kind : name
     }
     private var canCreate: Bool {
         guard machine != nil, !resolvedDirectory.isEmpty, !resolvedName.isEmpty, !model.isCreatingSession, progress == nil else {
@@ -110,6 +139,7 @@ struct NewSessionSheet: View {
     private var isPullRequest: Bool { if case .pullRequest? = reference { true } else { false } }
     private var whereabouts: String { isLocal ? "on this Mac" : "on \(machine?.machine.name ?? "that machine")" }
     private var subtitle: String {
+        if draft.compass != nil { return "asked for by your Compass page" }
         guard case .into(let groupID) = draft.placement,
               let group = model.groups.first(where: { $0.id == groupID }) else { return "a new herdr workspace with a shell in it" }
         return "a new herdr workspace with a shell, in \(group.name)"
@@ -156,8 +186,12 @@ struct NewSessionSheet: View {
                     .focused($focus, equals: .name)
             }
 
-            Text("Start an agent in its terminal when you need one; the session joins the queue as soon as Herdr detects it.")
-                .font(Theme.mono(10)).foregroundStyle(Theme.faint).fixedSize(horizontal: false, vertical: true)
+            if startsAgent {
+                agentFields
+            } else {
+                Text("Start an agent in its terminal when you need one; the session joins the queue as soon as Herdr detects it.")
+                    .font(Theme.mono(10)).foregroundStyle(Theme.faint).fixedSize(horizontal: false, vertical: true)
+            }
 
             if let newProject {
                 VStack(alignment: .leading, spacing: 3) {
@@ -203,6 +237,46 @@ struct NewSessionSheet: View {
         .onChange(of: resolvedDirectory) { newProject = nil; failure = nil }
         .onChange(of: worktreeBranch) { failure = nil }
         .task(id: pullKey) { await lookUpPullRequest() }
+    }
+
+    /// The agent, its first prompt, where the session goes and whether it reports back: for a
+    /// session something asked for, so you see all of it before it starts.
+    @ViewBuilder private var agentFields: some View {
+        field("Agent") {
+            Picker("", selection: $agentKind) {
+                Text("None — a shell").tag(String?.none)
+                ForEach(NewSessionRequest.agentKinds, id: \.self) { kind in Text(AgentProgram(label: kind).name).tag(String?.some(kind)) }
+            }
+            .labelsHidden()
+        }
+        if agentKind != nil {
+            field("First prompt") {
+                PromptEditor(text: $prompt, height: $promptHeight, isEnabled: true,
+                             font: NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular),
+                             focusRequest: 0, history: [], onSubmit: { newProject == nil ? create() : createProject() })
+                    .frame(height: min(max(promptHeight, 90), 220))
+                    .padding(6)
+                    .background(Theme.background, in: RoundedRectangle(cornerRadius: 4))
+                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.line, lineWidth: 1))
+            }
+            Text("Sent once the agent is ready. Read it before you start: it came from a page built with what others wrote.")
+                .font(Theme.mono(10)).foregroundStyle(Theme.faint).fixedSize(horizontal: false, vertical: true)
+        }
+        if draft.compass != nil {
+            field("Place") {
+                Picker("", selection: $placement) {
+                    Text("At the end of the queue").tag(QueueDrop?.none)
+                    if let first = model.queue.first?.id { Text("At the top of the queue").tag(QueueDrop?.some(.before(first))) }
+                    ForEach(model.groups) { group in Text("In \(group.name)").tag(QueueDrop?.some(.into(group: group.id))) }
+                }
+                .labelsHidden()
+            }
+            if agentKind != nil {
+                Toggle("Hand its result back to Compass", isOn: $handsBack)
+                    .font(Theme.mono(11)).toggleStyle(.checkbox)
+                    .help("Compass waits for it, and its handoff comes back to the Compass agent, which updates the page.")
+            }
+        }
     }
 
     /// The folders agents on this machine work in, the most used first, one click away.
@@ -460,8 +534,18 @@ struct NewSessionSheet: View {
     }
 
     private func open(_ path: String, worktree: NewSessionRequest.Worktree?, pins: [URL] = [], on machine: MachineState) {
-        let request = NewSessionRequest(directory: path, name: resolvedName, agentKind: nil, worktree: worktree)
-        Task { failure = await model.createSession(request, onMachine: machine.id, placement: draft.placement, pins: pins) }
+        let kind = startsAgent ? agentKind : nil
+        let request = NewSessionRequest(directory: path, name: resolvedName, agentKind: kind, worktree: worktree)
+        var first = kind == nil ? nil : prompt.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+        var from = draft.compass
+        from?.handsBack = handsBack && kind != nil
+        if let text = first, from?.handsBack == true, !text.contains("shepherdr handoff") {
+            first = text + "\n\nWhen you finish, hand the result back with ~/.shepherdr/bin/shepherdr handoff."
+        }
+        Task {
+            failure = await model.createSession(request, onMachine: machine.id, placement: startsAgent ? placement : draft.placement,
+                                                pins: pins, prompt: first, compass: from)
+        }
     }
 }
 

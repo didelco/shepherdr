@@ -1,0 +1,6 @@
+# Written by Shepherdr. The backup keeps your prompt, settings and pages; these stay on this Mac.
+state.json
+context/
+# One copy of the page per run: Git's history already has every version.
+days/*/
+.DS_Store

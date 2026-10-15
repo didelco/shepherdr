@@ -302,7 +302,8 @@ final class Courier {
             case .stopWaiting(let waiter, let awaited?):
                 model.relations.setWaiting(waiter, for: awaited, false)
             case .place(let child, let parent):
-                model.order.insert(child, .after(.session(parent)))
+                // Compass isn't in the queue: what it starts joins the end.
+                model.order.insert(child, model.compass.isCompass(parent) ? .end : .after(.session(parent)))
             case .keep(let item):
                 mail.add(item)
                 if item.kind == .spawnRequest, item.status == .queued {
@@ -367,7 +368,7 @@ final class Courier {
             }
             let text = MailPlanner.prompt(for: item, message: message, messagePath: messagePath, attachments: attachments)
             try await model.cluster.prompt(paneID: row.agent.paneID, text: text, onMachine: row.id.machineID)
-            mail.remove(item.id)
+            remove(item)
         } catch {
             let failure = AppModel.failure(error)
             // A question on screen or an agent still starting: tried again once it is free.
@@ -521,7 +522,40 @@ final class Courier {
         deliver()
     }
 
-    func discard(_ item: MailItem) { mail.remove(item.id) }
+    func discard(_ item: MailItem) { remove(item) }
+
+    /// Done with an item. A first prompt Shepherdr kept for a session it started, such as one
+    /// a Compass page asked for, leaves the disk with it: only letters stay in the inbox.
+    private func remove(_ item: MailItem) {
+        mail.remove(item.id)
+        let kept = inbox.appendingPathComponent("compass", isDirectory: true).standardizedFileURL.path + "/"
+        guard item.id.hasPrefix("compass/"), URL(fileURLWithPath: item.folder).standardizedFileURL.path.hasPrefix(kept) else { return }
+        try? FileManager.default.removeItem(atPath: item.folder)
+    }
+
+    /// A first prompt for a session Shepherdr just started, such as one a Compass page asked
+    /// for: kept in the inbox like a letter's, and delivered once the agent is ready.
+    func queuePrompt(_ text: String, for session: Agent.ID, name: String) {
+        // Named like a letter, so the inbox clears it after a month like one.
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        let id = "\(formatter.string(from: Date()))-\(String(format: "%06x", Int.random(in: 0..<0x100_0000)))"
+        let folder = inbox.appendingPathComponent("compass", isDirectory: true).appendingPathComponent(id, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try Data(text.utf8).write(to: folder.appendingPathComponent("message.md"), options: .atomic)
+        } catch {
+            model?.sessionNotices[session] = "Shepherdr couldn't keep the first prompt for \(name): \(error.localizedDescription)"
+            return
+        }
+        let headline = text.split(whereSeparator: \.isNewline).first.map { String($0.prefix(120)) }
+        mail.add(MailItem(id: "compass/\(id)", letterID: id, kind: .prompt, origin: Machine.local.id, originName: "Compass",
+                          sender: nil, senderName: "Compass", recipient: session, status: .queued, received: Date(),
+                          folder: folder.path, headline: headline, hasMessage: true, files: [], addressedTo: nil))
+        deliver()
+    }
 
     /// Starts a session another machine asked for, linked to the session that asked.
     private func start(_ item: MailItem) {

@@ -30,11 +30,17 @@ struct MainView: View {
 
     private var layout: some View {
         HSplitView {
-            SessionSidebar(model: model)
-                .frame(minWidth: 250, idealWidth: 280, maxWidth: 340)
-            workArea
-                .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
+            Group {
+                if model.mode == .compass { CompassSidebar(model: model, compass: model.compass) } else { SessionSidebar(model: model) }
+            }
+            .frame(minWidth: 250, idealWidth: 280, maxWidth: 340)
+            Group {
+                if model.mode == .compass { CompassWorkArea(model: model, compass: model.compass) } else { workArea }
+            }
+            .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
         }
+        // In the strip the hidden title bar leaves beside the window's buttons.
+        .overlay(alignment: .topLeading) { ModeTabs(model: model).padding(.leading, 78).padding(.top, 8) }
         .background(Theme.background)
         .ignoresSafeArea(.container, edges: .top)
         .preferredColorScheme(.dark)
@@ -49,18 +55,22 @@ struct MainView: View {
             await cluster.monitor()
         }
         .task { await model.watchBackgroundWork() }
+        .onAppear { model.compass.start() }
         .onChange(of: refreshSeconds) { configureRefresh() }
         .onChange(of: cluster.agents.map(\.id), initial: true) {
-            model.order.synchronize(with: cluster.agents.map(\.id))
+            model.order.synchronize(with: model.agents.map(\.id))
         }
-        .onChange(of: cluster.agents, initial: true) { model.notifier.observe(cluster.agents) }
+        .onChange(of: cluster.agents, initial: true) { model.notifier.observe(model.agents) }
         .onChange(of: cluster.lastRefresh, initial: true) {
             model.restoreSelection()
             model.courier.observe()
+            model.compass.observe()
         }
         .onAppear { model.openMainWindow = { [openWindow] in openWindow(id: "main") } }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
             if cluster.automaticRefresh { Task { await cluster.refresh() } }
+            // A run the Mac slept through happens now, once.
+            model.compass.tick()
         }
     }
 

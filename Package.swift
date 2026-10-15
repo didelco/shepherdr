@@ -20,7 +20,8 @@ let package = Package(
     ],
     targets: [
         // AgentTools: the command line and skill Shepherdr installs on each machine for agents.
-        .target(name: "ShepherdrCore", resources: [.copy("Resources/Markdown"), .copy("Resources/AgentTools")]),
+        // Compass: the contract, page template and starter prompt of the Compass folder.
+        .target(name: "ShepherdrCore", resources: [.copy("Resources/Markdown"), .copy("Resources/AgentTools"), .copy("Resources/Compass")]),
         .target(name: "ShepherdrTerminalUI",
                 dependencies: ["ShepherdrCore", .product(name: "SwiftTerm", package: "SwiftTerm")],
                 resources: [.copy("Resources/SwiftTerm-LICENSE"), .copy("Resources/Fonts")]),

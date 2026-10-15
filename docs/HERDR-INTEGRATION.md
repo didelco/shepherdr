@@ -48,7 +48,7 @@ Queries run concurrently, each with a 12-second process deadline and an 8 MB out
 - Local is the default session. Remote profiles each identify one session.
 - No cluster event subscriptions; terminal windows do consume live CLI frame streams.
 - No persistence of cached session data across launches.
-- No server lifecycle management. Shepherdr creates workspaces, closes panes and changes saved machines only when you ask; enabled terminal input and resizing affect the selected existing terminal through Herdr's API. The [agent tools](AGENT-TOOLS.md) also prompt agents with the handoffs their sessions receive.
+- No server lifecycle management. Shepherdr creates workspaces, closes panes and changes saved machines only when you ask; enabled terminal input and resizing affect the selected existing terminal through Herdr's API. The [agent tools](AGENT-TOOLS.md) also prompt agents with the handoffs their sessions receive, and Compass starts, prompts and replaces its own agent in its own workspace.
 - Actual multi-host SSH validation needs configured machines; automated tests exercise multiple synthetic machines and failures through the same store/client boundary.
 
 ## Existing terminals (0.2)
@@ -84,3 +84,12 @@ Checked on 2026-10-15 with Herdr 0.9.3 in disposable sessions. The [agent tools]
 - **Other machines.** All of these go through `--machine <profile>`, which Herdr forwards over its own SSH connection. Errors are JSON on stderr, `{"error":{"code":…,"message":…}}`.
 
 `Tests/AgentTools/herdr-live.sh` checks the command against a real Herdr in a server of its own, and CI runs it with Herdr from Homebrew.
+
+## Compass (0.9)
+
+Checked on 2026-10-15 with Herdr 0.9.3 in a server of its own, in a scratch home, with a stand-in `claude` that reports itself with `pane report-agent`:
+
+- **Its workspace.** `workspace create --cwd ~/.shepherdr/compass --label compass --no-focus`, then `agent start compass --kind <kind> --pane <pane> --timeout 60000` in its root pane, so a failed start leaves a pane Shepherdr can start the agent in again. A name another agent has fails with `agent_name_taken`; Shepherdr then starts it as `compass-<4 hex>`. Herdr reports pane folders with symbolic links resolved (`/tmp` as `/private/tmp`), so Shepherdr compares resolved paths.
+- **Finding it again.** Shepherdr keeps the terminal ID it started. After a Herdr restart, which changes terminal IDs, it looks for a pane whose workspace starts with `compass` and whose folder is Compass's. Before the local machine's first snapshot, it doesn't start anything: only Herdr's answer tells whether the agent is there.
+- **Runs.** `agent prompt <pane> <text>` once the agent is `idle` or `done`, as handoffs are delivered. `agent_blocked`, `agent_not_ready` and `agent_busy` are tried again later.
+- **A new day.** `pane close` on every pane in Compass's workspace and folder, then a new workspace. Closing a workspace's only pane closes the workspace.

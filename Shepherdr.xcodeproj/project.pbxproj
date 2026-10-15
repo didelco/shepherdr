@@ -5,6 +5,36 @@
 	};
 	objectVersion = 56;
 	objects = {
+		A0C0A1000000000000000001 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/Compass.swift";
+			sourceTree = "<group>";
+		};
+		A0C0A1000000000000000002 = {
+			isa = PBXBuildFile;
+			fileRef = A0C0A1000000000000000001;
+		};
+		A0C0A1000000000000000003 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/CompassViews.swift";
+			sourceTree = "<group>";
+		};
+		A0C0A1000000000000000004 = {
+			isa = PBXBuildFile;
+			fileRef = A0C0A1000000000000000003;
+		};
+		A0C0A1000000000000000005 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/CompassSettings.swift";
+			sourceTree = "<group>";
+		};
+		A0C0A1000000000000000006 = {
+			isa = PBXBuildFile;
+			fileRef = A0C0A1000000000000000005;
+		};
 		A06B01000000000000000003 = {
 			isa = XCSwiftPackageProductDependency;
 			package = 582681C2EAE02B3F3D399C0C;
@@ -319,6 +349,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				A06B01000000000000000002,
+				A0C0A1000000000000000002,
+				A0C0A1000000000000000004,
+				A0C0A1000000000000000006,
 				A06B01000000000000000006,
 				A06B01000000000000000008,
 				A06B0100000000000000000A,
@@ -574,6 +607,9 @@
 				A06B01000000000000000009,
 				A07C01000000000000000001,
 				A07C01000000000000000003,
+				A0C0A1000000000000000001,
+				A0C0A1000000000000000003,
+				A0C0A1000000000000000005,
 				"6D15C7CA423DE64384AAE98E",
 				"1AF48EF43BD67C74CDCE6D96",
 				DD7D176086D6801FE54DFFE9,

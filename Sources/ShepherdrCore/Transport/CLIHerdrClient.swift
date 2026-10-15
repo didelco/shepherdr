@@ -167,6 +167,19 @@ public struct CLIHerdrClient: HerdrClient, HerdrTerminalClient {
         catch { throw decodingFailure(error) }
     }
 
+    public func startAgent(_ name: String, kind: String, paneID: String, on machine: Machine) async throws -> String? {
+        try requireArgument(name, "agent name")
+        try requireArgument(kind, "agent")
+        try requireArgument(paneID, "pane")
+        let prefix = machine.profileID.map { ["--machine", $0] } ?? []
+        let started = try await execute(prefix + ["agent", "start", name, "--kind", kind, "--pane", paneID, "--timeout", "60000"], timeout: 75)
+        do { try validate(started, machine: machine) }
+        catch let failure as HerdrFailure where failure.detail == "Herdr error: agent_not_ready" {
+            return "\(kind) is waiting for you to answer a startup question."
+        }
+        return nil
+    }
+
     public func prompt(paneID: String, text: String, on machine: Machine) async throws {
         try requireArgument(paneID, "pane")
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw HerdrFailure(.incompatible, "The prompt is empty.") }

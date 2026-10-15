@@ -66,12 +66,15 @@ Use **Settings → Machines** for failure details. A malformed response is **Inc
 
 ```text
 App/                              SwiftUI presentation: queue sidebar, work area, prompt editor, browser, settings, theme
+  Compass.swift                   Compass: its agent, schedule, runs, page, actions and backup, and the page's bridge
+  CompassViews.swift              The mode tabs, Compass's column and work area, and its welcome screen
 Sources/ShepherdrCore/
-  Transport/                      CLI adapters, executable discovery, bounded process/stream transports, agent tools and mailbox
+  Transport/                      CLI adapters, executable discovery, bounded process/stream transports, agent tools and mailbox, Compass's folder and Git
   DTO/                            JSON wire types, validation and domain mapping
-  Domain/                         Machine, Workspace, Agent, lifecycle and failure models, project gathering, letters and machine lists
+  Domain/                         Machine, Workspace, Agent, lifecycle and failure models, project gathering, letters and machine lists, Compass's schedule, settings and actions
   Store/                          MainActor cluster state, local priorities, groups, project headings and holds, terminal connections, agent tools and mail
   Resources/AgentTools/           The shepherdr command and skill installed on each machine
+  Resources/Compass/              Compass's contract, page template, starter prompt and permissions
 Sources/ShepherdrTerminalUI/       Embeddable SwiftTerm AppKit terminal surface, palette and link handling
 Sources/ShepherdrDictation/        On-device dictation: microphone capture and Parakeet transcription via FluidAudio
 Sources/ShepherdrProbe/            Read-only integration diagnostic
@@ -82,6 +85,8 @@ scripts/pixelate.swift             Turns art into strict pixel art in App/Theme.
 scripts/make-icon.swift            Renders App/Assets.xcassets/AppIcon.appiconset from docs/assets/icon.png
 scripts/make-header-masks.py       Prepares the header's masks and cleaned art (Python, rarely needed)
 ```
+
+Compass's pure parts are in Core and tested there: `CompassSchedule` (run times and missed runs, with fixed clocks), `CompassConfig` (lenient, since agents edit it), `CompassAction` (the page's buttons), `CompassFolder` (the kit and the files by owner) and `CompassRepository` (Git, tested with a real Git and a bare remote when Git is installed). `CompassController` in the app follows the agent through each run.
 
 `HerdrClient` exposes domain snapshots and the machine catalog. `HerdrTerminalClient` exposes live terminal connections, frames and input. `CLIHerdrClient` implements both; views never execute commands or decode JSON. Agent identity combines the machine profile and terminal ID, so identical pane IDs and names on different machines remain distinct. Native Unix-socket transport and event subscriptions can replace the CLI behind these boundaries.
 

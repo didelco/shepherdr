@@ -1,5 +1,19 @@
 # Verification
 
+## Compass (unreleased)
+
+Validated on 2026-10-15 on Apple Silicon with Xcode 27 / Swift 6.4 and Herdr 0.9.3:
+
+- `swift test` — **173 tests in 35 suites passed**, plus the agent tools' 9; `xcodebuild … test` passed, building the app. New tests cover run times, missed runs (the Mac asleep from 10:20 to 14:40, a daily run missed in the morning, a Friday run not made up on Saturday, a run missed at 18:00 made up at 21:00), lenient settings written by an agent, the page's actions and the values they refuse, the kit by owner (an update rewrites the contract and leaves your prompt and your template alone), copies per run, marks, and `startAgent` with `agent_not_ready` and `agent_name_taken`. With Git installed, a folder is committed, pushed to a bare remote and restored from it.
+- **End to end, in a scratch home.** A Herdr server of its own (`HOME=/tmp/shep-e2e/home`), a stand-in `claude` on its `PATH` that reports itself with `pane report-agent` and answers each run by writing the day's page, and a copy of the app with its own bundle identifier, launched with `open -g` against that server. The user's `default` session was never touched.
+  - Launched at 21:17 with an empty `compass.json`, Compass prepared its folder, made up the 18:00 run once (kind `first`), started its agent in a `compass` workspace, sent the prompt when the agent was idle, saw the page change, kept `days/2026-10-15/18-00.html` and committed the folder. `context/run.json` and `context/sessions.json` read as documented; the queue's only other session was there, Compass's agent wasn't.
+  - **Run Compass Now**, pressed through the menu bar with accessibility, sent an `update` with "Since 21:17" and left a second copy and commit.
+  - In Agents, the queue, the overview and the shells listed only the other session. In Compass, the column, the page in its pinned tab, the agent's terminal and the live state badge on the page's `data-session` rendered as intended (window captures).
+  - With yesterday's runs and agent in `state.json`, the next launch closed the old agent's panes, started a fresh agent named `compass`, and ran the day's first run. A first attempt showed two bugs, now fixed and checked again the same way: deciding before Herdr's first answer that there was no agent, and an agent left as a shell when the name `compass` was taken.
+  - A `backup` remote written to `compass.json` by hand, as the agent would, was configured on the next check and pushed the whole history to a bare repository.
+- **The page's bridge**, in a separate offscreen web view with the same script and world: a click made through the web view passed the spawn button's fields on; a page script's `click()` was ignored; page scripts saw neither the handler nor the bridge; decorations marked a session's state, a done item and a started session.
+- Not verified: a real Claude Code or Codex run (the trust question and permissions in `.claude/settings.json`), clicking the page's buttons inside the app and the New Session sheet they open, Settings → Compass, the welcome screen and restoring from it, the notification when the agent needs you, and the warning for a public GitHub remote. Background launches kept the window from rendering in later captures.
+
 ## Session console redesign (0.4.0)
 
 Validated on 2026-10-04 on Apple Silicon with Xcode 27 / Swift 6.4:
