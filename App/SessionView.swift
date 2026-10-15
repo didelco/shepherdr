@@ -66,6 +66,7 @@ struct SessionView: View {
                                     font: ConsoleFonts.font(family: fontFamily, size: fontSize, ligatures: ligatures),
                                     focusRequest: model.terminalFocusRequest,
                                     resolveFile: { [model, id] path in model.file(at: path, for: id) },
+                                    resolveSession: { [model, id] row, column in model.sessionLink(in: row, column: column, from: id) },
                                     onResources: { [model, id] found in model.collectResources(found, for: id) },
                                     onDropFiles: { [model, id, terminal] files in model.drop(files, into: id, terminal: terminal) }
                     ) { [model, id] url, external in

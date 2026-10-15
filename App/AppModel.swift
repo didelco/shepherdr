@@ -492,8 +492,13 @@ final class AppModel {
     }
 
     /// Links clicked in a session's terminal open in its browser, or in the default browser. Local
-    /// Markdown and HTML files open in its browser too; other files in their default app.
+    /// Markdown and HTML files open in its browser too; other files in their default app. A session
+    /// named in the terminal opens in Shepherdr, with or without ⌘.
     func openLink(_ url: URL, from id: Agent.ID, external: Bool) {
+        if let session = SessionLink.session(in: url) {
+            if context(for: session) != nil { open(session) }
+            return
+        }
         if external || (url.isFileURL && LocalPage(url) == nil) { NSWorkspace.shared.open(url) }
         else { workspace(for: id).browser.open(url) }
         workspace(for: id).countOpen(of: url)
@@ -513,6 +518,20 @@ final class AppModel {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: full, isDirectory: &isDirectory), !isDirectory.boolValue else { return nil }
         return URL(fileURLWithPath: full).standardizedFileURL
+    }
+
+    /// A link to the other session or pane that the text at a column of a session's terminal names:
+    /// its pane or terminal ID, or its name, as `shepherdr` prints them.
+    func sessionLink(in row: [Character], column: Int, from id: Agent.ID) -> URL? {
+        let entries = cluster.machines.flatMap { state -> [SessionDirectory.Entry] in
+            guard let snapshot = state.snapshot else { return [] }
+            let agents = snapshot.agents.map(SessionDirectory.Entry.init(agent:))
+            let agentTerminals = Set(snapshot.agents.map(\.id.terminalID))
+            return agents + snapshot.panes.filter { !agentTerminals.contains($0.terminalID) }
+                .map { SessionDirectory.Entry(pane: $0, machineID: state.id) }
+        }
+        let directory = SessionDirectory(entries: entries, machines: cluster.machines.map(\.machine))
+        return directory.session(in: row, column: column, from: id).map(SessionLink.url(for:))
     }
 
     // MARK: Dropped files
