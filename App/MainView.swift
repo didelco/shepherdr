@@ -97,7 +97,11 @@ struct MainView: View {
     @ViewBuilder private var workArea: some View {
         switch model.selection {
         case .overview:
-            OverviewView(model: model)
+            BrowserSplit(showsBrowser: model.overviewBrowser.isVisible) {
+                OverviewView(model: model)
+            } browser: {
+                BrowserPanel(browser: model.overviewBrowser)
+            }
         case .session(let id):
             if let context = model.context(for: id) {
                 SessionView(context: context, model: model, mode: TerminalMode(rawValue: openMode) ?? .control)
