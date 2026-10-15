@@ -221,6 +221,9 @@ struct SessionSidebar: View {
                 Text(refreshSeconds == 0 ? "paused" : "↻ \(refreshSeconds)s")
                     .help(cluster.lastRefresh.map { "Checked \($0.formatted(date: .omitted, time: .standard))" } ?? "")
             }
+            Button { if let guide = AppModel.guide { model.openHelp(guide) } } label: { Text("?").font(Theme.mono(13, .bold)) }
+                .buttonStyle(.plain).foregroundStyle(Theme.dim)
+                .help("Shepherdr guide (⌘?)")
             SettingsLink { Text("⚙").font(.system(size: 13)) }
                 .buttonStyle(.plain).foregroundStyle(Theme.dim)
                 .help("Machines and preferences (⌘,)")

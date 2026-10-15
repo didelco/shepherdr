@@ -239,6 +239,8 @@ final class AppModel {
     @ObservationIgnored private var speechModelDownloadAccepted = false
     /// Created on first use and kept for the life of the app, so pages survive switching sessions.
     @ObservationIgnored private var workspaces: [Agent.ID: SessionWorkspace] = [:]
+    /// The overview's browser, for pages that belong to no session, such as the guide. Not saved.
+    let overviewBrowser = SessionBrowser()
     /// The terminal shown in the work area, for menu commands.
     var activeTerminal: TerminalStore?
 
@@ -470,10 +472,23 @@ final class AppModel {
     }
 
     func toggleBrowser() {
-        guard let id = selectedID else { return }
-        let browser = workspace(for: id).browser
+        let browser = selectedID.map { workspace(for: $0).browser } ?? overviewBrowser
         browser.isVisible.toggle()
         if browser.isVisible && browser.tabs.isEmpty { browser.newTab() }
+    }
+
+    /// The bilingual guide bundled with the app.
+    static let guide = Bundle.main.url(forResource: "visual-guide", withExtension: "html")
+    static let herdrDocumentation = URL(string: "https://herdr.dev/docs/")!
+
+    /// Opens help beside what you are looking at: in the selected session's browser, or the overview's.
+    func openHelp(_ url: URL) {
+        if let id = selectedID, context(for: id) != nil {
+            workspace(for: id).browser.open(url)
+        } else {
+            selection = .overview
+            overviewBrowser.open(url)
+        }
     }
 
     /// Links clicked in a session's terminal open in its browser, or in the default browser. Local

@@ -51,7 +51,6 @@ struct ShepherdrApp: App {
                     .disabled(model.activeTerminal == nil)
                 Button("Browser") { model.toggleBrowser() }
                     .keyboardShortcut("b", modifiers: .command)
-                    .disabled(model.selectedID == nil)
                 Button(model.dictation.isRecording ? "Stop Dictation" : "Dictate Prompt") { model.toggleDictation() }
                     .keyboardShortcut("d", modifiers: [.command, .shift])
                     .disabled(model.selectedID == nil && !model.dictation.isRecording)
@@ -81,7 +80,9 @@ struct ShepherdrApp: App {
                 Button("New Group…") { model.promptNewGroup(with: model.selectedID) }
             }
             CommandGroup(replacing: .help) {
-                Link("Herdr Documentation", destination: URL(string: "https://herdr.dev/docs/")!)
+                Button("Shepherdr Guide") { if let guide = AppModel.guide { model.openHelp(guide) } }
+                    .keyboardShortcut("?", modifiers: .command)
+                Button("Herdr Documentation") { model.openHelp(AppModel.herdrDocumentation) }
             }
         }
 

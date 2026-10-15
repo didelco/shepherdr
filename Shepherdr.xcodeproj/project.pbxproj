@@ -34,6 +34,16 @@
 			isa = PBXBuildFile;
 			fileRef = A07C01000000000000000003;
 		};
+		A07001000000000000000001 = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.html;
+			path = "docs/visual-guide.html";
+			sourceTree = "<group>";
+		};
+		A07001000000000000000002 = {
+			isa = PBXBuildFile;
+			fileRef = A07001000000000000000001;
+		};
 		A06B01000000000000000001 = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -364,6 +374,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				20DDA1EF970C365A16F71374,
+				A07001000000000000000002,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -574,6 +585,7 @@
 				A3CC3935E732940DDBCF5DCA,
 				EAC9226008044C3EC25CB34A,
 				75046E84DAE53AA83B440071,
+				A07001000000000000000001,
 			);
 			name = "App";
 			sourceTree = "<group>";

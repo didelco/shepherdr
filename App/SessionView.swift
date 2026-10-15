@@ -538,8 +538,6 @@ struct DictationButton: View {
     }
 }
 
-/// The terminal beside its browser. The browser opens at half the width (an HSplitView would open it
-/// at its minimum), and the divider between them can be dragged.
 /// Shown while Herdr shows earlier output, so new output arriving out of sight is not mistaken for a
 /// frozen terminal.
 private struct HistoryBadge: View {
@@ -582,7 +580,9 @@ private struct ReconnectionLine: View {
     }
 }
 
-private struct BrowserSplit<Terminal: View, Browser: View>: View {
+/// The terminal, or the overview, beside its browser. The browser opens at half the width (an
+/// HSplitView would open it at its minimum), and the divider between them can be dragged.
+struct BrowserSplit<Terminal: View, Browser: View>: View {
     let showsBrowser: Bool
     @ViewBuilder let terminal: Terminal
     @ViewBuilder let browser: Browser
