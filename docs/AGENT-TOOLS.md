@@ -114,6 +114,8 @@ Only regular files (no symbolic links) with the names the command writes cross. 
 
 Letters from the Mac apply on their own. From another machine, anything whose text would reach a session on a different machine, requests for sessions, and pages to open wait for the user, unless **Trust its letters** is on for that machine. A handoff between sessions on the same remote machine crosses nothing and is delivered directly.
 
+**HANDOFF AND CLOSE** adds no letter kind. Once the session's agent is idle or done, `Courier` types `HandoffClose.prompt` into it with the same `agent prompt`, asking it to run `shepherdr handoff` without `--to`. `HandoffClose.outcome(of:)` then reads the actions planned for each letter collected. If a handoff from that session was filed for a session that waited for it, queued or waiting for approval, the message and files are on the Mac: Shepherdr closes the session with `pane close`, as **Close Session** does. A handoff filed for anyone else keeps the session open. So does a failed request, or no handoff within 15 minutes of asking while the agent isn't working. The pending close lives in memory only.
+
 ## Testing
 
 ```sh

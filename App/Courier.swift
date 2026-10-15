@@ -25,6 +25,10 @@ final class Courier {
     @ObservationIgnored private var listFailures: [String: Date] = [:]
     /// Why the last install on a machine failed, until the next attempt.
     private(set) var installFailures: [String: String] = [:]
+    /// Sessions handing their work back before they close, by session.
+    private(set) var handoffCloses: [Agent.ID: HandoffClose] = [:]
+    /// Sessions whose agent is being asked to hand off right now.
+    @ObservationIgnored private var asking = Set<Agent.ID>()
 
     /// A session's agent gets one delivery at a time: the next waits until it worked on this one.
     private static let deliveryGap: TimeInterval = 20
@@ -79,6 +83,7 @@ final class Courier {
         syncLists()
         deliver()
         settleMissingRecipients()
+        advanceHandoffCloses()
     }
 
     /// Checks again a machine whose session you opened, when its last check is a while ago.
@@ -287,7 +292,8 @@ final class Courier {
         guard let model else { return }
         let context = MailContext(origin: machine, isTrusted: tools.trusted.contains(machine.id), rows: model.cluster.agents,
                                   machines: catalog, macName: tools.macName, waits: model.relations.waits)
-        for action in MailPlanner.plan(letter, folder: folder.path, context: context) {
+        let actions = MailPlanner.plan(letter, folder: folder.path, context: context)
+        for action in actions {
             switch action {
             case .wait(let waiter, let awaited):
                 model.relations.setWaiting(waiter, for: awaited, true)
@@ -315,6 +321,9 @@ final class Courier {
             case .problem(nil, let text):
                 notices.append(text)
             }
+        }
+        for close in handoffCloses.values {
+            if let outcome = close.outcome(of: actions) { finish(close, outcome) }
         }
     }
 
@@ -387,6 +396,98 @@ final class Courier {
                 $0.status = .failed
                 $0.problem = "Its session closed before it could be delivered."
             }
+        }
+    }
+
+    // MARK: Handing off and closing
+
+    /// Why a session can't hand off and close, or nil when it can: it needs an agent, sessions
+    /// waiting for it, and the agent tools on its machine to hand off with.
+    func whyNoHandoffClose(_ id: Agent.ID) -> String? {
+        guard let model, let row = model.row(for: id), !row.isStale else { return "Only a session with an agent can hand off its work." }
+        guard !model.relations.waiters(of: id).isEmpty else { return "No session waits for this one." }
+        guard tools.status(on: id.machineID).isInstalled else {
+            return "Its agent hands off with the agent tools. Install them on \(name(of: id.machineID)) from the session's banner or Settings → Agents."
+        }
+        return nil
+    }
+
+    /// Asks the session's agent, once it is free, to hand its work back to the sessions waiting for
+    /// it, and closes the session when the handoff arrives.
+    func handOffAndClose(_ id: Agent.ID) {
+        guard let model, whyNoHandoffClose(id) == nil, handoffCloses[id] == nil else { return }
+        handoffCloses[id] = HandoffClose(session: id, waiters: model.relations.waiters(of: id))
+        model.sessionNotices[id] = nil
+        advanceHandoffCloses()
+    }
+
+    /// Keeps the session open. A request already in its agent's prompt stays there; a handoff
+    /// that comes is delivered as usual.
+    func cancelHandoffClose(_ id: Agent.ID) {
+        handoffCloses[id] = nil
+    }
+
+    /// Asks the agents that are free now, and gives up on handoffs that never came.
+    private func advanceHandoffCloses() {
+        guard let model else { return }
+        let now = Date()
+        for (id, close) in handoffCloses {
+            // Closed some other way.
+            guard let row = model.row(for: id) else {
+                handoffCloses[id] = nil
+                continue
+            }
+            switch close.stage {
+            case .queued:
+                guard !row.isStale, row.agent.state == .idle || row.agent.state == .done, !asking.contains(id) else { continue }
+                ask(row, for: close)
+            case .asked:
+                guard close.hasExpired(now: now, agentIsWorking: row.agent.state == .working) else { continue }
+                handoffCloses[id] = nil
+                model.sessionNotices[id] = "No handoff came from \(row.workspace) within \(Int(HandoffClose.patience / 60)) minutes of asking, so it stays open."
+            }
+        }
+    }
+
+    private func ask(_ row: AgentRow, for close: HandoffClose) {
+        guard let model else { return }
+        asking.insert(row.id)
+        let names = close.waiters.compactMap { model.row(for: $0)?.workspace }
+        Task {
+            defer { asking.remove(row.id) }
+            do {
+                try await model.cluster.prompt(paneID: row.agent.paneID, text: HandoffClose.prompt(waiters: names), onMachine: row.id.machineID)
+                if handoffCloses[row.id]?.stage == .queued { handoffCloses[row.id]?.stage = .asked(Date()) }
+            } catch {
+                let failure = AppModel.failure(error)
+                // A question on screen or an agent still starting: asked again once it is free.
+                if let detail = failure.detail, ["agent_blocked", "agent_not_ready", "agent_busy"].contains(where: detail.hasSuffix) {
+                    return
+                }
+                handoffCloses[row.id] = nil
+                model.sessionNotices[row.id] = "Couldn't ask \(row.workspace) to hand off, so it stays open: \(failure.message)"
+            }
+        }
+    }
+
+    /// Closes a session whose handoff is on this Mac, and tells the sessions waiting for it; opens
+    /// one of them if the session was on screen. A handoff that went elsewhere keeps it open.
+    private func finish(_ close: HandoffClose, _ outcome: HandoffClose.Outcome) {
+        guard let model else { return }
+        handoffCloses[close.session] = nil
+        switch outcome {
+        case .strayed(let text):
+            model.sessionNotices[close.session] = text
+        case .handedOff(let awaitingApproval):
+            let name = model.row(for: close.session)?.workspace ?? "The session it waited for"
+            let waiters = close.waiters.filter { model.row(for: $0) != nil }
+            for waiter in waiters {
+                model.sessionNotices[waiter] = awaitingApproval.contains(waiter)
+                    ? "\(name) handed off its work and closed. Its handoff waits for your approval in this session's mail."
+                    : "\(name) handed off its work and closed. Shepherdr delivers it once this session is free."
+            }
+            if model.selectedID == close.session, let first = waiters.first { model.open(first) }
+            Task { await model.closeSession(close.session) }
         }
     }
 
