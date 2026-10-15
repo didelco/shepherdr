@@ -168,13 +168,13 @@ macOS asks for permission the first time one is due. Turn them off in **Settings
 
 ## Sessions on hold
 
-When one session has to wait for others, such as a planner that launched subagents, choose **Wait For** in its context menu and tick the sessions it waits for. The session shows an hourglass in the queue instead of its state: blue while any of them is still working or needs you, green once they have all finished.
+When one session has to wait for others, such as a planner that launched subagents, choose **Wait For…** in its context menu, or **Session → Wait For…** while it's open, and type a few letters of a session it waits for: names that start with them come first, and `@` narrows to a machine, as in `api@buildbox`. **↑** and **↓** move through the matches, and **Return** or a click puts the session on hold for the one highlighted. Sessions it already waits for show **✓**; choosing one again stops waiting for it. The session shows an hourglass in the queue instead of its state: blue while any of them is still working or needs you, green once they have all finished.
 
 The sessions it waits for move under it in the queue, joined by tree lines, and move with it. Click **▾** with their count to hide them and **▸** to show them again; while hidden, the count turns amber if one of them needs you. A session waited for by several others is listed under the first of them. Filtering shows matching sessions even when hidden. To take one out of the tree, choose **Stop … Waiting for This** in its context menu.
 
 In the tree, the sessions it waits for don't show their priority number: they follow the session waiting for them.
 
-Opening a session on hold shows a panel above its terminal with the sessions it waits for and their state. Click one to open it, **×** to stop waiting for it, **+** to add more, or **RESUME** to take the session off hold. Sessions that others are waiting for list them under **WAITED ON BY**. Holds are saved on this Mac with your priorities and only contain session identifiers. Closing a session from Shepherdr removes its holds.
+Opening a session on hold shows a panel above its terminal with the sessions it waits for and their state. Click one to open it, **×** to stop waiting for it, **+** to find another one to wait for, or **RESUME** to take the session off hold. Sessions that others are waiting for list them under **WAITED ON BY**. Holds are saved on this Mac with your priorities and only contain session identifiers. Closing a session from Shepherdr removes its holds.
 
 The interface uses the bundled Fira Code. **Settings → General → Terminal font** chooses the font and size for the terminal and prompt editor from the monospaced families installed on this Mac. **Ligatures**, off by default, join characters such as `->` and `!=` into single symbols in fonts that have them, like Fira Code; busy terminals redraw more slowly with them.
 
