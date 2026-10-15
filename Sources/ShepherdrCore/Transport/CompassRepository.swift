@@ -102,6 +102,15 @@ public struct CompassRepository: Sendable {
         try manager.createDirectory(at: root.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? manager.removeItem(at: root)
         try await run(["clone", "-q", url, root.path], inFolder: false, timeout: 180)
+        // A remote whose HEAD names a branch it doesn't have, such as a bare repository made
+        // with `master` that Compass pushed `main` to, clones with nothing checked out.
+        guard (try? await run(["rev-parse", "--verify", "-q", "HEAD"])) == nil else { return }
+        let branches = try await run(["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"])
+            .split(separator: "\n").map(String.init).filter { $0 != "origin/HEAD" && $0 != "origin" }
+        guard let branch = branches.first(where: { $0 == "origin/main" }) ?? branches.first else {
+            throw HerdrFailure(.incompatible, "That repository is empty.", detail: "Nothing to restore from \(url).")
+        }
+        try await run(["checkout", "-q", "-b", String(branch.dropFirst("origin/".count)), "--track", branch])
     }
 
     /// Whether a GitHub remote is private, asked through GitHub's CLI. Nil when it can't tell.

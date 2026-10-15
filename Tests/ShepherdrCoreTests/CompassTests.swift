@@ -366,7 +366,9 @@ private struct ScratchCompass {
         let git = CompassRepository.locateGit()!
         let created = Process()
         created.executableURL = git
-        created.arguments = ["init", "-q", "--bare", remote.path]
+        // A bare repository whose HEAD names `master`, as Git makes them without init.defaultBranch:
+        // Compass pushes `main`, so a clone checks out nothing unless restore picks the branch.
+        created.arguments = ["init", "-q", "--bare", "-b", "master", remote.path]
         try created.run()
         created.waitUntilExit()
         try await repository.setRemote(remote.path)
