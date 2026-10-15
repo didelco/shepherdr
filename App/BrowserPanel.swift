@@ -48,6 +48,14 @@ final class SessionBrowser {
         changed()
     }
 
+    /// Moves a tab, such as Compass's page to the front.
+    func move(_ tab: BrowserTab, to index: Int) {
+        guard let from = tabs.firstIndex(where: { $0 === tab }) else { return }
+        tabs.remove(at: from)
+        tabs.insert(tab, at: min(max(0, index), tabs.count))
+        changed()
+    }
+
     /// Brings back the tabs saved when Shepherdr quit. Each page loads the first time it is shown.
     func restore(_ urls: [URL], selected: Int?, visible: Bool) {
         guard tabs.isEmpty else { return }
@@ -101,6 +109,11 @@ final class BrowserTab: NSObject, Identifiable, WKNavigationDelegate, WKUIDelega
     private(set) var canGoForward = false
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored private weak var browser: SessionBrowser?
+    /// A tab that can't be closed, such as Compass's page.
+    var isPinned = false
+    /// Links clicked in the page go here instead of loading in this tab, such as Compass's page,
+    /// which stays put while its links open in tabs of their own.
+    @ObservationIgnored var opensLink: ((URL) -> Void)?
 
     /// Shared by every session: one persistent cookie store, so signing in once is enough.
     static let configuration: WKWebViewConfiguration = {
@@ -211,6 +224,11 @@ final class BrowserTab: NSObject, Identifiable, WKNavigationDelegate, WKUIDelega
         guard let url = navigationAction.request.url, let scheme = url.scheme?.lowercased() else { return (.allow, preferences) }
         if Self.isCommandClick(navigationAction) {
             Self.openOutside(url)
+            return (.cancel, preferences)
+        }
+        if let opensLink, navigationAction.navigationType == .linkActivated, navigationAction.targetFrame?.isMainFrame != false,
+           ["http", "https", "file"].contains(scheme), url.removingFragment != self.url?.removingFragment {
+            opensLink(url)
             return (.cancel, preferences)
         }
         if url.isFileURL, navigationAction.navigationType == .linkActivated, navigationAction.targetFrame?.isMainFrame != false {
@@ -349,11 +367,14 @@ struct BrowserPanel: View {
         let selected = tab.id == browser.selected?.id
         return HStack(spacing: 6) {
             if tab.isLoading { Text("◌").foregroundStyle(Theme.phosphor) }
+            if tab.isPinned { Text("◈").foregroundStyle(Theme.phosphor) }
             Text(tab.displayTitle).lineLimit(1).truncationMode(.tail)
-            Button { browser.close(tab) } label: { Text("×").font(Theme.mono(12)) }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.dim)
-                .help("Close tab")
+            if !tab.isPinned {
+                Button { browser.close(tab) } label: { Text("×").font(Theme.mono(12)) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.dim)
+                    .help("Close tab")
+            }
         }
         .font(Theme.mono(10.5))
         .foregroundStyle(selected ? Theme.text : Theme.dim)

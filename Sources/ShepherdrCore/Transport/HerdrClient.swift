@@ -27,6 +27,10 @@ public protocol HerdrClient: Sendable {
 
     /// Submits a prompt to the agent in a pane, as typing it and pressing Return would.
     func prompt(paneID: String, text: String, on machine: Machine) async throws
+
+    /// Starts an agent in an existing pane and waits until it's ready. Returns a notice when it
+    /// stopped at a startup question, such as trusting the folder.
+    func startAgent(_ name: String, kind: String, paneID: String, on machine: Machine) async throws -> String?
 }
 
 extension HerdrClient {
@@ -41,6 +45,7 @@ extension HerdrClient {
     public func checkouts(around workspaceID: String, on machine: Machine) async throws -> [String: WorkspaceCheckout] { throw unsupported }
     public func shellPID(paneID: String, on machine: Machine) async throws -> Int? { throw unsupported }
     public func prompt(paneID: String, text: String, on machine: Machine) async throws { throw unsupported }
+    public func startAgent(_ name: String, kind: String, paneID: String, on machine: Machine) async throws -> String? { throw unsupported }
 }
 
 public struct ExecutableLocator: Sendable {

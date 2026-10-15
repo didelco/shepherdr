@@ -18,10 +18,13 @@ struct SessionView: View {
     @AppStorage("terminalFontFamily") private var fontFamily = ConsoleFonts.defaultFamily
     @AppStorage(ConsoleFonts.ligaturesKey) private var ligatures = false
     @AppStorage("showsResources") private var showsResources = true
+    /// Compass's agent, beside its page: no browser, resources or holds of its own.
+    let isCompass: Bool
 
-    init(context: SessionContext, model: AppModel, mode: TerminalMode) {
+    init(context: SessionContext, model: AppModel, mode: TerminalMode, isCompass: Bool = false) {
         self.context = context
         self.model = model
+        self.isCompass = isCompass
         workspace = model.workspace(for: Agent.ID(machineID: context.machine.id, terminalID: context.target.terminalID))
         _terminal = ViewState(initialValue: TerminalStore(target: context.target, mode: mode))
     }
@@ -33,11 +36,11 @@ struct SessionView: View {
         VStack(spacing: 0) {
             header
             Rectangle().fill(Theme.line).frame(height: 1)
-            RelationsPanel(id: id, model: model)
+            if !isCompass { RelationsPanel(id: id, model: model) }
             MailPanel(session: id, model: model)
             HStack(spacing: 0) {
                 workArea
-                if showsResources && !workspace.visibleResources.isEmpty {
+                if showsResources && !isCompass && !workspace.visibleResources.isEmpty {
                     Rectangle().fill(Theme.line).frame(width: 1)
                     ResourcesPanel(workspace: workspace, checks: model.checksMonitor).frame(width: 230)
                 }
@@ -59,7 +62,7 @@ struct SessionView: View {
     }
 
     private var workArea: some View {
-        BrowserSplit(showsBrowser: workspace.browser.isVisible) {
+        BrowserSplit(showsBrowser: workspace.browser.isVisible && !isCompass) {
             VStack(spacing: 0) {
                 banners
                 if context.canConnect {
@@ -299,6 +302,12 @@ struct SessionView: View {
                     .font(Theme.mono(9.5)).foregroundStyle(Theme.faint).lineLimit(1).truncationMode(.head)
                     .layoutPriority(-1)
             }
+            if !isCompass { panelToggles(compact: compact) }
+        }
+    }
+
+    @ViewBuilder private func panelToggles(compact: Bool) -> some View {
+        HStack(spacing: 6) {
             let links = workspace.visibleResources.count
             barToggle(compact ? (links > 0 ? "≡ \(links)" : "≡") : (links > 0 ? "≡ RESOURCES \(links)" : "≡ RESOURCES"),
                       active: showsResources && links > 0,

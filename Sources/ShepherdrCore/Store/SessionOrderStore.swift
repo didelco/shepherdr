@@ -24,7 +24,7 @@ public struct SessionGroup: Codable, Equatable, Identifiable, Sendable {
 }
 
 /// Where a dragged session or group lands.
-public enum QueueDrop: Equatable, Sendable {
+public enum QueueDrop: Hashable, Sendable {
     case before(QueueItemID)
     case after(QueueItemID)
     /// Appends a session to a group.

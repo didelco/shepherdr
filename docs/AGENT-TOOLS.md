@@ -126,3 +126,50 @@ swift test --filter "AgentTools|Letter|Mail"
 ```
 
 `test.sh` needs only POSIX tools. CI runs it on macOS, with dash and BusyBox on Linux, and ShellCheck. Spell out character sets in patterns instead of ranges such as `[a-z]`: bash matches ranges by the locale's collation, so under `en_US.UTF-8` `[a-z]` takes `B`. The scripts Shepherdr runs over SSH also set `LC_ALL=C`; the command leaves the locale alone. `herdr-live.sh` starts a Herdr server in a scratch home under `/tmp` (socket paths must be short), spawns shells from a pane and checks letters and doorbells; CI installs Herdr with Homebrew to run it. The Swift tests run the real command and scripts in a scratch home: what the command writes, the Swift side reads.
+
+## Compass
+
+Compass's agent is a session like any other, with a kit of its own in `Sources/ShepherdrCore/Resources/Compass`, bundled in the app and put in `~/.shepherdr/compass` on this Mac only. The [guide](GUIDE.md#compass) explains what you see.
+
+```text
+Compass/
+  VERSION          kit version, an integer
+  AGENTS.md        the contract: runs, files, sessions, the template, actions, marks, rules
+  CLAUDE.md        @AGENTS.md, for Claude Code
+  template.html    the page template: Shepherdr's look and the day strip's script
+  prompt.md        the starter prompt
+  settings.json    Claude Code's permissions, installed as .claude/settings.json
+  gitignore        installed as .gitignore
+```
+
+`CompassFolder.prepare` writes the kit each launch by owner. `AGENTS.md` and `CLAUDE.md` are always rewritten. `template.html`, `.claude/settings.json` and `.gitignore` are rewritten only while their fingerprint matches the one Shepherdr recorded in `state.json` when it last wrote them. `prompt.md` and `compass.json` are written once. `settings.json` names the tools both by `~` and by the full path, since Claude Code matches commands as they're typed. **Bump `Compass/VERSION` whenever you change the kit:** `CompassTests` keeps each version's fingerprint.
+
+### Runs
+
+Shepherdr types one prompt per run, once the agent is idle or done, nobody typed to it for two minutes, and no handoff for it is queued:
+
+```text
+Compass run · update · Thu 2026-10-15 14:00
+Since 13:02, when the last run finished.
+Follow prompt.md. Today's page is days/2026-10-15.html; context/run.json has the details of this run.
+```
+
+Right before it, Shepherdr writes `context/run.json` (`kind` first, update or last; `trigger`; `slot`; `since`; `page`; `previous`; `marks`; `time_zone`; `language`; `strip`; `schedule`) and `context/sessions.json`. A run is over when the agent goes idle or done after working, or a minute after the prompt if Herdr never saw it work. It updated the page when the page's modification date is later than the prompt. Then Shepherdr copies the page to `days/<day>/HH-MM.html`, deletes copies older than 14 days, and commits the folder.
+
+`CompassSchedule.dueSlot` decides when: the latest of today's run times that has passed and that no run started since. Runs missed on earlier days are never made up. The day's first run, when no run started today, closes every pane in Compass's workspace and folder and starts a fresh agent; the sessions the old agent waited for wait for the new one.
+
+### The page's actions
+
+The page is a local file loaded with a `WKWebViewConfiguration` of its own. `CompassBridge` adds a user script in a `WKContentWorld` named `shepherdr-compass`, and the message handler only in that world, so the page's own scripts can't reach it. The script listens for clicks, in capture, with `event.isTrusted`, on elements with `data-shepherdr`, and posts their `data-*` attributes, with `data-item` from the element or an ancestor. The handler only takes messages from the main frame of a file inside `~/.shepherdr/compass`, and `CompassAction` checks every field before anything happens:
+
+| `data-shepherdr` | Fields | Shepherdr |
+| --- | --- | --- |
+| `spawn` | `machine`, `cwd`, `kind` (an agent kind or `shell`), `name` (`[a-z][a-z0-9_-]{0,31}`), `prompt` (256 KB at most) | Opens New Session with them filled in. The first prompt waits in the mail like a spawned session's. With **Hand its result back to Compass**, Compass's agent waits for the session, so its handoff comes back. The item records it under `started` in the day's marks. |
+| `ask` | `prompt` | Puts the text in Compass's prompt editor. |
+| `session` | `session`, `name` or `name@machine` | Switches to Agents and opens it. |
+| `prompt` | `session`, `prompt` | Opens it with the text in its prompt editor. |
+| `done` | `item` | Toggles the item in `days/<day>.marks.json`'s `done`. |
+
+A field that is there and doesn't hold up refuses the whole action. On every refresh, Shepherdr calls the script's `apply` in the same world with each session's state, by agent and workspace name and `@machine`, and the day's marks: elements with `data-session` get a state badge, done items a class, and started sessions a note beside their button.
+
+`shepherdr spawn` from Compass's agent works as from any agent: the CLI starts the session, Shepherdr places it at the end of the queue rather than after Compass, and Compass waits for it. Claude Code's permissions in the folder ask before `spawn`, `handoff`, `agent prompt` and `agent start`, since the agent reads what others wrote.

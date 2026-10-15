@@ -42,8 +42,31 @@ struct ShepherdrApp: App {
                 Toggle("Gather Sessions by Project", isOn: Binding { model.order.gathersProjects }
                                                                set: { model.order.gathersProjects = $0 })
             }
+            CommandMenu("Compass") {
+                Button("Agents") { model.mode = .agents }
+                    .keyboardShortcut("1", modifiers: [.command, .option])
+                Button("Compass") { model.mode = .compass }
+                    .keyboardShortcut("2", modifiers: [.command, .option])
+                Divider()
+                Button("Run Compass Now") {
+                    model.mode = .compass
+                    model.compass.runNow()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .option])
+                .disabled(!model.compass.isSetUp || model.compass.openRun != nil)
+                Button("Show Today's Page") {
+                    model.mode = .compass
+                    model.compass.show(.today)
+                }
+                .disabled(!model.compass.hasTodaysPage)
+                Button("Open Compass Folder") { NSWorkspace.shared.open(model.compass.folder.root) }
+                    .disabled(!model.compass.isSetUp)
+            }
             CommandMenu("Session") {
-                Button("Overview") { model.selection = .overview }
+                Button("Overview") {
+                    model.mode = .agents
+                    model.selection = .overview
+                }
                     .keyboardShortcut("0", modifiers: .command)
                 Button("Next Session") { model.step(1) }
                     .keyboardShortcut("]", modifiers: .command)

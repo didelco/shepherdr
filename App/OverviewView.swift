@@ -53,7 +53,7 @@ struct OverviewView: View {
 
     /// Each tile counts the sessions the other row lets through.
     private var stateTiles: some View {
-        let rows = cluster.agents
+        let rows = model.agents
         let filter = model.sessionFilter
         return HStack(spacing: 10) {
             ForEach([AgentState.blocked, .working, .done, .idle], id: \.self) { state in
@@ -66,7 +66,7 @@ struct OverviewView: View {
     }
 
     private var machineTiles: some View {
-        let rows = cluster.agents
+        let rows = model.agents
         let filter = model.sessionFilter
         return LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 10)], spacing: 10) {
             ForEach(machines) { state in

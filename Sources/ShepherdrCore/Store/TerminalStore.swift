@@ -42,6 +42,8 @@ public final class TerminalStore {
 
     /// How many lines above the latest output Herdr shows: 0 at the bottom. Herdr keeps the history.
     public private(set) var linesBack = 0
+    /// When you last typed or pasted here, such as to tell whether you're talking to an agent.
+    @ObservationIgnored public private(set) var lastInput: Date?
     @ObservationIgnored private var scrollCheck: Task<Void, Never>?
     @ObservationIgnored private var scrolledSinceCheck = false
 
@@ -249,7 +251,10 @@ public final class TerminalStore {
     public func send(_ input: TerminalInput) {
         guard status == .interactive, let connection else { return }
         // Herdr returns to the latest output whenever the terminal gets input.
-        if case .bytes = input, linesBack != 0 { linesBack = 0 }
+        if case .bytes = input {
+            lastInput = Date()
+            if linesBack != 0 { linesBack = 0 }
+        }
         let previous = inputTask
         let attempt = generation
         // Keep keyboard/paste/resize order even though the transport API is asynchronous.

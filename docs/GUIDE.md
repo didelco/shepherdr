@@ -22,6 +22,7 @@ A bilingual (English/Spanish) quick guide with the same content comes with the a
 - **Picks up where you left off:** after a restart, the session you had open comes back, and every session keeps its browser tabs, prompt editor and resources.
 - **Notifications:** a macOS notification tells you when an agent finishes or needs you, with what it last said, and when a pull request's checks finish. Click it to open the session.
 - **Sessions on hold:** mark a session as waiting for others, such as a planner waiting for the subagents it launched. It shows an hourglass, and the sessions it waits for are listed under it, in a tree you can collapse.
+- **Compass:** a second mode, beside Agents (**⌥⌘1** and **⌥⌘2**), with a page of your day kept by an agent of its own on this Mac. It starts by summing up your sessions; ask it in its terminal to cover more, such as your calendar or mail. It updates on the schedule you choose, keeps every day's page and a copy per run in `~/.shepherdr/compass`, commits them to Git and can push them to a private repository. Buttons on the page start the sessions it suggests, once you check them in New Session.
 - **Agents that coordinate:** Shepherdr installs a small `shepherdr` command and a skill for Claude Code and Codex on each machine, Linux included. An agent asked to "start a session on buildbox" starts it there, nested under its own session, which goes on hold until the new one finishes. The new session hands its result back with `shepherdr handoff`, and Shepherdr delivers it as a prompt once the coordinator is free. Machines never connect to your Mac: Shepherdr collects what agents leave for it.
 - **Create and close sessions:** **⌘N** creates a Herdr workspace with a shell in a folder; start Claude Code, Codex or any other supported agent in it and it joins the queue. Create one in a group with its **+**, or next to a session with **New Session in Same Folder…** (**⇧⌘N**). **Close Session…** in a session's context menu ends its pane after confirmation. **Rename…** renames its Herdr workspace.
 - **Overview:** how many sessions need you, are working, done or idle, and a card per machine with its sessions and its processor, memory and disk use. Click states and machines to list the sessions in any combination of them. Plain shell panes are listed separately.
@@ -31,7 +32,7 @@ A bilingual (English/Spanish) quick guide with the same content comes with the a
 - Automatic refresh (5, 15, 30 or 60 seconds), pause, manual refresh with **⌘R**, and refresh after wake.
 - A dark phosphor console theme in [Fira Code](https://github.com/tonsky/FiraCode) (bundled), any installed monospaced font for the terminal, an 8-bit logo of a German Shepherd watching its flock, and a pixel-art app icon of a German Shepherd in Matrix digital rain.
 
-No worktree management or menu-bar UI. Input goes only to the session you are viewing, while it is unlocked, and to sessions agents hand work to through the agent tools; Shepherdr creates sessions, closes them and changes machines only when you ask, or when an agent on a machine you trust asks for a session. Closing asks for confirmation.
+No worktree management or menu-bar UI. Input goes only to the session you are viewing, while it is unlocked, to sessions agents hand work to through the agent tools, and to Compass's own agent on its schedule; Shepherdr creates sessions, closes them and changes machines only when you ask, or when an agent on a machine you trust asks for a session. Compass starts and replaces its own agent, in its own workspace. Closing asks for confirmation.
 
 ## Download and install
 
@@ -260,3 +261,69 @@ Letters are data: Shepherdr checks every field, accepts only http and https link
 - **Pages to open:** **OPEN** opens it in the session's browser.
 
 **Settings → Agents → Trust its letters** lets a machine's letters through without asking. A cyan envelope means mail waits for its session to be free. Shepherdr keeps the letters' files for a month.
+
+## Compass
+
+Compass is the window's second mode: **AGENTS · COMPASS**, beside the window's buttons, or **⌥⌘1** and **⌥⌘2**. It shows a page of your day, kept by an agent of its own on this Mac, with the terminal of that agent beside it. The page says what deserves your attention; you talk to the agent all day to act on it, and buttons on the page start the sessions it suggests.
+
+The AGENTS tab counts your sessions, in amber when some need you. The COMPASS tab shows a green dot when the page changed since you last looked, cyan while a run is under way, and amber when the agent waits for you.
+
+### Start Compass
+
+Open Compass and press **START COMPASS**, choosing the agent: Claude Code if you have it, Codex, or another Herdr agent kind. Shepherdr creates `~/.shepherdr/compass`, starts the agent there in a Herdr workspace named `compass`, and asks it for the first page. The first time, Claude Code asks whether you trust the folder: answer in Compass's terminal. Compass's agent never joins the queue, the overview or the shells: it lives in its mode.
+
+The first page only looks at your sessions: what needs you, what finished, with its pull requests and checks, what's in progress and what's been idle for days. It ends with a **Make it yours** card. Ask the agent, in its terminal, to cover more: your calendar for the day strip, your mail or chat for what came in, your goals. It changes its own instructions in `prompt.md` and tells you what it changed. It uses whatever its agent can reach, such as Claude Code's connectors, so nothing in Compass assumes a service.
+
+**Already have a Compass backup?** Paste its Git remote on the welcome screen and press **RESTORE**: Shepherdr clones it into `~/.shepherdr/compass`, with your prompt and every page.
+
+### Runs
+
+A run is one prompt to the agent: "update the page". Shepherdr sends it on the schedule in **Settings → Compass**: only when you run it, once a day, or every so often within hours of the day (every hour from 9 to 18, Monday to Friday, to start with). **▶ RUN** at the top of Compass's column, or **⌥⌘R**, runs it now. Shepherdr has to be open to run Compass.
+
+- **Missed runs happen once.** If the Mac slept or Shepherdr was closed through several runs, Compass runs once when it can, and then waits for the next time on the schedule. Only runs due that day are made up: a Friday evening run doesn't happen on Saturday.
+- **A run waits for you.** While the agent works or asks you something, or you typed to it in the last two minutes, the run waits. A handoff waiting for the agent goes first.
+- **One agent a day.** The day's first run starts a fresh agent, closing yesterday's, so each day starts with a clean context. The rest of the day's runs, and your conversation, go to the same agent, which knows what you asked it in the morning.
+- **The first and last runs of the day** say so, so the agent builds the page from scratch in the morning and closes the day in the evening.
+
+Compass's column shows how the last run went, when the next one is, and what Compass is waiting for. If the agent stops at a question, such as a permission, the tab turns amber and a notification tells you; answer in its terminal. **cancel this run** stops waiting for a run without touching the agent.
+
+### The page
+
+Every page starts from Shepherdr's template, so every day reads the same: the date, a one-line headline, a day strip and a footer with the sources. The strip covers the hours in **Settings → Compass**, in this Mac's time: a line marks the time and moves on its own, and what's past dims. The agent decides everything in between, such as lists, tables and diagrams, and links what it mentions.
+
+The page opens in the first tab of Compass's browser, which can't be closed; links open in tabs beside it, and **⌘-click** opens your default browser. Compass's column lists today's runs, each with the copy of the page it left, and every earlier day: click one to see it. **⌘B** shows or hides the agent's terminal.
+
+### Buttons on the page
+
+The page's buttons ask Shepherdr for something, and nothing happens until you confirm:
+
+- **Start a session** opens New Session with the machine, folder, agent, name and first prompt filled in, and where in the queue it goes. Read the prompt before you start: the page is built from what others wrote. The session starts out of sight, the page shows it beside the button with its state, and, with **Hand its result back to Compass** ticked, its handoff comes back to Compass's agent, which updates the page.
+- **Ask** puts text in Compass's prompt editor, such as "apply P1", for you to send.
+- **Open a session** and **prompt a session** switch to Agents and open that session; a prompt lands in its editor for you to send.
+- **Done** marks an item done on the page. The agent sees your marks in its next run.
+
+Sessions the page names show their state beside their name, kept current as the queue refreshes.
+
+The page's buttons work through a script that runs apart from the page's own scripts, and only for clicks you make. A page script can't press a button for you.
+
+### Files and backup
+
+Everything is in `~/.shepherdr/compass`:
+
+| File | Whose | What |
+| --- | --- | --- |
+| `prompt.md` | yours | What Compass does. Starts as the starter prompt; Shepherdr never overwrites it. |
+| `compass.json` | yours | The schedule, the agent, the strip's hours and the backup remote. Settings and the agent both change it. |
+| `AGENTS.md`, `CLAUDE.md` | Shepherdr's | The agent's contract: runs, files, the template and the buttons. Rewritten with each version. |
+| `template.html` | Shepherdr's | The page template. Once you change it, it's yours: **Settings → Compass** can bring Shepherdr's back. |
+| `days/YYYY-MM-DD.html` | the agent's | One page per day, kept for good. |
+| `days/YYYY-MM-DD/` | Shepherdr's | A copy of the page after each run, kept for 14 days. |
+| `days/YYYY-MM-DD.marks.json` | Shepherdr's | What you marked done and the sessions you started from the page. |
+| `context/` | Shepherdr's | The run's details and your queue, for the agent. |
+| `state.json` | Shepherdr's | Shepherdr's notes about runs. |
+
+The folder is a Git repository: Shepherdr commits it after each run and when the page changes. Set a remote in **Settings → Compass → Backup**, ideally a private repository, and Shepherdr pushes after each commit; it warns you if a GitHub remote is public. Git runs without asking anything, so keep your SSH key in your agent or use a credential helper for HTTPS. `state.json`, `context/` and the copies per run stay on this Mac.
+
+`context/sessions.json` holds what your queue shows: names, states, agents, titles, folders, groups, holds, and the pull requests, issues and links each session collected, with their checks. Never what a terminal printed: the agent reads that itself with `herdr agent read` when it needs to. Shepherdr rewrites it at most every 30 seconds while Compass is set up.
+
+Claude Code reads its permissions for Compass from `.claude/settings.json` in the folder: it may read and edit the folder and run read-only commands, such as `herdr agent read` and `shepherdr status`, without asking. Starting sessions, handing work to them and prompting them always asks first, since the agent reads content others wrote. Runs are unattended, so the contract tells the agent to put those actions on the page as buttons instead.

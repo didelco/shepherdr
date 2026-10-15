@@ -183,6 +183,24 @@ import Foundation
         #expect(await refused.recordedArguments().isEmpty)
     }
 
+    /// Compass's agent starts in a pane of its own; a name another agent has is Herdr's to refuse.
+    @Test func testAnAgentStartsInAnExistingPane() async throws {
+        let waiting = #"{"error":{"code":"agent_not_ready","message":"blocked during startup"},"id":"cli:agent:start"}"#
+        let taken = #"{"error":{"code":"agent_name_taken","message":"agent name compass is already used"},"id":"cli:agent:start"}"#
+        let runner = RecordingRunner([output(#"{"id":"cli:agent:start","result":{"type":"agent_started"}}"#), output(waiting, code: 1), output(taken, code: 1)])
+        let client = CLIHerdrClient(runner: runner, executable: executable)
+        #expect(try await client.startAgent("compass", kind: "claude", paneID: "w4:p1", on: .local) == nil)
+        #expect(try await client.startAgent("compass", kind: "claude", paneID: "w4:p1", on: .local)?.contains("startup question") == true)
+        do {
+            _ = try await client.startAgent("compass", kind: "claude", paneID: "w4:p1", on: .local)
+            Issue.record("Expected agent_name_taken")
+        } catch let failure as HerdrFailure {
+            #expect(failure.detail == "Herdr error: agent_name_taken")
+        }
+        #expect(await runner.recordedArguments().first == ["agent", "start", "compass", "--kind", "claude", "--pane", "w4:p1", "--timeout", "60000"])
+        await #expect(throws: HerdrFailure.self) { _ = try await client.startAgent("-x", kind: "claude", paneID: "w4:p1", on: .local) }
+    }
+
     @Test func testCloseAndMachineChangesUseLiteralArguments() async throws {
         let ok = output(#"{"result":{"type":"ok"}}"#)
         let runner = RecordingRunner([ok, ok, ok, ok, ok])

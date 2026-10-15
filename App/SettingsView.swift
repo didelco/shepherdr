@@ -15,6 +15,8 @@ struct SettingsView: View {
                 .tabItem { Label("Machines", systemImage: "server.rack") }
             AgentSettings(model: model)
                 .tabItem { Label("Agents", systemImage: "envelope") }
+            CompassSettings(model: model, compass: model.compass)
+                .tabItem { Label("Compass", systemImage: "safari") }
         }
         .frame(width: 580, height: 520)
         .preferredColorScheme(.dark)

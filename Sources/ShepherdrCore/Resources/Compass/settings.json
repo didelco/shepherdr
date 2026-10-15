@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(./**)",
+      "Bash(date *)",
+      "Bash(herdr api snapshot)",
+      "Bash(herdr agent list *)",
+      "Bash(herdr agent read *)",
+      "Bash(~/.shepherdr/bin/shepherdr machines)",
+      "Bash(~/.shepherdr/bin/shepherdr folders *)",
+      "Bash(~/.shepherdr/bin/shepherdr status)",
+      "Bash(~/.shepherdr/bin/shepherdr notify *)",
+      "Bash({{HOME}}/.shepherdr/bin/shepherdr machines)",
+      "Bash({{HOME}}/.shepherdr/bin/shepherdr folders *)",
+      "Bash({{HOME}}/.shepherdr/bin/shepherdr status)",
+      "Bash({{HOME}}/.shepherdr/bin/shepherdr notify *)"
+    ],
+    "ask": [
+      "Bash(~/.shepherdr/bin/shepherdr spawn *)",
+      "Bash(~/.shepherdr/bin/shepherdr handoff *)",
+      "Bash({{HOME}}/.shepherdr/bin/shepherdr spawn *)",
+      "Bash({{HOME}}/.shepherdr/bin/shepherdr handoff *)",
+      "Bash(herdr agent prompt *)",
+      "Bash(herdr * agent prompt *)",
+      "Bash(herdr agent start *)",
+      "Bash(herdr * agent start *)"
+    ]
+  }
+}

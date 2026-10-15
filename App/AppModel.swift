@@ -230,10 +230,23 @@ final class SessionWorkspace {
 /// What the New Session sheet starts from: a folder and machine to prefill, and where the
 /// session takes its place in the queue once Herdr reports its agent.
 struct NewSessionDraft: Identifiable {
+    /// A session a Compass page asked for: the day and item it came from, and whether its
+    /// handoff goes back to Compass.
+    struct FromCompass: Equatable {
+        let day: String
+        let item: String?
+        var handsBack: Bool
+    }
+
     let id = UUID()
     var directory: String?
     var machineID: String?
     var placement: QueueDrop?
+    var name: String?
+    /// An agent to start, and the first prompt to send it once it's ready.
+    var agentKind: String?
+    var prompt: String?
+    var compass: FromCompass?
 }
 
 /// Whether a session on hold can resume: `ready` once none of the sessions it waits for is
@@ -263,7 +276,21 @@ final class AppModel {
     /// The session being renamed, presented as a name prompt.
     var renaming: RenamePrompt?
     var search = ""
-    var drafts: [Agent.ID: String] = [:]
+    var drafts: [Agent.ID: String] = [:] {
+        didSet {
+            // Typing to the Compass agent holds back its next run.
+            if let id = compass.terminal, drafts[id] != oldValue[id] { compass.noteTyping() }
+        }
+    }
+    /// The queue of sessions, or Compass.
+    var mode: AppMode = AppMode(rawValue: UserDefaults.standard.string(forKey: "mode") ?? "") ?? .agents {
+        didSet {
+            UserDefaults.standard.set(mode.rawValue, forKey: "mode")
+            if mode == .compass { compass.viewed() }
+        }
+    }
+    /// The Compass agent, its page and its schedule.
+    let compass = CompassController()
     private(set) var history: [Agent.ID: [String]] = [:]
     /// Incremented to ask the visible prompt editor to take keyboard focus.
     var promptFocusRequest = 0
@@ -314,6 +341,7 @@ final class AppModel {
         notifier.model = self
         checksMonitor.model = self
         courier.model = self
+        compass.model = self
     }
 
     /// A refresh you asked for: also looks in every outbox for letters whose doorbell was lost.
@@ -364,13 +392,17 @@ final class AppModel {
         }
         if context(for: id) != nil {
             isRestoringSelection = false
-            open(id)
+            // Back where it was, without leaving the mode Shepherdr quit in.
+            selection = .session(id)
+            if mode == .agents { focusInput(of: id) }
         } else if cluster.machines.first(where: { $0.id == id.machineID })?.snapshot != nil {
             isRestoringSelection = false
         }
     }
 
-    var rankedRows: [AgentRow] { order.ranked(cluster.agents, projects: gatheredProjects) }
+    /// The sessions in the queue: every agent but Compass's own, which lives in its mode.
+    var agents: [AgentRow] { cluster.agents.filter { !compass.isCompass($0.id) } }
+    var rankedRows: [AgentRow] { order.ranked(agents, projects: gatheredProjects) }
     /// Sessions matching the filter, in priority order, whether or not their group is collapsed.
     var matchingRows: [AgentRow] { rankedRows.filter { $0.matches(search) } }
     /// The overview's sessions: those matching the search, in the chosen states and on the chosen machines.
@@ -379,7 +411,7 @@ final class AppModel {
     /// The queue as the sidebar shows it. While filtering, groups list only their matching
     /// sessions, unless the group's own name matches.
     var queue: [QueueItem] {
-        let items = order.layout(cluster.agents, projects: gatheredProjects)
+        let items = order.layout(agents, projects: gatheredProjects)
         guard !search.isEmpty else { return items }
         return items.compactMap { item in
             switch item {
@@ -453,6 +485,7 @@ final class AppModel {
             guard let snapshot = state.snapshot else { return [] }
             let agentTerminals = Set(snapshot.agents.map(\.id.terminalID))
             return snapshot.panes.filter { !agentTerminals.contains($0.terminalID) }
+                .filter { !compass.isCompass(Agent.ID(machineID: state.id, terminalID: $0.terminalID)) }
                 .map { ShellRow(pane: $0, machine: state.machine, isStale: state.isStale) }
         }
     }
@@ -485,6 +518,8 @@ final class AppModel {
 
     var showsMachineNames: Bool { cluster.machines.count > 1 }
     var selectedID: Agent.ID? { if case .session(let id) = selection { id } else { nil } }
+    /// The session the window's commands act on: the one open in Agents, or Compass's agent.
+    var focusedID: Agent.ID? { mode == .compass ? compass.agentID : selectedID }
     /// Sessions and shells in sidebar order, for stepping through them.
     private var navigableIDs: [Agent.ID] {
         listedMembers.map(\.agentID) + ungroupedShells.map(\.id)
@@ -506,8 +541,24 @@ final class AppModel {
     // MARK: Navigation
 
     func open(_ id: Agent.ID) {
+        // Compass's agent lives in its own mode, such as when its notification is clicked.
+        if compass.isCompass(id) {
+            mode = .compass
+            compass.showsAgent = true
+            focusInput(of: id)
+            return
+        }
+        mode = .agents
         selection = .session(id)
         focusInput(of: id)
+    }
+
+    /// Puts text in a session's prompt editor for you to send, after any draft already there.
+    func fill(_ text: String, into id: Agent.ID) {
+        let current = drafts[id] ?? ""
+        drafts[id] = current.isEmpty ? text : current + (current.hasSuffix("\n") ? "\n" : "\n\n") + text
+        workspace(for: id).isEditorOpen = true
+        promptFocusRequest += 1
     }
 
     /// Keyboard focus goes to the terminal, or to the prompt editor when it is open.
@@ -516,12 +567,16 @@ final class AppModel {
     }
 
     func togglePromptEditor() {
-        guard let id = selectedID else { return }
+        guard let id = focusedID else { return }
         workspace(for: id).isEditorOpen.toggle()
         focusInput(of: id)
     }
 
     func toggleBrowser() {
+        if mode == .compass {
+            compass.showsAgent.toggle()
+            return
+        }
         let browser = selectedID.map { workspace(for: $0).browser } ?? overviewBrowser
         browser.isVisible.toggle()
         if browser.isVisible && browser.tabs.isEmpty { browser.newTab() }
@@ -547,6 +602,10 @@ final class AppModel {
     func openLink(_ url: URL, from id: Agent.ID, external: Bool) {
         if let session = SessionLink.session(in: url) {
             if context(for: session) != nil { open(session) }
+            return
+        }
+        if compass.isCompass(id), !external, !url.isFileURL || LocalPage(url) != nil {
+            compass.open(url)
             return
         }
         if external || (url.isFileURL && LocalPage(url) == nil) { NSWorkspace.shared.open(url) }
@@ -752,7 +811,7 @@ final class AppModel {
             Task { await finishDictation() }
             return
         }
-        guard let id = selectedID, dictation.isReady else { return }
+        guard let id = focusedID, dictation.isReady else { return }
         if !Dictation.isModelInstalled && !speechModelDownloadAccepted {
             asksToDownloadSpeechModel = true
             return
@@ -790,7 +849,7 @@ final class AppModel {
         let separator = current.isEmpty || current.hasSuffix("\n") || current.hasSuffix(" ") ? "" : " "
         drafts[target] = current + separator + text
         workspace(for: target).isEditorOpen = true
-        if selectedID == target { promptFocusRequest += 1 }
+        if focusedID == target { promptFocusRequest += 1 }
     }
 
     // MARK: Sessions on hold
@@ -853,7 +912,7 @@ final class AppModel {
     func watchBackgroundWork() async {
         while !Task.isCancelled {
             let looks = cluster.lastRefresh != nil && NSApp.occlusionState.contains(.visible)
-            if looks { await background.refresh(cluster.agents, machines: onlineMachines.map(\.machine)) }
+            if looks { await background.refresh(agents, machines: onlineMachines.map(\.machine)) }
             do { try await Task.sleep(for: .seconds(looks ? 10 : 1)) } catch { return }
         }
     }
@@ -865,7 +924,7 @@ final class AppModel {
             cluster.checkout(machineID: machineID, workspaceID: workspaceID)?.isLinkedWorktree == true
         }
         let shells = allShells.filter { $0.machine.id == machineID && !isWorktree($0.pane.workspaceID) }
-        return FolderUse.ranked(cluster.agents.filter { $0.id.machineID == machineID }, shells: shells.map(\.pane.directory)) { row in
+        return FolderUse.ranked(agents.filter { $0.id.machineID == machineID }, shells: shells.map(\.pane.directory)) { row in
             isWorktree(row.agent.workspaceID)
         }
     }
@@ -906,10 +965,13 @@ final class AppModel {
         return Array(Set(paths)).sorted()
     }
 
-    /// Creates a workspace with a shell in Herdr, then opens it. Returns the failure for the sheet to show.
+    /// Creates a workspace with a shell, or an agent, in Herdr, then opens it. A first prompt
+    /// waits for the agent to be ready. A session a Compass page asked for stays out of sight,
+    /// and the page shows it. Returns the failure for the sheet to show.
     /// - Parameter pins: links the session starts with in its resources, such as its pull request.
     func createSession(_ request: NewSessionRequest, onMachine machineID: String,
-                       placement: QueueDrop? = nil, pins: [URL] = []) async -> HerdrFailure? {
+                       placement: QueueDrop? = nil, pins: [URL] = [], prompt: String? = nil,
+                       compass from: NewSessionDraft.FromCompass? = nil) async -> HerdrFailure? {
         isCreatingSession = true
         defer { isCreatingSession = false }
         do {
@@ -919,12 +981,23 @@ final class AppModel {
             // A worktree Herdr already had open keeps its place in the queue.
             if let placement, !created.isExisting { order.insert(id, placement, projects: gatheredProjects) }
             collectResources(pins.compactMap(SessionResource.init(url:)), for: id)
+            if let prompt { courier.queuePrompt(prompt, for: id, name: request.name) }
             newSession = nil
-            open(id)
+            if let from { compass.started(id, named: request.name, for: from) } else { open(id) }
             return nil
         } catch {
             return Self.failure(error)
         }
+    }
+
+    /// Lets go of everything Shepherdr kept for a session that closed.
+    func forgetSession(_ id: Agent.ID) {
+        abandonDictation(for: id)
+        drafts[id] = nil
+        sessionNotices[id] = nil
+        workspaces.removeValue(forKey: id)?.browser.closeAll()
+        sessionStates.forget(id)
+        relations.forget(id)
     }
 
     func requestClose(_ id: Agent.ID?) {
@@ -938,12 +1011,7 @@ final class AppModel {
         if selectedID == id { selection = .overview }
         do {
             try await cluster.closeSession(paneID: context.paneID, onMachine: id.machineID)
-            abandonDictation(for: id)
-            drafts[id] = nil
-            sessionNotices[id] = nil
-            workspaces.removeValue(forKey: id)?.browser.closeAll()
-            sessionStates.forget(id)
-            relations.forget(id)
+            forgetSession(id)
         } catch {
             actionFailure = Self.failure(error)
         }
@@ -1033,9 +1101,9 @@ final class AppModel {
     /// listed under it instead, so they never pull their project's heading to their own place.
     var gatheredProjects: [Agent.ID: String]? {
         guard order.gathersProjects else { return nil }
-        let nested = relations.parents(in: cluster.agents.map(\.id))
+        let nested = relations.parents(in: agents.map(\.id))
         var projects: [Agent.ID: String] = [:]
-        for row in cluster.agents where nested[row.id] == nil {
+        for row in agents where nested[row.id] == nil {
             if let project = project(of: row) { projects[row.id] = project }
         }
         return projects
