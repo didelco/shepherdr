@@ -304,12 +304,18 @@ cmd_spawn() {
         *) usage_error "Unknown option for spawn: $1" ;;
         esac
     done
+    # Letters take up to 256 KB of text, so a longer prompt would never arrive.
+    too_long="The prompt is over 256 KB. Write long instructions to a file the session can read, and point the prompt at it."
     if [ -n "$prompt_file" ]; then
         [ -f "$prompt_file" ] || fail "No file at $prompt_file."
+        [ "$(($(wc -c <"$prompt_file")))" -le 262144 ] || fail "$too_long"
         prompt=$(cat "$prompt_file") || fail "Could not read $prompt_file."
     fi
     if $has_prompt && [ -z "$(printf '%s' "$prompt" | tr -d '[:space:]')" ]; then
         usage_error "The prompt is empty."
+    fi
+    if $has_prompt && [ "$(($(printf '%s\n' "$prompt" | wc -c)))" -gt 262144 ]; then
+        fail "$too_long"
     fi
     if $shell; then
         [ -z "$kind" ] || usage_error "--shell starts no agent, so it doesn't take --kind."

@@ -223,6 +223,14 @@ run spawn --name zed --kind Claude
 expect_status 2
 run spawn --shell --prompt hi
 expect_status 2
+# A prompt longer than a letter takes would never arrive: nothing starts.
+dd if=/dev/zero bs=1024 count=300 2>/dev/null | tr '\0' a >"$home/long.md"
+: >"$log"
+run spawn --prompt-file "$home/long.md"
+expect_status 1
+expect_output "The prompt is over 256 KB"
+expect_not_logged "workspace"
+expect_no_letter
 output=$(cd "$home/work dir" && env HOME="$home" HERDR_BIN_PATH="$scratch/herdr" HERDR_ENV=1 HERDR_PANE_ID=w1:p1 \
     FAKE_HERDR_LOG="$log" FAKE_FAIL="workspace create" TMPDIR="$scratch" "$shell" "$cli" spawn 2>&1)
 status=$?

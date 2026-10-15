@@ -40,7 +40,8 @@ final class Courier {
             mail.update(item.id) { $0.status = .needsApproval }
         }
         let inbox = inbox
-        Task.detached(priority: .background) { Mailbox.tidy(inbox) }
+        let kept = Set(mail.items.map(\.letterID))
+        Task.detached(priority: .background) { Mailbox.tidy(inbox, keeping: kept) }
     }
 
     private var cluster: ClusterStore? { model?.cluster }
@@ -253,6 +254,13 @@ final class Courier {
             var filed: [String] = []
             for collected in delivery.letters {
                 if mail.hasRead(collected.id, from: machineID) {
+                    filed.append(collected.id)
+                    continue
+                }
+                if let size = collected.oversize {
+                    // Filed unread: it moves to outbox/.collected there and stops holding up the letters after it.
+                    let bytes = { (count: Int) in ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .file) }
+                    notices.append("A letter from \(name(of: machineID)) was set aside: at \(bytes(size)), it's over the \(bytes(Mailbox.tripLimit)) a letter may take.")
                     filed.append(collected.id)
                     continue
                 }

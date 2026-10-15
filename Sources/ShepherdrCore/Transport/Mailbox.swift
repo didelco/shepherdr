@@ -6,7 +6,8 @@ import Foundation
 ///
 /// A trip prints the waiting letters as one stream: `L <id>` starts a letter, and each
 /// `F <bytes> <path>` line is followed by that many bytes of the file and a newline. Only regular
-/// files with the names `shepherdr` writes cross. Shepherdr keeps the letters on this Mac first,
+/// files with the names `shepherdr` writes cross. A letter too large for any trip comes as
+/// `L <id>` and `T <bytes>`, without its files, so Shepherdr can set it aside. Shepherdr keeps the letters on this Mac first,
 /// then moves them to `outbox/.collected` there, so a failed trip only collects them again.
 public enum Mailbox {
     /// The letters of one trip, and whether more were left for the next one.
@@ -15,14 +16,16 @@ public enum Mailbox {
         public var hasMore: Bool
     }
 
-    /// A letter as it arrived: its files by path inside it, or why it couldn't be read.
+    /// A letter as it arrived: its files by path inside it.
     public struct Collected: Equatable, Sendable {
         public let id: String
         public let contents: [String: Data]
+        /// The letter's size when it was too large to bring. Its files stayed on the machine.
+        public var oversize: Int? = nil
     }
 
     /// Bytes one trip brings at most: a letter's attachments stop at 5 MB.
-    static let tripLimit = 7 * 1_024 * 1_024
+    public static let tripLimit = 7 * 1_024 * 1_024
     static let lettersPerTrip = 50
 
     /// Prints waiting letters, oldest first, until the trip's limits. Both scripts run in the C locale:
@@ -47,6 +50,13 @@ public enum Mailbox {
           [ -f "$file" ] && [ ! -h "$file" ] || continue
           size=$((size + $(wc -c < "$file")))
         done
+        # No trip could bring it: name it, so it's set aside instead of blocking the letters after it.
+        if [ "$size" -gt "$limit" ]; then
+          count=$((count + 1))
+          echo "L $id"
+          echo "T $size"
+          continue
+        fi
         if [ "$count" -gt 0 ] && [ $((total + size)) -gt "$limit" ]; then more=1; break; fi
         total=$((total + size))
         count=$((count + 1))
@@ -132,24 +142,29 @@ public enum Mailbox {
         // Login banners and shell startup output may come first.
         while try line() != "shepherdr-mail 1" {}
         var letters: [Collected] = []
-        var current: (id: String, contents: [String: Data])?
+        var current: Collected?
         while index < bytes.count {
             let header = try line()
             let fields = header.split(separator: " ", maxSplits: 2).map(String.init)
             switch fields.first {
             case "L":
                 guard fields.count == 2, fields[1].range(of: #"^[A-Za-z0-9-]{1,80}$"#, options: .regularExpression) != nil else { throw incompatible }
-                if let current { letters.append(Collected(id: current.id, contents: current.contents)) }
-                current = (fields[1], [:])
+                if let current { letters.append(current) }
+                current = Collected(id: fields[1], contents: [:])
             case "F":
-                guard fields.count == 3, current != nil, let size = Int(fields[1]), size >= 0, size <= tripLimit,
+                guard fields.count == 3, let letter = current, letter.oversize == nil, let size = Int(fields[1]), size >= 0, size <= tripLimit,
                       fields[2] == "letter.json" || fields[2] == "message.md" || Letter.isValidFile(fields[2]),
                       index + size < bytes.count, bytes[index + size] == 0x0A else { throw incompatible }
-                current?.contents[fields[2]] = Data(bytes[index..<(index + size)])
+                var contents = letter.contents
+                contents[fields[2]] = Data(bytes[index..<(index + size)])
+                current = Collected(id: letter.id, contents: contents)
                 index += size + 1
+            case "T":
+                guard fields.count == 2, current?.contents.isEmpty == true, let size = Int(fields[1]), size > 0 else { throw incompatible }
+                current?.oversize = size
             case "D":
                 guard fields.count == 2 else { throw incompatible }
-                if let current { letters.append(Collected(id: current.id, contents: current.contents)) }
+                if let current { letters.append(current) }
                 return Delivery(letters: letters, hasMore: fields[1] == "1")
             default:
                 throw incompatible
@@ -193,13 +208,13 @@ public enum Mailbox {
         return folder
     }
 
-    /// Clears letters kept for over a month.
-    public static func tidy(_ inbox: URL, olderThan age: TimeInterval = 30 * 86_400, now: Date = Date()) {
+    /// Clears letters kept for over a month, except those that mail still waiting refers to.
+    public static func tidy(_ inbox: URL, keeping kept: Set<String> = [], olderThan age: TimeInterval = 30 * 86_400, now: Date = Date()) {
         let manager = FileManager.default
         guard let machines = try? manager.contentsOfDirectory(at: inbox, includingPropertiesForKeys: nil) else { return }
         for machine in machines {
             guard let letters = try? manager.contentsOfDirectory(at: machine, includingPropertiesForKeys: [.contentModificationDateKey]) else { continue }
-            for letter in letters where Letter.isValidID(letter.lastPathComponent) {
+            for letter in letters where Letter.isValidID(letter.lastPathComponent) && !kept.contains(letter.lastPathComponent) {
                 let date = (try? letter.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? now
                 if now.timeIntervalSince(date) > age { try? manager.removeItem(at: letter) }
             }

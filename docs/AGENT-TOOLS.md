@@ -23,7 +23,7 @@ On each machine, the installer writes:
   machines                    this machine's list, written by Shepherdr
   outbox/<id>/                letters waiting for Shepherdr
   outbox/.collected/<id>/     collected letters, cleared after a week
-  inbox/<machine>/<id>/       on the Mac: letters Shepherdr collected, kept for a month
+  inbox/<machine>/<id>/       on the Mac: letters Shepherdr collected, kept for a month or while mail needs them
 ~/.claude/skills/shepherdr/                if ~/.claude exists
 ${CODEX_HOME:-~/.codex}/skills/shepherdr/  if that folder exists
 ```
@@ -90,7 +90,7 @@ A letter is `letter.json`, an optional `message.md`, and attachments in `files/`
 
 `child.machine` is `here` or `profile:<Herdr profile ID>`; the latter only counts in the Mac's own letters. Names in `to` and `sessions` match a session's Herdr agent name, then its workspace name, ignoring case, preferring the sender's machine; `name@machine` picks the machine.
 
-`Letter(id:contents:)` checks everything again: the protocol version, that the ID matches the folder, IDs' and names' characters, lengths, http(s) links, attachment names (`files/` and `[A-Za-z0-9._-]`), that listed attachments came along, and the 256 KB message limit. A letter that fails is set aside with a notice; nothing in a letter ever runs.
+`Letter(id:contents:)` checks everything again: the protocol version, that the ID matches the folder, IDs' and names' characters, lengths, http(s) links, attachment names (`files/` and `[A-Za-z0-9._-]`), that listed attachments came along, and the 256 KB message limit, which the command also enforces on messages and prompts. A letter that fails is set aside with a notice; nothing in a letter ever runs.
 
 ## Collecting
 
@@ -106,7 +106,7 @@ F 7 files/REPORT.md
 D 0
 ```
 
-Only regular files (no symbolic links) with the names the command writes cross. A trip stops at 50 letters or 7 MB, and `D 1` says more are waiting; the command keeps a letter's attachments under 5 MB. Shepherdr keeps each letter in `~/.shepherdr/inbox/<machine>/<id>/` (folders `0700`, files `0600`), records its ID, and only then runs `Mailbox.acknowledgeScript`, which moves the letters to `outbox/.collected`. A trip that fails halfway collects the same letters again, and the recorded IDs keep them from being applied twice.
+Only regular files (no symbolic links) with the names the command writes cross. A trip stops at 50 letters or 7 MB, and `D 1` says more are waiting; the command keeps a letter's attachments under 5 MB. A letter over 7 MB, which the command never writes, comes as `L <id>` and `T <bytes>` without its files: Shepherdr files it unread with a notice, so it can't hold up the letters after it. Shepherdr keeps each letter in `~/.shepherdr/inbox/<machine>/<id>/` (folders `0700`, files `0600`), records its ID, and only then runs `Mailbox.acknowledgeScript`, which moves the letters to `outbox/.collected`. A trip that fails halfway collects the same letters again, and the recorded IDs keep them from being applied twice. Kept letters are cleared after a month, unless mail still waiting in Shepherdr refers to them.
 
 ## Delivering
 

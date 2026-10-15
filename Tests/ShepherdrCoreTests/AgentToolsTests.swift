@@ -124,7 +124,7 @@ struct AgentToolsTests {
     /// every change to the command or the skill needs a new `VERSION`. Each version keeps its
     /// fingerprint here: after bumping it, add the new one this test prints.
     @Test func changingTheToolsTakesANewVersion() throws {
-        let fingerprints = [1: "2434a1a8d839ed0d"]
+        let fingerprints = [1: "421ecfaa5c879c75"]
         let kit = try AgentTools.bundled()
         var hash = SHA256()
         for path in kit.files.keys.sorted() where path != "VERSION" {
@@ -281,11 +281,42 @@ struct LetterContractTests {
         let home = try installed()
         defer { home.remove() }
         for index in 0..<3 { #expect(try home.shepherdr(["notify", "Letter \(index)"]).status == 0) }
-        let output = try home.sh(["-c", Mailbox.collectScript, "sh", "10"])
+        let first = try #require(try outbox(of: home).first)
+        let output = try home.sh(["-c", Mailbox.collectScript, "sh", String(try size(of: first))])
         let delivery = try Mailbox.parse(Data(output.out.utf8))
-        // The first letter always fits; the next would pass the limit.
-        #expect(delivery.letters.count == 1)
+        // The first letter fills the trip; the next would pass the limit.
+        #expect(delivery.letters.map(\.id) == [first.lastPathComponent])
         #expect(delivery.hasMore)
+    }
+
+    @Test func aLetterTooLargeForAnyTripIsSetAsideNotStreamed() throws {
+        let home = try installed()
+        defer { home.remove() }
+        for index in 0..<2 { #expect(try home.shepherdr(["notify", "Letter \(index)"]).status == 0) }
+        let letters = try outbox(of: home)
+        try FileManager.default.createDirectory(at: letters[0].appendingPathComponent("files"), withIntermediateDirectories: true)
+        try Data(count: 4_000).write(to: letters[0].appendingPathComponent("files/huge.bin"))
+        let output = try home.sh(["-c", Mailbox.collectScript, "sh", "1000"])
+        let delivery = try Mailbox.parse(Data(output.out.utf8))
+        // It doesn't hold up the letter after it.
+        #expect(delivery.letters.map(\.id) == letters.map(\.lastPathComponent))
+        #expect(delivery.letters[0].oversize == (try size(of: letters[0])) && delivery.letters[0].contents.isEmpty)
+        #expect(delivery.letters[1].oversize == nil && delivery.letters[1].contents["letter.json"] != nil)
+        #expect(!output.out.contains("huge.bin"))
+    }
+
+    private func outbox(of home: ScratchHome) throws -> [URL] {
+        let outbox = home.url.appendingPathComponent(".shepherdr/outbox")
+        return try FileManager.default.contentsOfDirectory(atPath: outbox.path).filter { !$0.hasPrefix(".") }.sorted()
+            .map { outbox.appendingPathComponent($0) }
+    }
+
+    private func size(of letter: URL) throws -> Int {
+        let files = try FileManager.default.subpathsOfDirectory(atPath: letter.path)
+        return try files.reduce(0) { total, path in
+            let attributes = try FileManager.default.attributesOfItem(atPath: letter.appendingPathComponent(path).path)
+            return total + (attributes[.type] as? FileAttributeType == .typeRegular ? (attributes[.size] as? Int ?? 0) : 0)
+        }
     }
 
     @Test func onlyTheFilesTheCLIWritesCross() throws {
@@ -321,6 +352,19 @@ struct MailboxStreamTests {
         #expect(try Mailbox.parse(Data("shepherdr-mail 1\nD 0\n".utf8)).letters.isEmpty)
     }
 
+    @Test func aLetterTooLargeComesWithoutItsFiles() throws {
+        let stream = "shepherdr-mail 1\nL 20261015T101502Z-7f3a9c\nT 9000000\nL 20261015T101503Z-7f3a9c\nF 2 letter.json\n{}\nD 0\n"
+        let delivery = try Mailbox.parse(Data(stream.utf8))
+        #expect(delivery.letters == [.init(id: "20261015T101502Z-7f3a9c", contents: [:], oversize: 9_000_000),
+                                     .init(id: "20261015T101503Z-7f3a9c", contents: ["letter.json": Data("{}".utf8)])])
+        for bad in ["shepherdr-mail 1\nL x\nT 9\nF 2 letter.json\n{}\nD 0\n",   // files after all
+                    "shepherdr-mail 1\nL x\nF 2 letter.json\n{}\nT 9\nD 0\n",   // too large after its files
+                    "shepherdr-mail 1\nT 9\nD 0\n",                              // outside a letter
+                    "shepherdr-mail 1\nL x\nT big\nD 0\n"] {
+            #expect(throws: HerdrFailure.self) { try Mailbox.parse(Data(bad.utf8)) }
+        }
+    }
+
     @Test func lettersAreKeptPrivatelyOnThisMac() throws {
         let inbox = FileManager.default.temporaryDirectory.appendingPathComponent("inbox-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: inbox) }
@@ -331,6 +375,9 @@ struct MailboxStreamTests {
         #expect(try Data(contentsOf: folder.appendingPathComponent("files/a.md")) == Data("a".utf8))
         let permissions = try FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent("files/a.md").path)[.posixPermissions] as? Int
         #expect(permissions == 0o600)
+        // Mail still waiting keeps its letter however old it gets.
+        Mailbox.tidy(inbox, keeping: [letter.id], now: Date().addingTimeInterval(31 * 86_400))
+        #expect(FileManager.default.fileExists(atPath: folder.path))
         Mailbox.tidy(inbox, now: Date().addingTimeInterval(31 * 86_400))
         #expect(!FileManager.default.fileExists(atPath: folder.path))
     }
