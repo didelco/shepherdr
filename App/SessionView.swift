@@ -264,11 +264,12 @@ struct SessionView: View {
     }
 
     /// Always-visible controls: the prompt editor, dictation, quick keys and this session's browser.
-    /// With the browser open the column narrows, so the bar falls back to icons.
+    /// As the column narrows (a small window, the browser open) the hint goes first, then the labels fall back to icons.
     private var bottomBar: some View {
         ViewThatFits(in: .horizontal) {
-            barContent(compact: false)
-            barContent(compact: true)
+            barContent(compact: false, hint: true)
+            barContent(compact: false, hint: false)
+            barContent(compact: true, hint: false)
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -276,7 +277,7 @@ struct SessionView: View {
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
-    private func barContent(compact: Bool) -> some View {
+    private func barContent(compact: Bool, hint: Bool) -> some View {
         HStack(spacing: 6) {
             let hasDraft = !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let prompt = compact ? "✎" : "✎ PROMPT"
@@ -291,7 +292,7 @@ struct SessionView: View {
             key("↓", .down, help: "Down arrow")
             key("⏎", .enter, help: "Return")
             Spacer(minLength: 8)
-            if !compact {
+            if hint {
                 Text(isLive ? "⇧⏎ new line · click a link to browse · ⌘-click opens your browser" : "locked · read-only · ⌘E to unlock")
                     .font(Theme.mono(9.5)).foregroundStyle(Theme.faint).lineLimit(1).truncationMode(.head)
                     .layoutPriority(-1)
