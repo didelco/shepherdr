@@ -135,10 +135,13 @@ private final class MockTerminalConnection: HerdrTerminalConnection, @unchecked 
             inputs.compactMap { if case .mouse(let pressed, let column, let row) = $0 { "\(pressed ? "down" : "up") \(column),\(row)" } else { nil } }
         }
     }
-    init() {
+    /// Attaches without a first frame until the test sends one.
+    let holdsFrame: Bool
+    init(holdsFrame: Bool = false) {
         let pair = AsyncThrowingStream<TerminalEvent, Error>.makeStream()
         events = pair.stream
         continuation = pair.continuation
+        self.holdsFrame = holdsFrame
     }
     func send(_ input: TerminalInput) async throws { lock.withLock { inputs.append(input) } }
     func close() { lock.withLock { closed = true }; continuation.finish() }
@@ -178,7 +181,7 @@ private actor MockTerminalClient: HerdrTerminalClient {
         } else if conflicted.contains(mode) {
             connection.continuation.yield(.closed("terminal attach failed: terminal \(target.terminalID) already has an attached client; retry with --takeover"))
             connection.continuation.finish()
-        } else { connection.frame() }
+        } else if !connection.holdsFrame { connection.frame() }
         return connection
     }
     func requestedModes() -> [TerminalMode] { modes }
@@ -312,20 +315,42 @@ private actor MockTerminalClient: HerdrTerminalClient {
         #expect(observer.scrolls.isEmpty)
     }
 
-    @Test func aDroppedConnectionReconnectsOnItsOwn() async throws {
+    @Test func aDroppedConnectionWaitsBeforeTryingAgain() async throws {
         let first = MockTerminalConnection()
-        let second = MockTerminalConnection()
-        let client = MockTerminalClient([first, second])
+        let client = MockTerminalClient([first, MockTerminalConnection()])
         let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
         let store = TerminalStore(target: target, mode: .control, client: client,
-                                  reconnecting: .init(first: .milliseconds(30), longest: .seconds(1), budget: .seconds(60)))
+                                  reconnecting: .init(first: .seconds(60), longest: .seconds(60), budget: .seconds(3_600)))
         defer { store.disconnect() }
         store.open()
         try await wait { store.status == .interactive }
         first.continuation.finish(throwing: HerdrFailure(.unreachable, "Connection lost"))
-        try await wait { store.status == .failed }
-        #expect(store.reconnection?.attempts == 0 && store.reconnection?.next != nil)
+        try await wait { store.reconnection?.next != nil }
+        #expect(store.status == .failed && store.reconnection?.attempts == 0)
         #expect(store.message == "Connection lost")
+        // Reconnecting by hand starts over.
+        store.open()
+        #expect(store.reconnection == nil)
+        try await wait { store.status == .interactive }
+        #expect(await client.requestedModes() == [.control, .control])
+    }
+
+    @Test func aDroppedConnectionReconnectsOnItsOwn() async throws {
+        let first = MockTerminalConnection()
+        let second = MockTerminalConnection(holdsFrame: true)
+        let client = MockTerminalClient([first, second])
+        let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
+        let store = TerminalStore(target: target, mode: .control, client: client,
+                                  reconnecting: .init(first: .milliseconds(10), longest: .seconds(1), budget: .seconds(60)))
+        defer { store.disconnect() }
+        store.open()
+        try await wait { store.status == .interactive }
+        first.continuation.finish(throwing: HerdrFailure(.unreachable, "Connection lost"))
+        // The attempt waits for its first frame, with the failure still on show.
+        try await wait { store.reconnection?.attempts == 1 }
+        #expect(store.status == .connecting && store.reconnection?.next == nil)
+        #expect(store.message == "Connection lost")
+        second.frame()
         try await wait { store.status == .interactive }
         #expect(store.reconnection == nil)
         #expect(store.message == nil)
@@ -338,7 +363,7 @@ private actor MockTerminalClient: HerdrTerminalClient {
         let client = MockTerminalClient([MockTerminalConnection()], failing: 100)
         let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
         let store = TerminalStore(target: target, client: client,
-                                  reconnecting: .init(first: .milliseconds(5), longest: .milliseconds(20), budget: .milliseconds(80)))
+                                  reconnecting: .init(first: .milliseconds(5), longest: .milliseconds(20), budget: .milliseconds(200)))
         defer { store.disconnect() }
         store.open()
         try await wait { store.reconnection?.gaveUp == true }
