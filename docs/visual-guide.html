@@ -1,13 +1,13 @@
 <title>Guía de Shepherdr</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
 /* Layout: menú lateral fijo + columna de lectura. Consola de fósforo sobre negro, la paleta de la app (Theme.swift). */
 :root {
   --bg: #090C0A; --panel: #0E1310; --raised: #141B17; --line: #1F2B25;
   --fg: #D9E7DE; --dim: #7E9488; --faint: #4B5E53;
   --phosphor: #4DFFA0; --amber: #FFB547; --cyan: #5CD6FF;
-  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "Fira Code", ui-monospace, "SF Mono", Menlo, monospace;
+  /* System fonts: the page also ships inside the app and works offline. */
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -37,7 +37,7 @@ ul, ol { margin: 0 0 16px; padding-left: 22px; max-width: 62ch; }
 li { margin: 0 0 10px; }
 b { font-weight: 600; }
 code, kbd { font-family: var(--font-mono); font-size: 0.85em; background: var(--raised); border: 1px solid var(--line); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }
-kbd { white-space: nowrap; color: var(--phosphor); }
+kbd { white-space: nowrap; color: var(--phosphor); font-family: var(--font-body); font-weight: 500; font-size: 0.9em; letter-spacing: 0.04em; }
 pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; overflow-x: auto; font: 14px/1.6 var(--font-mono); margin: 20px 0; }
 pre code { background: none; border: 0; padding: 0; font-size: inherit; }
 .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0 0 28px; }
@@ -89,7 +89,7 @@ footer { border-top: 1px solid var(--line); padding-top: 24px; color: var(--fain
 <ol>
 <li>Instala Herdr y arráncalo (CLI 0.9.3 o posterior para máquinas remotas y terminales).</li>
 <li>Descarga el <code>.dmg</code> de la <a href="https://github.com/theam/shepherdr/releases/latest" target="_blank" rel="noopener">última versión</a> y arrastra <b>Shepherdr.app</b> a Aplicaciones.</li>
-<li>Las versiones no están notarizadas por Apple. La primera vez: Ajustes del Sistema → Privacidad y seguridad → <b>Abrir igualmente</b>.</li>
+<li>Está firmada con el Developer ID de The Agile Monkeys y notarizada por Apple, así que se abre como cualquier descarga.</li>
 <li>Pulsa <kbd>⌘N</kbd>, elige la carpeta del proyecto y lanza tu agente en esa terminal. En unos segundos entra en la cola.</li>
 </ol>
 <pre><code>brew install herdr
@@ -102,7 +102,7 @@ herdr status</code></pre>
 <ol>
 <li>Install and start Herdr (CLI 0.9.3 or later for remote machines and terminals).</li>
 <li>Grab the <code>.dmg</code> from the <a href="https://github.com/theam/shepherdr/releases/latest" target="_blank" rel="noopener">latest release</a> and drag <b>Shepherdr.app</b> to Applications.</li>
-<li>Builds aren't notarized by Apple. On first launch: System Settings → Privacy &amp; Security → <b>Open Anyway</b>.</li>
+<li>It's signed with The Agile Monkeys' Developer ID and notarized by Apple, so it opens like any other download.</li>
 <li>Press <kbd>⌘N</kbd>, pick the project folder and start your agent in that terminal. It joins the queue within seconds.</li>
 </ol>
 <pre><code>brew install herdr
@@ -327,7 +327,7 @@ herdr machine list --json</code></pre>
 </section>
 <section id="keys">
 <div class="es"><h2>Atajos</h2></div><div class="en"><h2>Shortcuts</h2></div>
-<div class="tablewrap"><table><tr><td><kbd>⌘N</kbd></td><td><span class="es">Nueva sesión</span><span class="en">New session</span></td></tr><tr><td><kbd>⌘1…⌘9</kbd></td><td><span class="es">Abrir una sesión de la cola</span><span class="en">Open a queue session</span></td></tr><tr><td><kbd>⌘[</kbd> <kbd>⌘]</kbd></td><td><span class="es">Sesión anterior / siguiente</span><span class="en">Previous / next session</span></td></tr><tr><td><kbd>⌘0</kbd></td><td><span class="es">Resumen</span><span class="en">Overview</span></td></tr><tr><td><kbd>⌥⌘↑</kbd> <kbd>⌥⌘↓</kbd></td><td><span class="es">Subir o bajar la sesión</span><span class="en">Move session up or down</span></td></tr><tr><td><kbd>⌘F</kbd></td><td><span class="es">Filtrar la cola</span><span class="en">Filter the queue</span></td></tr><tr><td><kbd>⌘R</kbd></td><td><span class="es">Refrescar</span><span class="en">Refresh</span></td></tr><tr><td><kbd>⌘L</kbd></td><td><span class="es">Editor de prompts</span><span class="en">Prompt editor</span></td></tr><tr><td><kbd>⇧⌘D</kbd></td><td><span class="es">Dictar</span><span class="en">Dictate</span></td></tr><tr><td><kbd>⇧⏎</kbd></td><td><span class="es">Nueva línea sin enviar</span><span class="en">New line without sending</span></td></tr><tr><td><kbd>⌘⎋</kbd></td><td><span class="es">Interrumpir al agente</span><span class="en">Interrupt the agent</span></td></tr><tr><td><kbd>⌘E</kbd></td><td><span class="es">Candado</span><span class="en">Padlock</span></td></tr><tr><td><kbd>⌘B</kbd></td><td><span class="es">Mostrar u ocultar el navegador</span><span class="en">Show or hide the browser</span></td></tr><tr><td><kbd>⌘-clic</kbd></td><td><span class="es">Abrir en tu navegador o app</span><span class="en">Open in your browser or app</span></td></tr><tr><td><kbd>⌘,</kbd></td><td><span class="es">Ajustes</span><span class="en">Settings</span></td></tr></table></div>
+<div class="tablewrap"><table><tr><td><kbd>⌘N</kbd></td><td><span class="es">Nueva sesión</span><span class="en">New session</span></td></tr><tr><td><kbd>⌘1…⌘9</kbd></td><td><span class="es">Abrir una sesión de la cola</span><span class="en">Open a queue session</span></td></tr><tr><td><kbd>⌘[</kbd> <kbd>⌘]</kbd></td><td><span class="es">Sesión anterior / siguiente</span><span class="en">Previous / next session</span></td></tr><tr><td><kbd>⌘0</kbd></td><td><span class="es">Resumen</span><span class="en">Overview</span></td></tr><tr><td><kbd>⌥⌘↑</kbd> <kbd>⌥⌘↓</kbd></td><td><span class="es">Subir o bajar la sesión</span><span class="en">Move session up or down</span></td></tr><tr><td><kbd>⌘F</kbd></td><td><span class="es">Filtrar la cola</span><span class="en">Filter the queue</span></td></tr><tr><td><kbd>⌘R</kbd></td><td><span class="es">Refrescar</span><span class="en">Refresh</span></td></tr><tr><td><kbd>⌘L</kbd></td><td><span class="es">Editor de prompts</span><span class="en">Prompt editor</span></td></tr><tr><td><kbd>⇧⌘D</kbd></td><td><span class="es">Dictar</span><span class="en">Dictate</span></td></tr><tr><td><kbd>⇧⏎</kbd></td><td><span class="es">Nueva línea sin enviar</span><span class="en">New line without sending</span></td></tr><tr><td><kbd>⌘⎋</kbd></td><td><span class="es">Interrumpir al agente</span><span class="en">Interrupt the agent</span></td></tr><tr><td><kbd>⌘E</kbd></td><td><span class="es">Candado</span><span class="en">Padlock</span></td></tr><tr><td><kbd>⌘B</kbd></td><td><span class="es">Mostrar u ocultar el navegador</span><span class="en">Show or hide the browser</span></td></tr><tr><td><kbd><span class="es">⌘-clic</span><span class="en">⌘-click</span></kbd></td><td><span class="es">Abrir en tu navegador o app</span><span class="en">Open in your browser or app</span></td></tr><tr><td><kbd>⌘,</kbd></td><td><span class="es">Ajustes</span><span class="en">Settings</span></td></tr></table></div>
 </section>
 <section id="tips">
 <div class="es">
@@ -363,7 +363,7 @@ herdr machine list --json</code></pre>
 <li><b>No puedo escribir.</b> El candado está puesto, o hay otro cliente conectado. En ese caso usa <b>Take Over</b>.</li>
 <li><b>Una máquina remota no conecta.</b> Comprueba que <code>ssh host</code> entra sin pedir contraseña. Los detalles están en <i>Settings → Machines</i>.</li>
 <li><b>No llegan notificaciones.</b> Revisa Ajustes → General y los permisos de macOS. Dependen del intervalo de refresco.</li>
-<li><b>macOS no deja abrir la app.</b> Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente.</li>
+<li><b>macOS no deja abrir una versión antigua.</b> Las anteriores a 0.8.4 no estaban notarizadas: Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente.</li>
 <li><b>No veo los checks de las PRs.</b> Necesitas <code>gh auth status</code> con sesión iniciada.</li>
 </ul>
 </div>
@@ -374,7 +374,7 @@ herdr machine list --json</code></pre>
 <li><b>I can't type.</b> The padlock is on, or another client is attached. In that case use <b>Take Over</b>.</li>
 <li><b>A remote machine won't connect.</b> Check that <code>ssh host</code> logs in without a password prompt. Details are in <i>Settings → Machines</i>.</li>
 <li><b>No notifications.</b> Check Settings → General and macOS permissions. They depend on the refresh interval.</li>
-<li><b>macOS won't open the app.</b> System Settings → Privacy &amp; Security → Open Anyway.</li>
+<li><b>macOS won't open an older version.</b> Versions before 0.8.4 weren't notarized: System Settings → Privacy &amp; Security → Open Anyway.</li>
 <li><b>I don't see PR checks.</b> You need <code>gh auth status</code> to show you're signed in.</li>
 </ul>
 </div>
