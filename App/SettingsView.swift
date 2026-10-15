@@ -54,7 +54,7 @@ private struct GeneralSettings: View {
                         Button("Choose…") { chooseProjectsFolder() }
                     }
                 }
-                Text("New Session's folder picker starts here, and a folder name alone means a folder inside it.")
+                Text("New Session's folder picker starts here, a folder name alone means a folder inside it, and GitHub repositories are cloned into it. Other machines have their own in Machines.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Notifications") {
@@ -196,6 +196,7 @@ private struct MachineRow: View {
                     }
                 }
                 .font(.caption).foregroundStyle(.secondary).padding(.leading, 26)
+                if !state.machine.isLocal { ProjectsFolderField(machine: state.machine) }
                 if let failure = state.failure {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(failure.message)
@@ -221,6 +222,27 @@ private struct MachineRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// Another machine's projects folder: where New Session clones GitHub repositories there, and where
+/// a folder name alone points. `~` is that machine's home.
+private struct ProjectsFolderField: View {
+    @AppStorage private var folder: String
+
+    init(machine: Machine) {
+        _folder = AppStorage(wrappedValue: ProjectsFolder.defaultPath, ProjectsFolder.key(for: machine))
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("Projects folder").font(.caption).foregroundStyle(.secondary)
+            TextField(ProjectsFolder.defaultPath, text: $folder)
+                .textFieldStyle(.roundedBorder).controlSize(.small).font(.caption)
+                .frame(maxWidth: 220)
+        }
+        .padding(.leading, 26)
+        .help("On this machine, New Session clones GitHub repositories here, and a folder name alone means a folder inside it. ~ is its home.")
     }
 }
 

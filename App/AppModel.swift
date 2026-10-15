@@ -47,6 +47,45 @@ enum GroupMember: Identifiable {
     }
 }
 
+/// A project's heading in the queue: two or more sessions of one project, in the top level or in
+/// one group, in the order they are listed.
+struct ProjectRun: Identifiable {
+    let id: ProjectRunID
+    let rows: [AgentRow]
+    /// Collapsed headings hide their sessions, except while filtering.
+    let isCollapsed: Bool
+}
+
+/// One place at the top level of the queue: a session or group, or a project's heading.
+enum QueueSlot: Identifiable {
+    case item(QueueItem)
+    case project(ProjectRun)
+
+    enum ID: Hashable { case item(QueueItemID), project(ProjectRunID) }
+
+    var id: ID {
+        switch self {
+        case .item(let item): .item(item.id)
+        case .project(let run): .project(run.id)
+        }
+    }
+}
+
+/// One place in an expanded group: a session or shell, or a project's heading.
+enum MemberSlot: Identifiable {
+    case member(GroupMember)
+    case project(ProjectRun)
+
+    enum ID: Hashable { case member(GroupMember.ID), project(ProjectRunID) }
+
+    var id: ID {
+        switch self {
+        case .member(let member): .member(member.id)
+        case .project(let run): .project(run.id)
+        }
+    }
+}
+
 /// A session as the sidebar lists it: in its own place, or nested under a session waiting for it.
 struct TreeRow: Identifiable {
     let row: AgentRow
@@ -331,7 +370,7 @@ final class AppModel {
         }
     }
 
-    var rankedRows: [AgentRow] { order.ranked(cluster.agents) }
+    var rankedRows: [AgentRow] { order.ranked(cluster.agents, projects: gatheredProjects) }
     /// Sessions matching the filter, in priority order, whether or not their group is collapsed.
     var matchingRows: [AgentRow] { rankedRows.filter { $0.matches(search) } }
     /// The overview's sessions: those matching the search, in the chosen states and on the chosen machines.
@@ -340,7 +379,7 @@ final class AppModel {
     /// The queue as the sidebar shows it. While filtering, groups list only their matching
     /// sessions, unless the group's own name matches.
     var queue: [QueueItem] {
-        let items = order.layout(cluster.agents)
+        let items = order.layout(cluster.agents, projects: gatheredProjects)
         guard !search.isEmpty else { return items }
         return items.compactMap { item in
             switch item {
@@ -354,13 +393,33 @@ final class AppModel {
         }
     }
 
-    /// Sessions shown in the sidebar, in order: ⌘1…⌘9 address these. Collapsed groups and
-    /// sessions hide theirs, except while filtering.
+    /// Sessions shown in the sidebar, in order: ⌘1…⌘9 address these. Collapsed groups, projects
+    /// and sessions hide theirs, except while filtering.
     var visibleRows: [AgentRow] {
+        listedMembers.compactMap { if case .session(let row) = $0 { row } else { nil } }
+    }
+
+    /// The sessions and grouped shells the sidebar lists, in order, with the sessions nested under each.
+    private var listedMembers: [GroupMember] {
         let forest = waitForest
-        return queue.flatMap { item -> [AgentRow] in
-            if case .group(let group) = item, group.group.isCollapsed, search.isEmpty { return [] }
-            return item.rows.filter { !forest.isNested($0.id) }.flatMap { forest.rows(from: $0).map(\.row) }
+        func tree(_ row: AgentRow) -> [GroupMember] {
+            forest.isNested(row.id) ? [] : forest.rows(from: row).map { .session($0.row) }
+        }
+        func project(_ run: ProjectRun) -> [GroupMember] { run.isCollapsed ? [] : run.rows.flatMap(tree) }
+        return slots(of: queue, forest: forest).flatMap { slot -> [GroupMember] in
+            switch slot {
+            case .project(let run): return project(run)
+            case .item(.session(let row)): return tree(row)
+            case .item(.group(let group)):
+                if group.group.isCollapsed, search.isEmpty { return [] }
+                return slots(of: group, forest: forest).flatMap { slot -> [GroupMember] in
+                    switch slot {
+                    case .project(let run): return project(run)
+                    case .member(.session(let row)): return tree(row)
+                    case .member(let shell): return [shell]
+                    }
+                }
+            }
         }
     }
 
@@ -428,16 +487,7 @@ final class AppModel {
     var selectedID: Agent.ID? { if case .session(let id) = selection { id } else { nil } }
     /// Sessions and shells in sidebar order, for stepping through them.
     private var navigableIDs: [Agent.ID] {
-        let forest = waitForest
-        let tree = { (row: AgentRow) -> [Agent.ID] in forest.isNested(row.id) ? [] : forest.rows(from: row).map(\.id) }
-        return queue.flatMap { item -> [Agent.ID] in
-            guard case .group(let group) = item else { return item.rows.flatMap(tree) }
-            if group.group.isCollapsed, search.isEmpty { return [] }
-            return members(of: group).flatMap { member -> [Agent.ID] in
-                if case .session(let row) = member { return tree(row) }
-                return [member.agentID]
-            }
-        } + ungroupedShells.map(\.id)
+        listedMembers.map(\.agentID) + ungroupedShells.map(\.id)
     }
 
     func context(for id: Agent.ID) -> SessionContext? {
@@ -492,8 +542,13 @@ final class AppModel {
     }
 
     /// Links clicked in a session's terminal open in its browser, or in the default browser. Local
-    /// Markdown and HTML files open in its browser too; other files in their default app.
+    /// Markdown and HTML files open in its browser too; other files in their default app. A session
+    /// named in the terminal opens in Shepherdr, with or without ⌘.
     func openLink(_ url: URL, from id: Agent.ID, external: Bool) {
+        if let session = SessionLink.session(in: url) {
+            if context(for: session) != nil { open(session) }
+            return
+        }
         if external || (url.isFileURL && LocalPage(url) == nil) { NSWorkspace.shared.open(url) }
         else { workspace(for: id).browser.open(url) }
         workspace(for: id).countOpen(of: url)
@@ -513,6 +568,20 @@ final class AppModel {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: full, isDirectory: &isDirectory), !isDirectory.boolValue else { return nil }
         return URL(fileURLWithPath: full).standardizedFileURL
+    }
+
+    /// A link to the other session or pane that the text at a column of a session's terminal names:
+    /// its pane or terminal ID, or its name, as `shepherdr` prints them.
+    func sessionLink(in row: [Character], column: Int, from id: Agent.ID) -> URL? {
+        let entries = cluster.machines.flatMap { state -> [SessionDirectory.Entry] in
+            guard let snapshot = state.snapshot else { return [] }
+            let agents = snapshot.agents.map(SessionDirectory.Entry.init(agent:))
+            let agentTerminals = Set(snapshot.agents.map(\.id.terminalID))
+            return agents + snapshot.panes.filter { !agentTerminals.contains($0.terminalID) }
+                .map { SessionDirectory.Entry(pane: $0, machineID: state.id) }
+        }
+        let directory = SessionDirectory(entries: entries, machines: cluster.machines.map(\.machine))
+        return directory.session(in: row, column: column, from: id).map(SessionLink.url(for:))
     }
 
     // MARK: Dropped files
@@ -726,6 +795,18 @@ final class AppModel {
 
     // MARK: Sessions on hold
 
+    /// A session whose awaited sessions are being picked, in a sheet.
+    struct WaitPicking: Identifiable {
+        let session: Agent.ID
+        var id: Agent.ID { session }
+    }
+
+    var waitPicking: WaitPicking?
+
+    func pickWaits(for id: Agent.ID) {
+        waitPicking = WaitPicking(session: id)
+    }
+
     func waitState(for id: Agent.ID) -> WaitState? {
         let awaited = relations.waitingFor(id)
         guard !awaited.isEmpty else { return nil }
@@ -815,16 +896,29 @@ final class AppModel {
             .first { $0.terminalID == id.terminalID }?.directory
     }
 
+    /// The main checkouts sessions on a machine work in whose repository has this name, where a
+    /// clone of it may already be.
+    func clones(named name: String, on machineID: String) -> [String] {
+        let prefix = machineID + "/"
+        let paths = cluster.checkouts.filter { key, checkout in
+            key.hasPrefix(prefix) && !checkout.isLinkedWorktree && checkout.repository.lowercased() == name.lowercased()
+        }.map(\.value.path)
+        return Array(Set(paths)).sorted()
+    }
+
     /// Creates a workspace with a shell in Herdr, then opens it. Returns the failure for the sheet to show.
+    /// - Parameter pins: links the session starts with in its resources, such as its pull request.
     func createSession(_ request: NewSessionRequest, onMachine machineID: String,
-                       placement: QueueDrop? = nil) async -> HerdrFailure? {
+                       placement: QueueDrop? = nil, pins: [URL] = []) async -> HerdrFailure? {
         isCreatingSession = true
         defer { isCreatingSession = false }
         do {
             let created = try await cluster.createSession(request, onMachine: machineID)
             let id = Agent.ID(machineID: machineID, terminalID: created.terminalID)
             if let notice = created.notice { sessionNotices[id] = notice }
-            if let placement { order.insert(id, placement) }
+            // A worktree Herdr already had open keeps its place in the queue.
+            if let placement, !created.isExisting { order.insert(id, placement, projects: gatheredProjects) }
+            collectResources(pins.compactMap(SessionResource.init(url:)), for: id)
             newSession = nil
             open(id)
             return nil
@@ -881,11 +975,11 @@ final class AppModel {
     // MARK: Priorities
 
     func canMove(_ item: QueueItemID?, _ direction: SessionOrderStore.Move) -> Bool {
-        order.canMove(item, direction, visible: movableItems)
+        order.canMove(item, direction, visible: movableItems, projects: gatheredProjects)
     }
 
     func move(_ item: QueueItemID, _ direction: SessionOrderStore.Move) {
-        order.move(item, direction, visible: movableItems)
+        order.move(item, direction, visible: movableItems, projects: gatheredProjects)
     }
 
     func canMove(_ id: Agent.ID?, _ direction: SessionOrderStore.Move) -> Bool {
@@ -903,7 +997,115 @@ final class AppModel {
     @ObservationIgnored var dragToken = ""
 
     func place(_ item: QueueItemID, _ drop: QueueDrop) {
-        order.place(item, drop)
+        order.place(item, drop, projects: gatheredProjects)
+    }
+
+    /// Within one list, a project's sessions stay under its heading: one dropped elsewhere in
+    /// that list would only come back to it. Into another list, it can go anywhere.
+    func allowsDrop(_ item: QueueItemID, _ drop: QueueDrop) -> Bool {
+        guard case .session(let id) = item else { return true }
+        let headings = projectHeadings
+        guard let run = headings[id] else { return true }
+        let list: String?
+        switch drop {
+        case .into: return true
+        case .end, .before(.group), .after(.group): list = nil
+        case .before(.session(let target)), .after(.session(let target)):
+            if headings[target] == run { return true }
+            list = order.group(containing: target)?.id
+        }
+        return list != run.group
+    }
+
+    // MARK: Projects
+
+    /// The project a session works on: its repository, which its main checkout and its worktrees
+    /// share on any machine, or outside Git its folder's name.
+    func project(of row: AgentRow) -> String? {
+        if let repository = cluster.checkout(machineID: row.id.machineID, workspaceID: row.agent.workspaceID)?.repository,
+           !repository.isEmpty {
+            return repository
+        }
+        return row.agent.project
+    }
+
+    /// Each session's project while the queue gathers projects. Sessions a session waits for are
+    /// listed under it instead, so they never pull their project's heading to their own place.
+    var gatheredProjects: [Agent.ID: String]? {
+        guard order.gathersProjects else { return nil }
+        let nested = relations.parents(in: cluster.agents.map(\.id))
+        var projects: [Agent.ID: String] = [:]
+        for row in cluster.agents where nested[row.id] == nil {
+            if let project = project(of: row) { projects[row.id] = project }
+        }
+        return projects
+    }
+
+    /// The top level of the queue as the sidebar lists it: with projects gathered, a project with
+    /// two or more sessions there shows them under its heading, where its first one is.
+    func slots(of items: [QueueItem], forest: WaitForest) -> [QueueSlot] {
+        guard order.gathersProjects else { return items.map(QueueSlot.item) }
+        return ProjectRuns.segments(items) { item in
+            guard case .session(let row) = item, !forest.isNested(row.id) else { return nil }
+            return project(of: row)
+        }.map { segment in
+            switch segment {
+            case .single(let item): .item(item)
+            case .project(let name, let items): .project(projectRun(ProjectRunID(group: nil, project: name), items.flatMap(\.rows)))
+            }
+        }
+    }
+
+    /// An expanded group's sessions and shells, with its projects gathered the same way.
+    func slots(of group: QueueGroupRow, forest: WaitForest) -> [MemberSlot] {
+        let members = members(of: group)
+        guard order.gathersProjects else { return members.map(MemberSlot.member) }
+        return ProjectRuns.segments(members) { member in
+            guard case .session(let row) = member, !forest.isNested(row.id) else { return nil }
+            return project(of: row)
+        }.map { segment in
+            switch segment {
+            case .single(let member): .member(member)
+            case .project(let name, let members):
+                .project(projectRun(ProjectRunID(group: group.id, project: name),
+                                    members.compactMap { if case .session(let row) = $0 { row } else { nil } }))
+            }
+        }
+    }
+
+    private func projectRun(_ id: ProjectRunID, _ rows: [AgentRow]) -> ProjectRun {
+        ProjectRun(id: id, rows: rows, isCollapsed: search.isEmpty && order.isCollapsed(id))
+    }
+
+    /// The heading each session is listed under.
+    private var projectHeadings: [Agent.ID: ProjectRunID] {
+        guard order.gathersProjects else { return [:] }
+        let forest = waitForest
+        var headings: [Agent.ID: ProjectRunID] = [:]
+        func note(_ run: ProjectRun) { for row in run.rows { headings[row.id] = run.id } }
+        for slot in slots(of: queue, forest: forest) {
+            switch slot {
+            case .project(let run): note(run)
+            case .item(.group(let group)):
+                for case .project(let run) in slots(of: group, forest: forest) { note(run) }
+            case .item(.session): break
+            }
+        }
+        return headings
+    }
+
+    func canMove(_ project: ProjectRunID, _ direction: SessionOrderStore.Move) -> Bool {
+        guard let projects = gatheredProjects else { return false }
+        return order.canMove(project, direction, visible: movableItems, projects: projects)
+    }
+
+    func move(_ project: ProjectRunID, _ direction: SessionOrderStore.Move) {
+        guard let projects = gatheredProjects else { return }
+        order.move(project, direction, visible: movableItems, projects: projects)
+    }
+
+    func toggleCollapsed(_ project: ProjectRunID) {
+        order.setCollapsed(project, !order.isCollapsed(project))
     }
 
     // MARK: Groups

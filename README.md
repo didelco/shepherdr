@@ -34,7 +34,7 @@ If it fits the way you work, take it. If it doesn't, fork it and make it yours, 
 
 ## What it does
 
-- **One queue for every agent.** Sessions from all your machines, local and SSH, in your own priority order. Drag to reorder, jump with **⌘1…⌘9**, and gather them into groups that you prioritize as one.
+- **One queue for every agent.** Sessions from all your machines, local and SSH, in your own priority order. Drag to reorder, jump with **⌘1…⌘9**, gather them into groups that you prioritize as one, and keep each project's sessions and worktrees together under a heading.
 - **The real terminal, embedded.** Pick a session and type straight into its agent's TUI (⇧⏎ for a new line), or drop files and images on it for the agent to pick up, even on remote machines. Open the prompt editor when a prompt deserves more thought, or dictate it and edit the transcript.
 - **A browser per session.** Click a link and it opens next to the terminal, in tabs that stay put while you hop between sessions and come back after a restart. Paths to local files open too: Markdown rendered, HTML as a page.
 - **Resources at hand.** The pull requests, issues and Claude artifacts each session links to gather in a side panel, one click away.
@@ -43,7 +43,7 @@ If it fits the way you work, take it. If it doesn't, fork it and make it yours, 
 - **Sessions on hold.** Mark a planner as waiting for its subagents; they nest under it in a collapsible tree, and its hourglass turns green when they're done.
 - **Agents that coordinate.** Shepherdr installs a tiny `shepherdr` command and a skill for Claude Code and Codex on each machine, Linux included. Tell an agent "start a session on buildbox to fix the flaky test" and it does, nested under its own; when the new session finishes, its handoff comes back as a prompt. Your machines never connect to your Mac: Shepherdr collects what agents leave for it.
 - **Drive or just watch.** Sessions open unlocked; one click on the padlock makes them read-only. Shepherdr never steals input from another client: taking over is always your explicit call.
-- **Spawn and dismiss sessions.** **⌘N**: pick a folder and get a shell; start any agent in it and the queue picks it up.
+- **Spawn and dismiss sessions.** **⌘N**: pick a folder and get a shell; start any agent in it and the queue picks it up. Tick a box for a worktree of its own, or paste a GitHub repository or pull request: Shepherdr clones it if that machine doesn't have it and checks the pull request's branch out in a worktree.
 - **Phosphor green, 8-bit soul.** Bundled Fira Code, a pixel-art flock, and a German Shepherd keeping watch.
 
 No accounts, no telemetry, no server. Shepherdr drives the `herdr` CLI you already have (plus `ssh` for remote terminals, dropped files, machine load and the agent tools). Your prompts, terminal output and voice never touch the disk: Shepherdr only remembers your queue and, per session, its browser tabs and collected links, plus the handoffs agents send through it, kept in `~/.shepherdr` for a month. Dictation runs entirely on your Mac.

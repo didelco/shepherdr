@@ -69,14 +69,16 @@ public struct CLIHerdrClient: HerdrClient, HerdrTerminalClient {
         try requireArgument(directory, "directory")
         if let kind = request.agentKind { try requireArgument(kind, "agent") }
         let prefix = machine.profileID.map { ["--machine", $0] } ?? []
-        let output = try await execute(prefix + ["workspace", "create", "--cwd", directory, "--label", name, "--no-focus"],
-                                       timeout: max(timeout, 30))
-        try validate(output, machine: machine)
-        let created: WorkspaceCreatedDTO.Result
-        do { created = try HerdrJSON.decoder().decode(WorkspaceCreatedDTO.self, from: output.stdout).result }
-        catch { throw decodingFailure(error) }
-        var session = CreatedSession(workspaceID: created.workspace.workspaceId, paneID: created.rootPane.paneId,
-                                     terminalID: created.rootPane.terminalId)
+        var session: CreatedSession
+        if let worktree = request.worktree {
+            session = try await openWorktree(worktree, of: directory, name: name, on: machine)
+            // Its agent, if any, is already there.
+            if session.isExisting { return session }
+        } else {
+            let output = try await execute(prefix + ["workspace", "create", "--cwd", directory, "--label", name, "--no-focus"],
+                                           timeout: max(timeout, 30))
+            session = try created(from: output, on: machine)
+        }
         guard let kind = request.agentKind else { return session }
         // Herdr waits until the agent is ready for prompts, which can take a while on first launch.
         let started = try await execute(prefix + ["agent", "start", name, "--kind", kind, "--pane", session.paneID,
@@ -91,6 +93,36 @@ public struct CLIHerdrClient: HerdrClient, HerdrTerminalClient {
                                                      : "The workspace was created, but \(kind) did not start: \(failure.message)")
         }
         return session
+    }
+
+    /// The branch's worktree in a workspace: the one Herdr has open, an existing checkout opened, or a
+    /// new one Herdr creates in its worktrees folder, grouped with the repository's workspace.
+    private func openWorktree(_ worktree: NewSessionRequest.Worktree, of repository: String, name: String,
+                              on machine: Machine) async throws -> CreatedSession {
+        try requireArgument(worktree.branch, "branch")
+        if let base = worktree.base { try requireArgument(base, "base") }
+        let prefix = machine.profileID.map { ["--machine", $0] } ?? []
+        let open = try await execute(prefix + ["worktree", "open", "--cwd", repository, "--branch", worktree.branch,
+                                                "--label", name, "--no-focus"], timeout: max(timeout, 30))
+        do {
+            return try created(from: open, on: machine)
+        } catch let failure as HerdrFailure where failure.detail == "Herdr error: worktree_not_found" {
+            let base = worktree.base.map { ["--base", $0] } ?? []
+            // Git checks out a whole tree, which can take a while in a large repository.
+            let output = try await execute(prefix + ["worktree", "create", "--cwd", repository, "--branch", worktree.branch]
+                                           + base + ["--label", name, "--no-focus"], timeout: max(timeout, 120))
+            return try created(from: output, on: machine)
+        }
+    }
+
+    /// The workspace and root pane `workspace create` or `worktree create`/`open` answered with.
+    private func created(from output: CommandOutput, on machine: Machine) throws -> CreatedSession {
+        try validate(output, machine: machine)
+        let created: WorkspaceCreatedDTO.Result
+        do { created = try HerdrJSON.decoder().decode(WorkspaceCreatedDTO.self, from: output.stdout).result }
+        catch { throw decodingFailure(error) }
+        return CreatedSession(workspaceID: created.workspace.workspaceId, paneID: created.rootPane.paneId,
+                              terminalID: created.rootPane.terminalId, isExisting: created.alreadyOpen == true)
     }
 
     public func closeSession(paneID: String, on machine: Machine) async throws {

@@ -90,57 +90,90 @@ struct SessionSidebar: View {
         let filtering = !model.search.isEmpty
         // Sessions on hold list the sessions they wait for under them, instead of in their own place.
         let forest = model.waitForest
+        let items = model.queue
         return ScrollView {
             // A plain stack: the queue is short, and a lazy stack whose rows measure themselves
             // could loop on layout and freeze the window.
             VStack(alignment: .leading, spacing: 0) {
                 queueHeader
-                ForEach(model.queue) { item in
-                    switch item {
-                    case .session(let row):
+                ForEach(model.slots(of: items, forest: forest)) { slot in
+                    switch slot {
+                    case .item(.session(let row)):
                         if !forest.isNested(row.id) {
                             ForEach(forest.rows(from: row)) { tree in sessionRow(tree, in: nil, isFirst: false, isLast: false) }
                         }
-                    case .group(let group):
-                        let expanded = !group.group.isCollapsed || filtering
-                        GroupHeaderView(group: group, isExpanded: expanded,
-                                        containsSelection: model.selectedID.map(group.group.members.contains) == true,
-                                        model: model, hint: $dropHint)
-                        if expanded {
-                            let members = model.members(of: group)
-                            let listed = members.flatMap { member -> [TreeRow] in
-                                guard case .session(let row) = member, !forest.isNested(row.id) else { return [] }
-                                return forest.rows(from: row)
-                            }
-                            ForEach(members) { member in
-                                switch member {
-                                case .session(let row):
-                                    if !forest.isNested(row.id) {
-                                        ForEach(forest.rows(from: row)) { tree in
-                                            sessionRow(tree, in: group, isFirst: tree.id == listed.first?.id,
-                                                       isLast: tree.id == listed.last?.id)
-                                        }
-                                    }
-                                case .shell(let shell): shellRow(shell, grouped: true)
-                                }
-                            }
-                            if members.isEmpty {
-                                EmptyGroupView(group: group.group, model: model, hint: $dropHint)
+                    case .item(.group(let group)):
+                        groupSection(group, forest: forest, filtering: filtering)
+                    case .project(let run):
+                        ProjectHeaderView(run: run, group: nil, isFirst: false, isLast: false, model: model, hint: $dropHint)
+                        if !run.isCollapsed {
+                            ForEach(run.rows.flatMap(forest.rows(from:))) { tree in
+                                sessionRow(tree, in: nil, run: run, isFirst: false, isLast: false)
                             }
                         }
                     }
                 }
-                if model.queue.isEmpty { emptyQueue }
+                if items.isEmpty { emptyQueue }
                 QueueEndView(model: model, hint: $dropHint)
                 shellsSection
             }
         }
     }
 
+    @ViewBuilder private func groupSection(_ group: QueueGroupRow, forest: WaitForest, filtering: Bool) -> some View {
+        let expanded = !group.group.isCollapsed || filtering
+        GroupHeaderView(group: group, isExpanded: expanded,
+                        containsSelection: model.selectedID.map(group.group.members.contains) == true,
+                        model: model, hint: $dropHint)
+        if expanded {
+            let slots = model.slots(of: group, forest: forest)
+            let listed = Self.listing(slots, forest: forest)
+            // A group dragged over the first or last of these lands before or after this group; shells don't count.
+            let edges = listed.filter { if case .shell = $0 { false } else { true } }
+            ForEach(listed) { place in
+                switch place {
+                case .tree(let tree, let run):
+                    sessionRow(tree, in: group, run: run, isFirst: place.id == edges.first?.id, isLast: place.id == edges.last?.id)
+                case .heading(let run):
+                    ProjectHeaderView(run: run, group: group.group, isFirst: place.id == edges.first?.id,
+                                      isLast: place.id == edges.last?.id, model: model, hint: $dropHint)
+                case .shell(let shell):
+                    shellRow(shell, grouped: true)
+                }
+            }
+            if slots.isEmpty {
+                EmptyGroupView(group: group.group, model: model, hint: $dropHint)
+            }
+        }
+    }
+
+    /// What an expanded group lists, row by row: its sessions with those nested under them, its
+    /// projects' headings followed by their sessions, and its shells.
+    private static func listing(_ slots: [MemberSlot], forest: WaitForest) -> [GroupPlace] {
+        slots.flatMap { slot -> [GroupPlace] in
+            switch slot {
+            case .member(.session(let row)):
+                return forest.isNested(row.id) ? [] : forest.rows(from: row).map { .tree($0, nil) }
+            case .member(.shell(let shell)):
+                return [.shell(shell)]
+            case .project(let run):
+                let rows = run.isCollapsed ? [] : run.rows.flatMap(forest.rows(from:)).map { GroupPlace.tree($0, run) }
+                return [.heading(run)] + rows
+            }
+        }
+    }
+
     private var queueHeader: some View {
-        HStack(spacing: 10) {
+        let gathers = model.order.gathersProjects
+        return HStack(spacing: 10) {
             ConsoleHeader(title: "Queue", trailing: model.search.isEmpty ? "\(model.matchingRows.count)"
                                                                           : "\(model.matchingRows.count) match")
+            Button { model.order.gathersProjects.toggle() } label: {
+                Text(gathers ? "[x] projects" : "[ ] projects").font(Theme.mono(9.5, .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(gathers ? Theme.phosphor.opacity(0.8) : Theme.faint)
+            .help("Gather each project's sessions under a heading, at the top of the queue and in each group (View → Gather Sessions by Project)")
             Button { model.promptNewGroup() } label: { Text("+ group").font(Theme.mono(9.5, .semibold)) }
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.phosphor.opacity(0.8))
@@ -149,8 +182,8 @@ struct SessionSidebar: View {
         .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 4)
     }
 
-    private func sessionRow(_ tree: TreeRow, in group: QueueGroupRow?, isFirst: Bool, isLast: Bool) -> some View {
-        SessionRowView(tree: tree, group: group?.group, isFirst: isFirst, isLast: isLast,
+    private func sessionRow(_ tree: TreeRow, in group: QueueGroupRow?, run: ProjectRun? = nil, isFirst: Bool, isLast: Bool) -> some View {
+        SessionRowView(tree: tree, group: group?.group, run: run, isFirst: isFirst, isLast: isLast,
                        isSelected: model.selectedID == tree.id, showsMachine: model.showsMachineNames,
                        model: model, hint: $dropHint)
     }
@@ -255,13 +288,34 @@ private struct LidStatus: View {
     }
 }
 
+/// One row of an expanded group.
+private enum GroupPlace: Identifiable {
+    case tree(TreeRow, ProjectRun?)
+    case heading(ProjectRun)
+    case shell(ShellRow)
+
+    enum ID: Hashable { case tree(Agent.ID), heading(ProjectRunID), shell(Agent.ID) }
+
+    var id: ID {
+        switch self {
+        case .tree(let tree, _): .tree(tree.id)
+        case .heading(let run): .heading(run.id)
+        case .shell(let shell): .shell(shell.id)
+        }
+    }
+}
+
 private struct SessionRowView: View {
     /// How far each level of sessions on hold is indented.
     static let indent: CGFloat = 16
+    /// How far a project's sessions are indented under its heading.
+    static let projectIndent: CGFloat = 14
 
     let tree: TreeRow
     /// The group this row is listed in, if any; grouped rows are indented under its header.
     let group: SessionGroup?
+    /// The project heading this row is listed under, if any.
+    let run: ProjectRun?
     let isFirst: Bool
     let isLast: Bool
     let isSelected: Bool
@@ -275,7 +329,11 @@ private struct SessionRowView: View {
     private var item: QueueItemID { .session(row.id) }
     /// Listed under the session waiting for it: it moves with that session, never on its own.
     private var isNested: Bool { tree.depth > 0 }
-    private var leading: CGFloat { group == nil ? 12 : 26 }
+    /// Where the list this row is in starts: the queue's edge, or its group's indent.
+    private var listLeading: CGFloat { group == nil ? 12 : 26 }
+    private var leading: CGFloat { listLeading + (run == nil ? 0 : Self.projectIndent) }
+    /// A project's first session: a drop before it is drawn above the project's heading.
+    private var opensProject: Bool { !isNested && run?.rows.first?.id == row.id }
 
     private var accent: Color { row.agent.state == .blocked && !row.isStale ? Theme.amber : Theme.phosphor }
 
@@ -348,6 +406,9 @@ private struct SessionRowView: View {
             .overlay(alignment: .leading) {
                 if group != nil { Rectangle().fill(Theme.line).frame(width: 1).padding(.leading, 18) }
             }
+            .overlay(alignment: .leading) {
+                if run != nil { ProjectRule(leading: listLeading) }
+            }
             .overlay {
                 if isNested || (tree.nestedCount > 0 && !tree.isCollapsed) { TreeLines(tree: tree, leading: leading) }
             }
@@ -355,7 +416,7 @@ private struct SessionRowView: View {
                 Rectangle().fill(accent).frame(width: 2).opacity(selectionOpacity)
                     .shadow(color: accent, radius: isSelected ? 4 : 0)
             }
-            .dropLine(.top, hint == .before(item))
+            .dropLine(.top, hint == .before(item) && !opensProject)
             // A drop after a session with nested ones lands after all of them, so its line is drawn there.
             .dropLine(.bottom, closesDropLine)
     }
@@ -369,6 +430,16 @@ private struct SessionRowView: View {
     private func drop(of dragged: QueueItemID, at y: CGFloat) -> QueueDrop? {
         let upper = y < height.value / 2
         let root = QueueItemID.session(tree.root)
+        // Only the project's own sessions go among its sessions. Anything else lands before or
+        // after the whole project, and a group next to the group the project is in.
+        if let run, let first = run.rows.first?.id, let last = run.rows.last?.id, !isSameProject(dragged) {
+            if case .group(let draggedGroup) = dragged, let group {
+                return group.id == draggedGroup ? nil : .after(.group(group.id))
+            }
+            let target = upper && row.id == first && !isNested ? first : last
+            guard dragged != .session(target) else { return nil }
+            return target == first ? .before(.session(first)) : .after(.session(last))
+        }
         switch dragged {
         case .session(let id):
             guard id != row.id else { return nil }
@@ -381,6 +452,11 @@ private struct SessionRowView: View {
             guard group.id != draggedGroup else { return nil }
             return upper && isFirst ? .before(.group(group.id)) : .after(.group(group.id))
         }
+    }
+
+    private func isSameProject(_ dragged: QueueItemID) -> Bool {
+        guard case .session(let id) = dragged, let run, let other = model.row(for: id) else { return false }
+        return model.project(of: other) == run.id.project
     }
 
     @ViewBuilder private var menu: some View {
@@ -415,13 +491,8 @@ private struct SessionRowView: View {
     }
 
     @ViewBuilder private var waitMenu: some View {
-        Menu("Wait For") {
-            ForEach(model.rankedRows.filter { $0.id != row.id }) { other in
-                Toggle(showsMachine ? "\(other.workspace) @\(other.machineName)" : other.workspace,
-                       isOn: Binding { model.relations.isWaiting(row.id, for: other.id) }
-                                 set: { model.relations.setWaiting(row.id, for: other.id, $0) })
-            }
-        }
+        Button("Wait For…") { model.pickWaits(for: row.id) }
+            .disabled(model.rankedRows.count < 2)
         if !model.relations.waitingFor(row.id).isEmpty {
             Button("Resume (Stop Waiting)") { model.relations.stopWaiting(row.id) }
         }
@@ -647,6 +718,104 @@ private struct GroupHeaderView: View {
     }
 }
 
+/// A project's heading: its sessions in this list follow it, indented. Lighter than a group's
+/// header, which it can sit in. Click to collapse or expand; ▲▼ move the whole project.
+private struct ProjectHeaderView: View {
+    /// Fixed, so the controls shown on hover never change the row's height.
+    private static let contentHeight: CGFloat = 20
+
+    let run: ProjectRun
+    /// The group the project is listed in, if any.
+    let group: SessionGroup?
+    /// Whether the heading is the first or last place of its group, for drops next to the group.
+    let isFirst: Bool
+    let isLast: Bool
+    let model: AppModel
+    @Binding var hint: QueueDrop?
+    @ViewState<Bool> private var hovering = false
+    @ViewState private var height = RowHeight(24)
+
+    private var first: Agent.ID? { run.rows.first?.id }
+    private var last: Agent.ID? { run.rows.last?.id }
+
+    var body: some View {
+        let live = run.rows.filter { !$0.isStale }
+        let blocked = live.filter { $0.agent.state == .blocked }.count
+        let working = live.filter { $0.agent.state == .working }.count
+        let containsSelection = model.selectedID.map { id in run.rows.contains { $0.id == id } } == true
+        HStack(spacing: 6) {
+            Text(run.isCollapsed ? "▸" : "▾").font(Theme.mono(10, .bold))
+                .foregroundStyle(Theme.dim).frame(width: 12)
+            Image(systemName: "folder").font(.system(size: 8.5, weight: .semibold)).foregroundStyle(Theme.dim)
+            Text(run.id.project).font(Theme.mono(11, .medium)).lineLimit(1).truncationMode(.middle)
+                .foregroundStyle(containsSelection && run.isCollapsed ? Theme.phosphor : Theme.text.opacity(0.7))
+            Text("\(run.rows.count)").font(Theme.mono(9.5)).foregroundStyle(Theme.faint)
+            Spacer(minLength: 4)
+            if blocked > 0 {
+                Text("\(blocked) need you").font(Theme.mono(9.5, .semibold)).foregroundStyle(Theme.amber).lineLimit(1)
+            } else if working > 0 {
+                Text("\(working) working").font(Theme.mono(9.5)).foregroundStyle(Theme.dim).lineLimit(1)
+            }
+            if hovering { ReorderArrows(project: run.id, model: model) }
+        }
+        .frame(height: Self.contentHeight)
+        .padding(.leading, group == nil ? 12 : 26).padding(.trailing, 8).padding(.top, 3).padding(.bottom, 1)
+        .background(hovering ? Theme.raised.opacity(0.5) : .clear)
+        .overlay(alignment: .leading) {
+            if group != nil { Rectangle().fill(Theme.line).frame(width: 1).padding(.leading, 18) }
+        }
+        // While collapsed, its sessions can't show they need you.
+        .overlay(alignment: .leading) { Rectangle().fill(Theme.amber).frame(width: 2).opacity(blocked > 0 && run.isCollapsed ? 0.6 : 0) }
+        .dropLine(.top, first.map { hint == .before(.session($0)) } == true)
+        .dropLine(.bottom, run.isCollapsed && closesDropLine)
+        .measuringHeight(height)
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.snappy(duration: 0.18)) { model.toggleCollapsed(run.id) } }
+        .onHover { hovering = $0 }
+        .help("\(run.isCollapsed ? "Expand" : "Collapse") \(run.id.project): \(run.rows.count) sessions of this project\(group.map { " in \($0.name)" } ?? "").")
+        .onDrop(of: [.plainText], delegate: QueueDropDelegate(model: model, hint: $hint) { dragged, y in drop(of: dragged, at: y) })
+        .contextMenu {
+            Button(run.isCollapsed ? "Expand" : "Collapse") { model.toggleCollapsed(run.id) }
+            Divider()
+            PriorityMenu(project: run.id, model: model)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Project \(run.id.project), \(run.rows.count) sessions\(blocked > 0 ? ", \(blocked) need you" : "")")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// A collapsed heading stands for its sessions: a drop after the last one is drawn below it.
+    private var closesDropLine: Bool {
+        if let last, hint == .after(.session(last)) { return true }
+        guard isLast, let group else { return false }
+        return hint == .after(.group(group.id))
+    }
+
+    private func drop(of dragged: QueueItemID, at y: CGFloat) -> QueueDrop? {
+        guard let first, let last else { return nil }
+        let upper = y < height.value / 2
+        // Groups never nest: over a grouped project, a group lands next to that group.
+        if case .group(let draggedGroup) = dragged, let group {
+            guard draggedGroup != group.id else { return nil }
+            return upper && isFirst ? .before(.group(group.id)) : .after(.group(group.id))
+        }
+        let target = upper || !run.isCollapsed ? first : last
+        guard dragged != .session(target) else { return nil }
+        return target == first ? .before(.session(first)) : .after(.session(last))
+    }
+}
+
+/// The line down a project's sessions, under its heading's ▾.
+private struct ProjectRule: View {
+    /// Where the project's list starts.
+    let leading: CGFloat
+
+    var body: some View {
+        Rectangle().fill(Theme.line.opacity(0.7)).frame(width: 1).padding(.leading, leading + 6)
+            .allowsHitTesting(false)
+    }
+}
+
 /// Stands in for an expanded group's sessions until the first one is dropped in.
 private struct EmptyGroupView: View {
     let group: SessionGroup
@@ -682,10 +851,22 @@ private struct QueueEndView: View {
 }
 
 private struct ReorderArrows: View {
-    let item: QueueItemID
-    let model: AppModel
+    let canMove: @MainActor (SessionOrderStore.Move) -> Bool
+    let move: @MainActor (SessionOrderStore.Move) -> Void
     /// Whether to mention ⌥⌘↑/↓, which act on the selected session.
     let shortcuts: Bool
+
+    init(item: QueueItemID, model: AppModel, shortcuts: Bool) {
+        canMove = { model.canMove(item, $0) }
+        move = { model.move(item, $0) }
+        self.shortcuts = shortcuts
+    }
+
+    init(project: ProjectRunID, model: AppModel) {
+        canMove = { model.canMove(project, $0) }
+        move = { model.move(project, $0) }
+        shortcuts = false
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -695,26 +876,37 @@ private struct ReorderArrows: View {
     }
 
     private func arrow(_ glyph: String, _ direction: SessionOrderStore.Move, help: String) -> some View {
-        Button { withAnimation(.snappy(duration: 0.18)) { model.move(item, direction) } } label: {
+        let enabled = canMove(direction)
+        return Button { withAnimation(.snappy(duration: 0.18)) { move(direction) } } label: {
             Text(glyph).font(.system(size: 7)).frame(width: 18, height: 13).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(model.canMove(item, direction) ? Theme.phosphor : Theme.faint.opacity(0.5))
-        .disabled(!model.canMove(item, direction))
+        .foregroundStyle(enabled ? Theme.phosphor : Theme.faint.opacity(0.5))
+        .disabled(!enabled)
         .help(help)
     }
 }
 
-/// Priority commands shared by session and group context menus.
+/// Priority commands shared by session, group and project context menus.
 private struct PriorityMenu: View {
-    let item: QueueItemID
-    let model: AppModel
+    let canMove: @MainActor (SessionOrderStore.Move) -> Bool
+    let move: @MainActor (SessionOrderStore.Move) -> Void
+
+    init(item: QueueItemID, model: AppModel) {
+        canMove = { model.canMove(item, $0) }
+        move = { model.move(item, $0) }
+    }
+
+    init(project: ProjectRunID, model: AppModel) {
+        canMove = { model.canMove(project, $0) }
+        move = { model.move(project, $0) }
+    }
 
     var body: some View {
-        Button("Move to Top") { model.move(item, .first) }.disabled(!model.canMove(item, .first))
-        Button("Raise Priority") { model.move(item, .up) }.disabled(!model.canMove(item, .up))
-        Button("Lower Priority") { model.move(item, .down) }.disabled(!model.canMove(item, .down))
-        Button("Move to Bottom") { model.move(item, .last) }.disabled(!model.canMove(item, .last))
+        Button("Move to Top") { move(.first) }.disabled(!canMove(.first))
+        Button("Raise Priority") { move(.up) }.disabled(!canMove(.up))
+        Button("Lower Priority") { move(.down) }.disabled(!canMove(.down))
+        Button("Move to Bottom") { move(.last) }.disabled(!canMove(.last))
     }
 }
 
@@ -736,12 +928,17 @@ private struct QueueDropDelegate: DropDelegate {
 
     func dropExited(info: DropInfo) {
         // Rows overlap at their edges: only clear the hint this row set.
-        if let item = model.dragging, hint == resolve(item, info.location.y) { hint = nil }
+        if let item = model.dragging, hint == landing(item, info.location.y) { hint = nil }
+    }
+
+    /// Where the item would land, unless the queue keeps it from going there.
+    private func landing(_ item: QueueItemID, _ y: CGFloat) -> QueueDrop? {
+        resolve(item, y).flatMap { model.allowsDrop(item, $0) ? $0 : nil }
     }
 
     func performDrop(info: DropInfo) -> Bool {
         defer { hint = nil }
-        guard let item = model.dragging, let drop = resolve(item, info.location.y),
+        guard let item = model.dragging, let drop = landing(item, info.location.y),
               let provider = info.itemProviders(for: [.plainText]).first else {
             model.dragging = nil
             return false
@@ -762,7 +959,7 @@ private struct QueueDropDelegate: DropDelegate {
 
     private func update(_ info: DropInfo) {
         guard let item = model.dragging else { return }
-        hint = resolve(item, info.location.y)
+        hint = landing(item, info.location.y)
     }
 }
 

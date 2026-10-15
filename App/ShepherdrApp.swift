@@ -38,6 +38,10 @@ struct ShepherdrApp: App {
                     .keyboardShortcut("r", modifiers: .command)
                     .disabled(model.cluster.isRefreshing)
             }
+            CommandGroup(after: .sidebar) {
+                Toggle("Gather Sessions by Project", isOn: Binding { model.order.gathersProjects }
+                                                               set: { model.order.gathersProjects = $0 })
+            }
             CommandMenu("Session") {
                 Button("Overview") { model.selection = .overview }
                     .keyboardShortcut("0", modifiers: .command)
@@ -77,6 +81,8 @@ struct ShepherdrApp: App {
                     .keyboardShortcut(.upArrow, modifiers: [.command, .option, .shift])
                     .disabled(!model.canMove(model.selectedID, .first))
                 Divider()
+                Button("Wait For…") { if let id = model.selectedID { model.pickWaits(for: id) } }
+                    .disabled(model.selectedID.flatMap(model.row(for:)) == nil || model.rankedRows.count < 2)
                 Button("New Group…") { model.promptNewGroup(with: model.selectedID) }
             }
             CommandGroup(replacing: .help) {
