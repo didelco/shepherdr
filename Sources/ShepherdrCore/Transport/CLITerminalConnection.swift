@@ -170,7 +170,7 @@ final class CLITerminalConnection: HerdrTerminalConnection, @unchecked Sendable 
     private func finishIfDrained() {
         guard outputEnded, errorsEnded, let exitCode else { return }
         if exitCode != 0 || !receivedFrame || !lineBuffer.isEmpty {
-            let detail = String(decoding: diagnostics, as: UTF8.self).nonempty
+            let detail = String(decoding: diagnostics, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).nonempty
             finish(HerdrFailure(exitCode == 2 ? .incompatible : .unreachable,
                                 "Could not keep the Herdr terminal connected (exit \(exitCode)).",
                                 detail: detail ?? "Herdr must support terminal session observe/control and the existing terminal must still be available."))

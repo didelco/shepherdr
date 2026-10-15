@@ -154,15 +154,22 @@ private actor MockTerminalClient: HerdrTerminalClient {
     var busy: Int
     /// How far back Herdr shows the terminal.
     var history = 0
-    init(_ connections: [MockTerminalConnection], conflicted: Set<TerminalMode> = [], busy: Int = 0) {
+    /// How many attaches fail before connecting, such as while SSH can't reach the machine.
+    var failing: Int
+    init(_ connections: [MockTerminalConnection], conflicted: Set<TerminalMode> = [], busy: Int = 0, failing: Int = 0) {
         self.connections = connections
         self.conflicted = conflicted
         self.busy = busy
+        self.failing = failing
     }
     func linesBack(in target: TerminalTarget) async throws -> Int? { history }
     func scrolled(to lines: Int) { history = lines }
     func connect(to target: TerminalTarget, mode: TerminalMode, size: TerminalSize) async throws -> any HerdrTerminalConnection {
         modes.append(mode)
+        if failing > 0 {
+            failing -= 1
+            throw HerdrFailure(.unreachable, "Could not keep the Herdr terminal connected (exit 255).")
+        }
         let connection = connections.removeFirst()
         if busy > 0 {
             busy -= 1
@@ -303,6 +310,64 @@ private actor MockTerminalClient: HerdrTerminalClient {
         try await wait { store.status == .observing }
         store.scroll(up: true, lines: 5)
         #expect(observer.scrolls.isEmpty)
+    }
+
+    @Test func aDroppedConnectionReconnectsOnItsOwn() async throws {
+        let first = MockTerminalConnection()
+        let second = MockTerminalConnection()
+        let client = MockTerminalClient([first, second])
+        let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
+        let store = TerminalStore(target: target, mode: .control, client: client,
+                                  reconnecting: .init(first: .milliseconds(30), longest: .seconds(1), budget: .seconds(60)))
+        defer { store.disconnect() }
+        store.open()
+        try await wait { store.status == .interactive }
+        first.continuation.finish(throwing: HerdrFailure(.unreachable, "Connection lost"))
+        try await wait { store.status == .failed }
+        #expect(store.reconnection?.attempts == 0 && store.reconnection?.next != nil)
+        #expect(store.message == "Connection lost")
+        try await wait { store.status == .interactive }
+        #expect(store.reconnection == nil)
+        #expect(store.message == nil)
+        #expect(await client.requestedModes() == [.control, .control])
+    }
+
+    @Test func reconnectingBacksOffAndGivesUpAfterItsBudget() async throws {
+        let policy = ReconnectPolicy.standard
+        #expect([0, 1, 3, 8, 9, 40].map(policy.delay(after:)) == [.seconds(1), .seconds(2), .seconds(8), .seconds(256), .seconds(300), .seconds(300)])
+        let client = MockTerminalClient([MockTerminalConnection()], failing: 100)
+        let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
+        let store = TerminalStore(target: target, client: client,
+                                  reconnecting: .init(first: .milliseconds(5), longest: .milliseconds(20), budget: .milliseconds(80)))
+        defer { store.disconnect() }
+        store.open()
+        try await wait { store.reconnection?.gaveUp == true }
+        let attempts = try #require(store.reconnection?.attempts)
+        #expect(attempts >= 3)
+        #expect(await client.requestedModes().count == attempts + 1)
+        #expect(store.status == .failed && store.reconnection?.next == nil)
+        // Giving up stops trying until the user reconnects, which starts over.
+        try await Task.sleep(for: .milliseconds(60))
+        #expect(await client.requestedModes().count == attempts + 1)
+        store.open()
+        #expect(store.reconnection == nil)
+    }
+
+    @Test func aTerminalThatIsGoneIsNotRetried() async throws {
+        let gone = MockTerminalConnection()
+        let client = MockTerminalClient([gone])
+        let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
+        let store = TerminalStore(target: target, client: client,
+                                  reconnecting: .init(first: .milliseconds(5), longest: .milliseconds(5), budget: .seconds(60)))
+        defer { store.disconnect() }
+        store.open()
+        try await wait { store.status == .observing }
+        gone.continuation.yield(.closed("terminal attach ended: terminal a not found"))
+        gone.continuation.finish()
+        try await wait { store.status == .ended }
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(store.reconnection == nil)
+        #expect(await client.requestedModes() == [.observe])
     }
 
     @Test func testControlConflictFallsBackToWatchingUntilUserTakesOver() async throws {

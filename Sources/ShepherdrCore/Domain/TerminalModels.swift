@@ -85,6 +85,28 @@ public struct TerminalSize: Equatable, Sendable {
     }
 }
 
+/// How a terminal reconnects on its own after its connection drops: the wait doubles after each
+/// attempt up to the longest, and it stops trying once it has tried for the whole budget.
+/// Time counts only while the Mac is awake.
+public struct ReconnectPolicy: Sendable {
+    public let first: Duration
+    public let longest: Duration
+    public let budget: Duration
+
+    public init(first: Duration, longest: Duration, budget: Duration) {
+        self.first = first
+        self.longest = longest
+        self.budget = budget
+    }
+
+    public static let standard = ReconnectPolicy(first: .seconds(1), longest: .seconds(300), budget: .seconds(3_600))
+
+    /// The wait before the next attempt, after this many failed ones.
+    public func delay(after attempts: Int) -> Duration {
+        min(first * (1 << min(max(attempts, 0), 20)), longest)
+    }
+}
+
 public struct TerminalFrame: Equatable, Sendable {
     public let bytes: Data
     public let columns: Int

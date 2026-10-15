@@ -133,10 +133,6 @@ struct SessionView: View {
                 StateTag(state: agent.agent.state, stale: agent.isStale)
             }
             lockButton
-            Button { terminal.open() } label: { Text("↻") }
-                .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
-                .disabled(terminal.status == .connecting || !context.canConnect)
-                .help("Reconnect to this terminal")
             Button { showDetails.toggle() } label: { Text("i") }
                 .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
                 .help("Session details")
@@ -174,7 +170,9 @@ struct SessionView: View {
     // MARK: Banners and states
 
     private func banner(_ message: String, dismiss: (() -> Void)? = nil, action: (String, () -> Void)? = nil) -> some View {
-        let failed = terminal.status == .failed
+        // A connection that drops stays red while it reconnects, even between attempts.
+        let failed = terminal.status == .failed || terminal.reconnection != nil
+        let reconnection = dismiss == nil && action == nil ? terminal.reconnection : nil
         return HStack(alignment: .top, spacing: 10) {
             Text(failed ? "✗" : "!").font(Theme.mono(12, .bold))
             VStack(alignment: .leading, spacing: 3) {
@@ -182,6 +180,7 @@ struct SessionView: View {
                 if let detail = terminal.detail {
                     Text(detail).font(Theme.mono(10)).foregroundStyle(Theme.dim).lineLimit(4).textSelection(.enabled)
                 }
+                if let reconnection { ReconnectionLine(reconnection: reconnection) }
             }
             Spacer(minLength: 8)
             if let dismiss {
@@ -190,8 +189,10 @@ struct SessionView: View {
                 Button(action.0, action: action.1).buttonStyle(ConsoleButtonStyle(tint: Theme.amber))
                     .disabled(terminal.status == .connecting)
                     .help("Detach the other client's input and control this terminal from Shepherdr")
-            } else if terminal.status == .failed || terminal.status == .ended {
+            } else if terminal.status == .failed || terminal.status == .ended || reconnection != nil {
                 Button("RECONNECT") { terminal.open() }.buttonStyle(ConsoleButtonStyle(tint: Theme.amber))
+                    .disabled(reconnection?.gaveUp == false)
+                    .help(reconnection?.gaveUp == false ? "Shepherdr is reconnecting on its own" : "Reconnect to this terminal")
             }
         }
         .foregroundStyle(failed ? Theme.red : Theme.amber)
@@ -551,6 +552,29 @@ private struct HistoryBadge: View {
                            : "Herdr shows earlier output here. Unlock the session to scroll back down.")
                 .padding(.trailing, 24).padding(.bottom, 10)
         }
+    }
+}
+
+/// When the dropped terminal tries again, or how many times it tried before giving up.
+private struct ReconnectionLine: View {
+    let reconnection: TerminalStore.Reconnection
+
+    var body: some View {
+        Group {
+            if reconnection.gaveUp {
+                Text("Tried to reconnect \(reconnection.attempts) time\(reconnection.attempts == 1 ? "" : "s") over an hour. Please reconnect manually.")
+            } else if let next = reconnection.next {
+                // The countdown stops while the Mac sleeps, as the wait does.
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    let left = SuspendingClock.now.duration(to: next)
+                    let seconds = max(1, Int(left.components.seconds) + (left.components.attoseconds > 0 ? 1 : 0))
+                    Text("Reconnecting in \(Duration.seconds(seconds).formatted(.units(allowed: [.minutes, .seconds], width: .narrow))) (attempt \(reconnection.attempts + 1))")
+                }
+            } else {
+                Text("Reconnecting… (attempt \(reconnection.attempts))")
+            }
+        }
+        .font(Theme.mono(10.5)).foregroundStyle(Theme.amber)
     }
 }
 
