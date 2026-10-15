@@ -726,6 +726,18 @@ final class AppModel {
 
     // MARK: Sessions on hold
 
+    /// A session whose awaited sessions are being picked, in a sheet.
+    struct WaitPicking: Identifiable {
+        let session: Agent.ID
+        var id: Agent.ID { session }
+    }
+
+    var waitPicking: WaitPicking?
+
+    func pickWaits(for id: Agent.ID) {
+        waitPicking = WaitPicking(session: id)
+    }
+
     func waitState(for id: Agent.ID) -> WaitState? {
         let awaited = relations.waitingFor(id)
         guard !awaited.isEmpty else { return nil }
