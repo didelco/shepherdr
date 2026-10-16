@@ -78,7 +78,7 @@ Local executable discovery does not source shell startup files. Inherited `HERDR
 
 ## Overview
 
-**⌘0** shows the overview. Its first row counts the sessions that need you, are working, are done or are idle. The second has a card per machine with how many sessions it has and how busy it is, to help choose where the next agent goes: processor use over one second, memory in use, and the disk holding the home folder, amber from 70% and red from 90%.
+**⌘0** shows the overview. Its first row counts the sessions that need you, are working, are on hold, are done or are idle. A session [on hold](#sessions-on-hold) counts as on hold, not by its agent's state, which is usually idle or done while it waits: its card shows the hourglass and **ON HOLD**, or **READY** once the sessions it waits for have finished. If its agent works or needs you meanwhile, it counts as that. The second has a card per machine with how many sessions it has and how busy it is, to help choose where the next agent goes: processor use over one second, memory in use, and the disk holding the home folder, amber from 70% and red from 90%.
 
 Click a state or a machine to show only its sessions, and click more to add them: the sessions that need you on two machines, say. Each row counts what the other row lets through. Click a card again to drop it, or **SHOW ALL** to see every session again. The sidebar's queue is never filtered. A machine that isn't answering shows its sessions' last known state, so they are left out once you choose a state.
 

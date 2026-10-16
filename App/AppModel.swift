@@ -406,7 +406,12 @@ final class AppModel {
     /// Sessions matching the filter, in priority order, whether or not their group is collapsed.
     var matchingRows: [AgentRow] { rankedRows.filter { $0.matches(search) } }
     /// The overview's sessions: those matching the search, in the chosen states and on the chosen machines.
-    var overviewRows: [AgentRow] { matchingRows.filter(sessionFilter.includes) }
+    var overviewRows: [AgentRow] {
+        let held = heldSessions
+        return matchingRows.filter { sessionFilter.includes($0, held: held) }
+    }
+    /// Sessions waiting for others, which the overview shows as on hold.
+    var heldSessions: Set<Agent.ID> { Set(relations.waits.keys) }
 
     /// The queue as the sidebar shows it. While filtering, groups list only their matching
     /// sessions, unless the group's own name matches.

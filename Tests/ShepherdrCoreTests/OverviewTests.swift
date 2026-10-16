@@ -50,6 +50,30 @@ struct OverviewTests {
         #expect(filter.isEmpty)
     }
 
+    @Test func sessionsOnHoldCountAsOnHoldUnlessTheirAgentWorksOrNeedsYou() {
+        let rows = [row("planner", .done), row("lead", .idle, on: "remote:forge"), row("busy", .working), row("asks", .blocked),
+                    row("free", .done), row("old", .idle, on: "remote:mini", stale: true)]
+        let held: Set<Agent.ID> = Set(["planner", "lead", "busy", "asks", "old"].compactMap { name in rows.first { $0.workspace == name }?.id })
+        var filter = SessionFilter()
+        #expect(filter.countOnHold(in: rows, held: held) == 2)
+        #expect(filter.count(.done, in: rows, held: held) == 1)
+        #expect(filter.count(.idle, in: rows, held: held) == 0)
+        #expect(filter.count(.working, in: rows, held: held) == 1)
+        #expect(filter.count(.blocked, in: rows, held: held) == 1)
+
+        filter.toggleOnHold()
+        #expect(!filter.isEmpty)
+        #expect(rows.filter { filter.includes($0, held: held) }.map(\.workspace) == ["planner", "lead"])
+        filter.toggle(.done)
+        #expect(rows.filter { filter.includes($0, held: held) }.map(\.workspace) == ["planner", "lead", "free"])
+        filter.toggle(machine: "remote:forge")
+        #expect(rows.filter { filter.includes($0, held: held) }.map(\.workspace) == ["lead"])
+        #expect(filter.countOnHold(in: rows, held: held) == 1)
+        #expect(filter.count(machine: "local", in: rows, held: held) == 2)
+        // Without holds, they count by their agents' states, as before.
+        #expect(SessionFilter().count(.done, in: rows) == 2)
+    }
+
     @Test func foldersInUseComeMostUsedFirstWithoutWorktrees() {
         let rows = [row("a", .working, in: "/p/shepherdr"), row("b", .idle, in: "/p/herdr/"), row("c", .done, in: "/p/herdr"),
                     row("d", .working, in: "/p/shepherdr-wt"), row("e", .idle, in: "/p/api"), row("f", .idle, in: nil),
