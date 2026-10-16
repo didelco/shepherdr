@@ -109,6 +109,37 @@ struct GitHubInboxTests {
         #expect(byNumber[5]?.linkedPullRequests.isEmpty == true)
     }
 
+    @Test func pullRequestsKnowWhatLandingThemTakes() throws {
+        let sized = """
+        {"data":{"viewer":{"login":"chema"},
+          "reviews":{"nodes":[
+            {"number":4,"title":"Stacked","url":"https://github.com/a/b/pull/4","updatedAt":"2026-10-03T00:00:00Z",
+             "author":{"login":"ana"},"repository":{"nameWithOwner":"a/b"},"isDraft":false,"reviewDecision":null,
+             "additions":120,"deletions":30,"changedFiles":7,"createdAt":"2026-10-01T09:00:00.5Z",
+             "baseRefName":"feature-a","headRefName":"feature-b","isCrossRepository":true,"mergeable":"CONFLICTING"},
+            {"number":5,"title":"Unknown","url":"https://github.com/a/b/pull/5","updatedAt":"2026-10-02T00:00:00Z",
+             "author":{"login":"ana"},"repository":{"nameWithOwner":"a/b"},
+             "additions":1,"deletions":0,"changedFiles":1,"createdAt":"2026-10-01T00:00:00Z",
+             "baseRefName":"main","headRefName":"fix","mergeable":"UNKNOWN"},
+            {"number":6,"title":"Sizeless","url":"https://github.com/a/b/pull/6","updatedAt":"2026-10-01T00:00:00Z",
+             "author":{"login":"ana"},"repository":{"nameWithOwner":"a/b"},"baseRefName":"main","headRefName":"x"}]},
+          "issues":{"nodes":[
+            {"number":7,"title":"Issue","url":"https://github.com/a/b/issues/7","updatedAt":"2026-10-01T00:00:00Z",
+             "author":{"login":"ana"},"repository":{"nameWithOwner":"a/b"},"additions":1,"deletions":0,"changedFiles":1,
+             "createdAt":"2026-10-01T00:00:00Z","baseRefName":"main","headRefName":"x"}]}
+        }}
+        """
+        let inbox = try #require(GitHubLookup.parseInbox(Data(sized.utf8)))
+        let byNumber = Dictionary(uniqueKeysWithValues: inbox.items.map { ($0.number, $0) })
+        let stacked = try #require(byNumber[4]?.details)
+        #expect(stacked.additions == 120 && stacked.deletions == 30 && stacked.changedFiles == 7)
+        #expect(stacked.baseBranch == "feature-a" && stacked.headBranch == "feature-b" && stacked.isFromFork && stacked.hasConflicts)
+        #expect(abs(stacked.createdAt.timeIntervalSince(ISO8601DateFormatter().date(from: "2026-10-01T09:00:00Z")!) - 0.5) < 0.001)
+        // GitHub still working out whether it merges cleanly is no conflict.
+        #expect(byNumber[5]?.details?.hasConflicts == false && byNumber[5]?.details?.isFromFork == false)
+        #expect(byNumber[6]?.details == nil && byNumber[7]?.details == nil)
+    }
+
     @Test func oneQueryCarriesTheSearchesAsVariables() async throws {
         let runner = RecordingRunner([output(answer)])
         let lookup = GitHubLookup(runner: runner, executable: gh)
@@ -125,6 +156,8 @@ struct GitHubInboxTests {
                                + "timelineItems(itemTypes: [CONNECTED_EVENT, CROSS_REFERENCED_EVENT], first: 10)"))
         #expect(query.contains("... on CrossReferencedEvent { willCloseTarget source { __typename ... on PullRequest { number state isDraft url } } }"))
         #expect(query.contains("... on ConnectedEvent { subject { __typename ... on PullRequest { number state isDraft url } } }"))
+        #expect(query.contains("... on PullRequest { number title url updatedAt author { login } repository { nameWithOwner } isDraft reviewDecision "
+                               + "additions deletions changedFiles createdAt baseRefName headRefName isCrossRepository mergeable }"))
         #expect(Array(arguments.dropFirst(4)) == [
             "-f", "q0=is:open is:issue archived:false assignee:@me repo:theam/shepherdr repo:theam/tam-os",
             "-f", "q1=is:open is:pr archived:false review-requested:@me repo:theam/shepherdr repo:theam/tam-os",
