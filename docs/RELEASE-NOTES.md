@@ -1,14 +1,18 @@
 Native macOS console for herding your coding agents across your Herdr machines: one prioritized queue, the real terminal of every session, a browser per session, and a notification when it's your turn.
 
-### What's new in 0.8.5
+### What's new in 0.8.6
 
-- **Terminals reconnect on their own.** When a terminal's connection drops, the banner counts down to the next attempt and Shepherdr tries again, waiting twice as long each time, up to 5 minutes. After an hour of trying it says how many times it tried and leaves **RECONNECT** to you. Time asleep with the lid closed doesn't count. The ↻ button in the session's header is gone.
-- **Agents that coordinate.** Shepherdr can install a small `shepherdr` command and a skill for Claude Code and Codex on each of your machines, Linux included. Ask an agent to "start a session on buildbox that fixes the failing test": the new session starts there, nests under the agent's own, and hands its result back as a prompt when it's done. Agents can also pin links to Resources, open pages in the session's browser and notify you. Requests from other machines wait for your approval in the session's mail panel. **Settings → Agents** manages the tools on each machine.
-- **The guide comes with the app.** **Help → Shepherdr Guide** (**⌘?**), or **?** at the foot of the sidebar, opens a visual quick guide in English and Spanish in the built-in browser, and **Help → Herdr Documentation** opens there too. The overview has a browser of its own for them (**⌘B**).
+- **Compass, a page of your day.** A second mode (**⌥⌘2**) where an agent of its own keeps a page of what deserves your attention, updated on the schedule you choose in **Settings → Compass**. Talk to it in its terminal beside the page, and use the page's buttons to start the sessions it suggests. Its pages can be kept in a Git remote and restored from it.
+- **Sessions from GitHub links and in worktrees.** Paste a repository's link in **New Session** and Shepherdr opens your clone, or clones it into that machine's projects folder first. Paste a pull request's link and it opens a worktree of its branch, with the pull request in **Resources**. **IN A NEW WORKTREE** works on any folder. Each machine now has a projects folder of its own, in **Settings → Machines**; on another machine, a folder name alone now means a folder inside it.
+- **Projects inside groups.** Turn on **projects** in the queue's header to gather each repository's sessions, worktrees included, under a heading of their own.
+- **Hand off and close.** A session that others wait for can wrap up with **HANDOFF AND CLOSE**: its agent hands its work back with `shepherdr handoff`, and Shepherdr closes the session once the handoff arrives.
+- **Find sessions by typing.** **Wait For…** opens a search instead of a long menu: a few letters, **↑**/**↓** and **Return**, with `@` for a machine.
+- **Click a session named in a terminal.** Pane IDs such as `w5:p1`, terminal IDs and other sessions' names open those sessions.
 
 ### Fixed
 
-- The bottom bar showed **RESOURCES** and **BROWSER** as bare icons in most windows. The labels now stay whenever they fit.
+- A session waiting for a shell, such as a script, never stopped waiting. Now the wait ends when the command finishes.
+- A session waiting for one that had closed kept waiting and showed "session gone". Closed sessions now drop out of holds.
 
 ### Download and install
 
