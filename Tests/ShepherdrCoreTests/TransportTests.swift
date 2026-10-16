@@ -101,7 +101,8 @@ import Foundation
             Issue.record("Expected timeout")
         } catch CommandError.timedOut { }
         catch { Issue.record("Unexpected \(error)") }
-        #expect(Date().timeIntervalSince(start) < 2)
+        // Well short of the 10 seconds it would sleep; CI's runner took 2.4 seconds to get here.
+        #expect(Date().timeIntervalSince(start) < 5)
     }
 
     @Test func testRealProcessCancellationIsBounded() async throws {
