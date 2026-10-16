@@ -66,6 +66,49 @@ struct GitHubInboxTests {
         #expect(GitHubLookup.parseInbox(Data("nope".utf8)) == nil)
     }
 
+    @Test func issuesKnowThePullRequestsLinkedToThem() throws {
+        func pull(_ number: Int, _ state: String, draft: Bool = false, repo: String = "a/b") -> String {
+            #"{"__typename":"PullRequest","number":\#(number),"state":"\#(state)","isDraft":\#(draft),"url":"https://github.com/\#(repo)/pull/\#(number)"}"#
+        }
+        let linked = """
+        {"data":{"viewer":{"login":"chema"},
+          "issues":{"nodes":[
+            {"number":1,"title":"Linked","url":"https://github.com/a/b/issues/1","updatedAt":"2026-10-03T00:00:00Z",
+             "author":{"login":"x"},"repository":{"nameWithOwner":"a/b"},
+             "timelineItems":{"nodes":[
+               {"__typename":"ConnectedEvent","subject":\(pull(5, "OPEN", draft: true))},
+               {"__typename":"CrossReferencedEvent","willCloseTarget":true,"source":\(pull(6, "MERGED"))},
+               {"__typename":"CrossReferencedEvent","willCloseTarget":false,"source":\(pull(7, "OPEN"))},
+               {"__typename":"CrossReferencedEvent","willCloseTarget":true,"source":\(pull(5, "OPEN", draft: true))},
+               {"__typename":"CrossReferencedEvent","willCloseTarget":true,"source":\(pull(5, "OPEN", repo: "c/d"))},
+               {"__typename":"CrossReferencedEvent","willCloseTarget":true,"source":{"__typename":"Issue","number":8,"url":"https://github.com/a/b/issues/8"}},
+               {"__typename":"ConnectedEvent","subject":{"__typename":"Issue","number":9,"url":"https://github.com/a/b/issues/9"}},
+               {"__typename":"ConnectedEvent","subject":null},
+               {}]}},
+            {"number":2,"title":"Mentioned only","url":"https://github.com/a/b/issues/2","updatedAt":"2026-10-02T00:00:00Z",
+             "author":{"login":"x"},"repository":{"nameWithOwner":"a/b"},
+             "timelineItems":{"nodes":[{"__typename":"CrossReferencedEvent","willCloseTarget":false,"source":\(pull(7, "OPEN"))}]}},
+            {"number":3,"title":"No timeline","url":"https://github.com/a/b/issues/3","updatedAt":"2026-10-01T00:00:00Z",
+             "author":{"login":"x"},"repository":{"nameWithOwner":"a/b"}}]},
+          "mine":{"nodes":[
+            {"number":5,"title":"Fix","url":"https://github.com/a/b/pull/5","updatedAt":"2026-10-04T00:00:00Z",
+             "author":{"login":"chema"},"repository":{"nameWithOwner":"a/b"},"isDraft":true,"reviewDecision":null,
+             "timelineItems":{"nodes":[{"__typename":"ConnectedEvent","subject":\(pull(6, "OPEN"))}]}}]}
+        }}
+        """
+        let inbox = try #require(GitHubLookup.parseInbox(Data(linked.utf8)))
+        let byNumber = Dictionary(uniqueKeysWithValues: inbox.items.map { ($0.number, $0) })
+        let first = try #require(byNumber[1]?.linkedPullRequests)
+        // Connected by hand, set to close it, or both; the same number in another repository is
+        // another pull request. A mention that won't close it, and issues, don't count.
+        #expect(first.map(\.number) == [5, 6, 5])
+        #expect(first[0] == LinkedPullRequest(number: 5, isOpen: true, isDraft: true, url: URL(string: "https://github.com/a/b/pull/5")!))
+        #expect(!first[1].isOpen && !first[1].isDraft && first[2].url.absoluteString == "https://github.com/c/d/pull/5")
+        #expect(byNumber[2]?.linkedPullRequests.isEmpty == true)
+        #expect(byNumber[3]?.linkedPullRequests.isEmpty == true)
+        #expect(byNumber[5]?.linkedPullRequests.isEmpty == true)
+    }
+
     @Test func oneQueryCarriesTheSearchesAsVariables() async throws {
         let runner = RecordingRunner([output(answer)])
         let lookup = GitHubLookup(runner: runner, executable: gh)
@@ -78,6 +121,10 @@ struct GitHubInboxTests {
         #expect(query.contains("viewer { login }") && query.contains("rateLimit { remaining resetAt }"))
         #expect(query.contains("issues: search(type: ISSUE, query: $q0, first: 50)") && query.contains("mine: search(type: ISSUE, query: $q2"))
         #expect(!query.contains("repo:"))
+        #expect(query.contains("... on Issue { number title url updatedAt author { login } repository { nameWithOwner } "
+                               + "timelineItems(itemTypes: [CONNECTED_EVENT, CROSS_REFERENCED_EVENT], first: 10)"))
+        #expect(query.contains("... on CrossReferencedEvent { willCloseTarget source { __typename ... on PullRequest { number state isDraft url } } }"))
+        #expect(query.contains("... on ConnectedEvent { subject { __typename ... on PullRequest { number state isDraft url } } }"))
         #expect(Array(arguments.dropFirst(4)) == [
             "-f", "q0=is:open is:issue archived:false assignee:@me repo:theam/shepherdr repo:theam/tam-os",
             "-f", "q1=is:open is:pr archived:false review-requested:@me repo:theam/shepherdr repo:theam/tam-os",

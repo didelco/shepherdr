@@ -49,6 +49,21 @@ public struct GitHubRepository: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// A pull request already linked to an issue, found or confirmed by GitHub.
+public struct LinkedPullRequest: Hashable, Sendable {
+    public let number: Int
+    public let isOpen: Bool
+    public let isDraft: Bool
+    public let url: URL
+
+    public init(number: Int, isOpen: Bool, isDraft: Bool, url: URL) {
+        self.number = number
+        self.isOpen = isOpen
+        self.isDraft = isDraft
+        self.url = url
+    }
+}
+
 /// An issue or pull request on GitHub that asks something of you.
 public struct GitHubInboxItem: Identifiable, Hashable, Sendable {
     public enum Kind: String, Sendable {
@@ -71,9 +86,13 @@ public struct GitHubInboxItem: Identifiable, Hashable, Sendable {
     public let isDraft: Bool
     /// A pull request's review state: `APPROVED`, `CHANGES_REQUESTED` or `REVIEW_REQUIRED`.
     public let reviewDecision: String?
+    /// Pull requests GitHub links to this issue: connected by hand, or set to close it when merged.
+    /// Always empty for pull requests.
+    public let linkedPullRequests: [LinkedPullRequest]
 
     public init(kind: Kind, repository: GitHubRepository, number: Int, title: String, url: URL, author: String,
-                updatedAt: Date, isDraft: Bool = false, reviewDecision: String? = nil) {
+                updatedAt: Date, isDraft: Bool = false, reviewDecision: String? = nil,
+                linkedPullRequests: [LinkedPullRequest] = []) {
         self.kind = kind
         self.repository = repository
         self.number = number
@@ -83,6 +102,7 @@ public struct GitHubInboxItem: Identifiable, Hashable, Sendable {
         self.updatedAt = updatedAt
         self.isDraft = isDraft
         self.reviewDecision = reviewDecision
+        self.linkedPullRequests = linkedPullRequests
     }
 
     public var id: String { key }
@@ -193,7 +213,13 @@ extension GitHubLookup {
     /// Search texts travel as variables, never inside the query itself.
     static func inboxQuery(_ searches: [(alias: String, text: String)]) -> String {
         let common = "number title url updatedAt author { login } repository { nameWithOwner }"
-        let nodes = "nodes { ... on Issue { \(common) } ... on PullRequest { \(common) isDraft reviewDecision } }"
+        let linked = "... on PullRequest { number state isDraft url }"
+        // Pull requests connected by hand, or that mention the issue; only those GitHub says will
+        // close it count as linked.
+        let timeline = "timelineItems(itemTypes: [CONNECTED_EVENT, CROSS_REFERENCED_EVENT], first: 10) { nodes { __typename "
+            + "... on ConnectedEvent { subject { __typename \(linked) } } "
+            + "... on CrossReferencedEvent { willCloseTarget source { __typename \(linked) } } } }"
+        let nodes = "nodes { ... on Issue { \(common) \(timeline) } ... on PullRequest { \(common) isDraft reviewDecision } }"
         let variables = searches.indices.map { "$q\($0): String!" }.joined(separator: ", ")
         let fields = searches.enumerated().map { index, search in
             "\(search.alias): search(type: ISSUE, query: $q\(index), first: 50) { \(nodes) }"
@@ -224,7 +250,8 @@ extension GitHubLookup {
                 let item = GitHubInboxItem(kind: kind, repository: repository, number: number, title: title, url: url,
                                            author: (node["author"] as? [String: Any])?["login"] as? String ?? "ghost",
                                            updatedAt: updatedAt, isDraft: node["isDraft"] as? Bool ?? false,
-                                           reviewDecision: node["reviewDecision"] as? String)
+                                           reviewDecision: node["reviewDecision"] as? String,
+                                           linkedPullRequests: kind == .assignedIssue ? linkedPullRequests(node["timelineItems"]) : [])
                 if let known = items[item.key],
                    (priority.firstIndex(of: known.kind) ?? 0) >= (priority.firstIndex(of: kind) ?? 0) { continue }
                 items[item.key] = item
@@ -232,6 +259,28 @@ extension GitHubLookup {
         }
         let sorted = items.values.sorted { $0.updatedAt != $1.updatedAt ? $0.updatedAt > $1.updatedAt : $0.key < $1.key }
         return GitHubInbox(viewer: viewer, items: sorted, syncedAt: syncedAt)
+    }
+
+    /// The pull requests an issue's timeline links to it, once each: connected ones, and those that
+    /// mention it and will close it when merged. A missing timeline links none. The same pull request
+    /// can show in both kinds of event; its URL tells them apart from a same-numbered one elsewhere.
+    private static func linkedPullRequests(_ timeline: Any?) -> [LinkedPullRequest] {
+        guard let events = (timeline as? [String: Any])?["nodes"] as? [[String: Any]] else { return [] }
+        var linked: [LinkedPullRequest] = []
+        for event in events {
+            let pull: [String: Any]?
+            switch event["__typename"] as? String {
+            case "ConnectedEvent": pull = event["subject"] as? [String: Any]
+            case "CrossReferencedEvent": pull = event["willCloseTarget"] as? Bool == true ? event["source"] as? [String: Any] : nil
+            default: pull = nil
+            }
+            guard let pull, pull["__typename"] as? String == "PullRequest", let number = pull["number"] as? Int,
+                  let url = (pull["url"] as? String).flatMap(URL.init(string:)),
+                  !linked.contains(where: { $0.url == url }) else { continue }
+            linked.append(LinkedPullRequest(number: number, isOpen: pull["state"] as? String == "OPEN",
+                                            isDraft: pull["isDraft"] as? Bool ?? false, url: url))
+        }
+        return linked
     }
 
     /// `issues`, `reviews3`, `mine`: which search an answer belongs to.

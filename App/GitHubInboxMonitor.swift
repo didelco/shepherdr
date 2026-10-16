@@ -11,6 +11,9 @@ final class GitHubInboxMonitor {
     private(set) var isSyncing = false
     /// Why the last sync failed; nil once one succeeds.
     private(set) var error: GitHubSyncError?
+    /// The inbox pull requests' checks by item key, from the last sync GitHub answered; kept when
+    /// asking for them fails.
+    private(set) var checks: [String: PullRequestChecks] = [:]
     @ObservationIgnored weak var model: AppModel?
     @ObservationIgnored private let gitHub = GitHubLookup()
     @ObservationIgnored private var syncTask: Task<Void, Never>?
@@ -45,6 +48,12 @@ final class GitHubInboxMonitor {
         case .success(let found):
             inbox = found
             error = nil
+            let pulls = found.items.filter(\.isPullRequest).map(\.resource)
+            if pulls.isEmpty {
+                checks = [:]
+            } else if let found = await gitHub.checks(of: pulls) {
+                checks = found
+            }
         case .failure(let failure):
             error = failure
         }
