@@ -43,9 +43,9 @@ struct ShepherdrApp: App {
                                                                set: { model.order.gathersProjects = $0 })
             }
             CommandMenu("Compass") {
-                Button("Agents") { model.mode = .agents }
-                    .keyboardShortcut("1", modifiers: [.command, .option])
                 Button("Compass") { model.mode = .compass }
+                    .keyboardShortcut("1", modifiers: [.command, .option])
+                Button("Agents") { model.mode = .agents }
                     .keyboardShortcut("2", modifiers: [.command, .option])
                 Divider()
                 Button("Run Compass Now") {

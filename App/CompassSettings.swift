@@ -18,7 +18,7 @@ struct CompassSettings: View {
         } else {
             VStack(spacing: 12) {
                 Text("Compass isn't set up on this Mac yet.").font(.headline)
-                Text("Open Compass in the main window (⌥⌘2) to start it or restore it from a backup.")
+                Text("Open Compass in the main window (⌥⌘1) to start it or restore it from a backup.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 Button("Open Compass") {
                     model.mode = .compass

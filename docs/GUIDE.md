@@ -22,7 +22,7 @@ A bilingual (English/Spanish) quick guide with the same content comes with the a
 - **Picks up where you left off:** after a restart, the session you had open comes back, and every session keeps its browser tabs, prompt editor and resources.
 - **Notifications:** a macOS notification tells you when an agent finishes or needs you, with what it last said, and when a pull request's checks finish. Click it to open the session.
 - **Sessions on hold:** mark a session as waiting for others, such as a planner waiting for the subagents it launched. It shows an hourglass, and the sessions it waits for are listed under it, in a tree you can collapse.
-- **Compass:** a second mode, beside Agents (**⌥⌘1** and **⌥⌘2**), with a page of your day kept by an agent of its own on this Mac. It starts by summing up your sessions; ask it in its terminal to cover more, such as your calendar or mail. It updates on the schedule you choose, keeps every day's page and a copy per run in `~/.shepherdr/compass`, commits them to Git and can push them to a private repository. Buttons on the page start the sessions it suggests, once you check them in New Session.
+- **Compass:** the window's first mode, before Agents (**⌥⌘1** and **⌥⌘2**), with a page of your day kept by an agent of its own on this Mac. It starts by summing up your sessions; ask it in its terminal to cover more, such as your calendar or mail. It updates on the schedule you choose, keeps every day's page and a copy per run in `~/.shepherdr/compass`, commits them to Git and can push them to a private repository. Buttons on the page start the sessions it suggests, once you check them in New Session.
 - **Agents that coordinate:** Shepherdr installs a small `shepherdr` command and a skill for Claude Code and Codex on each machine, Linux included. An agent asked to "start a session on buildbox" starts it there, nested under its own session, which goes on hold until the new one finishes. The new session hands its result back with `shepherdr handoff`, and Shepherdr delivers it as a prompt once the coordinator is free. Machines never connect to your Mac: Shepherdr collects what agents leave for it.
 - **Create and close sessions:** **⌘N** creates a Herdr workspace with a shell in a folder; start Claude Code, Codex or any other supported agent in it and it joins the queue. Create one in a group with its **+**, or next to a session with **New Session in Same Folder…** (**⇧⌘N**). **Close Session…** in a session's context menu ends its pane after confirmation. **Rename…** renames its Herdr workspace.
 - **Overview:** how many sessions need you, are working, done or idle, and a card per machine with its sessions and its processor, memory and disk use. Click states and machines to list the sessions in any combination of them. Plain shell panes are listed separately.
@@ -268,9 +268,9 @@ Letters are data: Shepherdr checks every field, accepts only http and https link
 
 ## Compass
 
-Compass is the window's second mode: **AGENTS · COMPASS**, beside the window's buttons, or **⌥⌘1** and **⌥⌘2**. It shows a page of your day, kept by an agent of its own on this Mac, with the terminal of that agent beside it. The page says what deserves your attention; you talk to the agent all day to act on it, and buttons on the page start the sessions it suggests.
+Compass is the window's first mode: **COMPASS · AGENTS**, beside the window's buttons, or **⌥⌘1** and **⌥⌘2**. It shows a page of your day, kept by an agent of its own on this Mac, with the terminal of that agent beside it. The page says what deserves your attention; you talk to the agent all day to act on it, and buttons on the page start the sessions it suggests.
 
-The AGENTS tab counts your sessions, in amber when some need you. The COMPASS tab shows a green dot when the page changed since you last looked, cyan while a run is under way, and amber when the agent waits for you.
+The COMPASS tab shows a green dot when the page changed since you last looked, cyan while a run is under way, and amber when the agent waits for you. The AGENTS tab counts your sessions, in amber when some need you.
 
 ### Start Compass
 

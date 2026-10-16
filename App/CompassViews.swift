@@ -2,16 +2,16 @@ import AppKit
 import SwiftUI
 import ShepherdrCore
 
-/// AGENTS and COMPASS, beside the window's buttons. Each tab says when it wants you: sessions
+/// COMPASS and AGENTS, beside the window's buttons. Each tab says when it wants you: sessions
 /// that need you, or a Compass page that changed or an agent waiting at a question.
 struct ModeTabs: View {
     let model: AppModel
 
     var body: some View {
         HStack(spacing: 0) {
-            tab(.agents, "AGENTS", help: "Agents: your sessions' queue (⌥⌘1)") { agentsBadge }
+            tab(.compass, "COMPASS", help: "Compass: the page of your day (⌥⌘1)") { compassBadge }
             Rectangle().fill(Theme.line).frame(width: 1, height: 18)
-            tab(.compass, "COMPASS", help: "Compass: the page of your day (⌥⌘2)") { compassBadge }
+            tab(.agents, "AGENTS", help: "Agents: your sessions' queue (⌥⌘2)") { agentsBadge }
         }
         .background(Theme.background.opacity(0.6), in: RoundedRectangle(cornerRadius: 4))
         .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.line, lineWidth: 1))
