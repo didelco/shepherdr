@@ -64,6 +64,35 @@ public struct LinkedPullRequest: Hashable, Sendable {
     }
 }
 
+/// What landing a pull request involves: how big it is, where it merges and whether it can.
+public struct PullRequestDetails: Hashable, Sendable {
+    public let additions: Int
+    public let deletions: Int
+    public let changedFiles: Int
+    public let createdAt: Date
+    /// The branch it merges into.
+    public let baseBranch: String
+    /// Its own branch, which other pull requests in its repository can be stacked on unless it
+    /// comes from a fork.
+    public let headBranch: String
+    public let isFromFork: Bool
+    /// GitHub answers `UNKNOWN` while it works out whether a pull request merges cleanly; that
+    /// counts as no conflicts.
+    public let hasConflicts: Bool
+
+    public init(additions: Int, deletions: Int, changedFiles: Int, createdAt: Date, baseBranch: String,
+                headBranch: String, isFromFork: Bool = false, hasConflicts: Bool = false) {
+        self.additions = additions
+        self.deletions = deletions
+        self.changedFiles = changedFiles
+        self.createdAt = createdAt
+        self.baseBranch = baseBranch
+        self.headBranch = headBranch
+        self.isFromFork = isFromFork
+        self.hasConflicts = hasConflicts
+    }
+}
+
 /// An issue or pull request on GitHub that asks something of you.
 public struct GitHubInboxItem: Identifiable, Hashable, Sendable {
     public enum Kind: String, Sendable {
@@ -89,10 +118,12 @@ public struct GitHubInboxItem: Identifiable, Hashable, Sendable {
     /// Pull requests GitHub links to this issue: connected by hand, or set to close it when merged.
     /// Always empty for pull requests.
     public let linkedPullRequests: [LinkedPullRequest]
+    /// Only pull requests have them, when GitHub gave them.
+    public let details: PullRequestDetails?
 
     public init(kind: Kind, repository: GitHubRepository, number: Int, title: String, url: URL, author: String,
                 updatedAt: Date, isDraft: Bool = false, reviewDecision: String? = nil,
-                linkedPullRequests: [LinkedPullRequest] = []) {
+                linkedPullRequests: [LinkedPullRequest] = [], details: PullRequestDetails? = nil) {
         self.kind = kind
         self.repository = repository
         self.number = number
@@ -103,6 +134,7 @@ public struct GitHubInboxItem: Identifiable, Hashable, Sendable {
         self.isDraft = isDraft
         self.reviewDecision = reviewDecision
         self.linkedPullRequests = linkedPullRequests
+        self.details = details
     }
 
     public var id: String { key }
@@ -219,7 +251,8 @@ extension GitHubLookup {
         let timeline = "timelineItems(itemTypes: [CONNECTED_EVENT, CROSS_REFERENCED_EVENT], first: 10) { nodes { __typename "
             + "... on ConnectedEvent { subject { __typename \(linked) } } "
             + "... on CrossReferencedEvent { willCloseTarget source { __typename \(linked) } } } }"
-        let nodes = "nodes { ... on Issue { \(common) \(timeline) } ... on PullRequest { \(common) isDraft reviewDecision } }"
+        let pull = "isDraft reviewDecision additions deletions changedFiles createdAt baseRefName headRefName isCrossRepository mergeable"
+        let nodes = "nodes { ... on Issue { \(common) \(timeline) } ... on PullRequest { \(common) \(pull) } }"
         let variables = searches.indices.map { "$q\($0): String!" }.joined(separator: ", ")
         let fields = searches.enumerated().map { index, search in
             "\(search.alias): search(type: ISSUE, query: $q\(index), first: 50) { \(nodes) }"
@@ -236,6 +269,7 @@ extension GitHubLookup {
         let dates = ISO8601DateFormatter()
         let fractional = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        func date(_ value: Any?) -> Date? { (value as? String).flatMap { dates.date(from: $0) ?? fractional.date(from: $0) } }
         let priority: [GitHubInboxItem.Kind] = [.assignedIssue, .myPullRequest, .reviewRequested]
         var items: [String: GitHubInboxItem] = [:]
         for (alias, answer) in answers {
@@ -244,14 +278,16 @@ extension GitHubLookup {
             for node in nodes {
                 guard let number = node["number"] as? Int, let title = node["title"] as? String,
                       let url = (node["url"] as? String).flatMap(URL.init(string:)),
-                      let stamp = node["updatedAt"] as? String, let updatedAt = dates.date(from: stamp) ?? fractional.date(from: stamp),
+                      let updatedAt = date(node["updatedAt"]),
                       let repository = ((node["repository"] as? [String: Any])?["nameWithOwner"] as? String)
                         .flatMap(GitHubRepository.init(parsing:)) else { continue }
+                let isIssue = kind == .assignedIssue
                 let item = GitHubInboxItem(kind: kind, repository: repository, number: number, title: title, url: url,
                                            author: (node["author"] as? [String: Any])?["login"] as? String ?? "ghost",
                                            updatedAt: updatedAt, isDraft: node["isDraft"] as? Bool ?? false,
                                            reviewDecision: node["reviewDecision"] as? String,
-                                           linkedPullRequests: kind == .assignedIssue ? linkedPullRequests(node["timelineItems"]) : [])
+                                           linkedPullRequests: isIssue ? linkedPullRequests(node["timelineItems"]) : [],
+                                           details: isIssue ? nil : pullRequestDetails(node, createdAt: date(node["createdAt"])))
                 if let known = items[item.key],
                    (priority.firstIndex(of: known.kind) ?? 0) >= (priority.firstIndex(of: kind) ?? 0) { continue }
                 items[item.key] = item
@@ -281,6 +317,16 @@ extension GitHubLookup {
                                             isDraft: pull["isDraft"] as? Bool ?? false, url: url))
         }
         return linked
+    }
+
+    /// Nil when GitHub left out the pull request's size, branches or opening date.
+    private static func pullRequestDetails(_ node: [String: Any], createdAt: Date?) -> PullRequestDetails? {
+        guard let createdAt, let additions = node["additions"] as? Int, let deletions = node["deletions"] as? Int,
+              let changedFiles = node["changedFiles"] as? Int, let base = node["baseRefName"] as? String,
+              let head = node["headRefName"] as? String else { return nil }
+        return PullRequestDetails(additions: additions, deletions: deletions, changedFiles: changedFiles, createdAt: createdAt,
+                                  baseBranch: base, headBranch: head, isFromFork: node["isCrossRepository"] as? Bool ?? false,
+                                  hasConflicts: node["mergeable"] as? String == "CONFLICTING")
     }
 
     /// `issues`, `reviews3`, `mine`: which search an answer belongs to.

@@ -3,12 +3,13 @@ import SwiftUI
 import ShepherdrCore
 
 /// The home screen's GitHub inbox: what the followed repositories ask of you, in a column per
-/// kind, eight of each until you ask for more. Clicking one opens it in the default browser and
-/// marks it seen.
+/// kind, eight of each until you ask for more, or with the pull requests in a suggested order.
+/// Clicking one opens it in the default browser and marks it seen.
 struct GitHubInboxSection: View {
     @Bindable var model: AppModel
     private static let shown = 8
     @ViewState private var expanded = Set<GitHubInboxItem.Kind>()
+    @AppStorage("suggestsPullRequestOrder") private var suggestsOrder = false
 
     private var monitor: GitHubInboxMonitor { model.inboxMonitor }
     private var store: GitHubInboxStore { model.githubInbox }
@@ -31,6 +32,10 @@ struct GitHubInboxSection: View {
             TimelineView(.everyMinute) { context in
                 ConsoleHeader(title: "GitHub Inbox", trailing: trailing(now: context.date))
             }
+            Toggle("SUGGEST ORDER", isOn: $suggestsOrder)
+                .toggleStyle(ConsoleCheckboxStyle())
+                .help("List your pull requests and reviews in the order to take them on: merge what's ready, review "
+                      + "others' (ready, small and old ones first), then fix yours. Stacked pull requests go after their base.")
             Button("SYNC") { Task { await monitor.sync() } }
                 .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
                 .disabled(monitor.isSyncing || store.activeRepositories.isEmpty)
@@ -75,15 +80,38 @@ struct GitHubInboxSection: View {
             .background(Theme.panel, in: RoundedRectangle(cornerRadius: 6))
     }
 
+    /// In suggested order, the pull requests leave their columns for one ordered list.
     @ViewBuilder private func columns(_ items: [GitHubInboxItem]) -> some View {
-        let kinds = Self.kinds.filter { kind in items.contains { $0.kind == kind } }
-        if kinds.isEmpty {
+        let steps = suggestsOrder ? PullRequestOrder.steps(for: items, checks: monitor.checks) : []
+        let kinds = Self.kinds.filter { kind in (!suggestsOrder || kind == .assignedIssue) && items.contains { $0.kind == kind } }
+        if kinds.isEmpty && steps.isEmpty {
             message("Nothing waiting for you in the followed repositories.")
         } else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10, alignment: .top)], spacing: 10) {
-                ForEach(kinds, id: \.self) { kind in column(kind, items.filter { $0.kind == kind }) }
+            if !steps.isEmpty { order(steps) }
+            if !kinds.isEmpty {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10, alignment: .top)], spacing: 10) {
+                    ForEach(kinds, id: \.self) { kind in column(kind, items.filter { $0.kind == kind }) }
+                }
             }
         }
+    }
+
+    private func order(_ steps: [PullRequestStep]) -> some View {
+        let unseen = store.unseen(steps.map(\.item)).count
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Text("SUGGESTED ORDER").font(Theme.mono(9, .semibold)).tracking(1).foregroundStyle(Theme.faint)
+                Spacer(minLength: 4)
+                Text(unseen > 0 ? "\(unseen) new · \(steps.count)" : "\(steps.count)")
+                    .font(Theme.mono(9)).foregroundStyle(unseen > 0 ? Theme.phosphor : Theme.faint)
+            }
+            .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 3)
+            ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in row(step.item, place: (index + 1, step)) }
+        }
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Theme.panel, in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line, lineWidth: 1))
     }
 
     private func column(_ kind: GitHubInboxItem.Kind, _ items: [GitHubInboxItem]) -> some View {
@@ -116,10 +144,17 @@ struct GitHubInboxSection: View {
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line, lineWidth: 1))
     }
 
-    private func row(_ item: GitHubInboxItem) -> some View {
+    /// In suggested order, a row leads with its place and what to do, and says why under its title.
+    private func row(_ item: GitHubInboxItem, place: (number: Int, step: PullRequestStep)? = nil) -> some View {
         let isUnseen = store.isUnseen(item)
         return Button { open(item) } label: {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
+                if let place {
+                    Text("\(place.number)").font(Theme.mono(10)).foregroundStyle(Theme.faint)
+                        .frame(width: 18, alignment: .trailing)
+                    Text(Self.label(place.step.action)).font(Theme.mono(9.5, .bold))
+                        .foregroundStyle(Self.tint(place.step.action)).frame(width: 54, alignment: .leading)
+                }
                 Text(Self.glyph(item.kind)).font(Theme.mono(10.5, .bold))
                     .foregroundStyle(Self.tint(item.kind)).frame(width: 12)
                 VStack(alignment: .leading, spacing: 1) {
@@ -138,6 +173,10 @@ struct GitHubInboxSection: View {
                         }
                     }
                     Text(item.title).font(Theme.mono(9.5)).foregroundStyle(Theme.dim).lineLimit(1).truncationMode(.tail)
+                    if let place {
+                        Text(place.step.reasons.joined(separator: " · ")).font(Theme.mono(9)).foregroundStyle(Theme.faint)
+                            .lineLimit(1).truncationMode(.tail)
+                    }
                 }
                 Spacer(minLength: 4)
                 Text(Self.age(of: item.updatedAt, now: Date())).font(Theme.mono(9)).foregroundStyle(Theme.faint)
@@ -149,7 +188,7 @@ struct GitHubInboxSection: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(help(for: item))
+        .help(help(for: item, step: place?.step))
         .contextMenu {
             Button("Open in Default Browser") { open(item) }
             Button("Copy Link") { copyToPasteboard(item.url.absoluteString) }
@@ -167,8 +206,9 @@ struct GitHubInboxSection: View {
         store.markSeen(item)
     }
 
-    private func help(for item: GitHubInboxItem) -> String {
+    private func help(for item: GitHubInboxItem, step: PullRequestStep? = nil) -> String {
         var lines = [item.title, "by @\(item.author) · updated \(item.updatedAt.formatted(date: .abbreviated, time: .shortened))"]
+        if let step { lines.append("\(Self.label(step.action)): \(Self.meaning(step.action)) (\(step.reasons.joined(separator: ", ")))") }
         if let badge = Self.badge(item) { lines.append(badge.help) }
         if let checks = monitor.checks[item.key], !checks.summary.isEmpty { lines.append("Checks: \(checks.summary)") }
         if !item.linkedPullRequests.isEmpty {
@@ -203,6 +243,42 @@ struct GitHubInboxSection: View {
         case .reviewRequested: Theme.phosphor
         case .assignedIssue: Theme.amber
         case .myPullRequest: Theme.cyan
+        }
+    }
+
+    private static func label(_ action: PullRequestStep.Action) -> String {
+        switch action {
+        case .merge: "MERGE"
+        case .review: "REVIEW"
+        case .address: "ADDRESS"
+        case .resolve: "RESOLVE"
+        case .fix: "FIX"
+        case .finish: "FINISH"
+        case .wait: "WAIT"
+        }
+    }
+
+    /// Go in green, review in plain text, your own trouble in amber or red, and what can wait dimmed.
+    private static func tint(_ action: PullRequestStep.Action) -> Color {
+        switch action {
+        case .merge: Theme.phosphor
+        case .review: Theme.text
+        case .address, .resolve: Theme.amber
+        case .fix: Theme.red
+        case .finish: Theme.dim
+        case .wait: Theme.faint
+        }
+    }
+
+    private static func meaning(_ action: PullRequestStep.Action) -> String {
+        switch action {
+        case .merge: "approved and green, merge it"
+        case .review: "someone waits on your review"
+        case .address: "answer the changes a reviewer asked for"
+        case .resolve: "update it with its base branch"
+        case .fix: "make its checks pass"
+        case .finish: "finish the draft"
+        case .wait: "nothing to do yet"
         }
     }
 
