@@ -199,7 +199,11 @@ The sessions it waits for move under it in the queue, joined by tree lines, and 
 
 In the tree, the sessions it waits for don't show their priority number: they follow the session waiting for them.
 
-Opening a session on hold shows a panel above its terminal with the sessions it waits for and their state. Click one to open it, **×** to stop waiting for it, **+** to find another one to wait for, or **RESUME** to take the session off hold. Sessions that others are waiting for list them under **WAITED ON BY**. Holds are saved on this Mac with your priorities and only contain session identifiers. Closing a session from Shepherdr removes its holds.
+Opening a session on hold shows a panel above its terminal with the sessions it waits for and their state. Click one to open it, **×** to stop waiting for it, **+** to find another one to wait for, or **RESUME** to take the session off hold. Sessions that others are waiting for list them under **WAITED ON BY**. Holds are saved on this Mac with your priorities and only contain session identifiers.
+
+A session that closes, from Shepherdr or anywhere else, drops out of holds: once its machine answers without it for 30 seconds, nothing waits for it anymore, and it no longer waits for anything. A machine that doesn't answer keeps its sessions' holds until it does. The sessions that waited for it say so in a notice.
+
+A shell, a pane without an agent, has no agent to hand work back, so a session waiting for one waits for the command it runs, such as a script started with `shepherdr spawn --shell` and `herdr pane run`. While the command runs, the shell counts as working and the hourglass stays blue. Once it is back at the shell's prompt, the session stops waiting for it, with a notice; Shepherdr also notices a command that finished between two refreshes, by its output. A shell that hasn't run anything yet keeps the session waiting.
 
 **HANDOFF AND CLOSE**, on the **WAITED ON BY** line, wraps a session up for the sessions waiting for it. After you confirm, Shepherdr waits until its agent is free and types a request into its prompt: hand the work back with `shepherdr handoff`, in a message that stands alone with the files that matter. As soon as that handoff reaches Shepherdr, the session closes and its pane ends. From then on Shepherdr holds the message and files and delivers them as usual, so nothing goes with the pane. It needs the [agent tools](#agents-that-coordinate) on the session's machine.
 

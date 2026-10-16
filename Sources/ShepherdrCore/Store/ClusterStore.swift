@@ -70,6 +70,13 @@ public final class ClusterStore {
         return try? await client.recentOutput(paneID: paneID, on: machine, lines: lines)
     }
 
+    /// Whether a pane's shell runs a command, such as a script, rather than waiting at its prompt;
+    /// nil when Herdr can't tell.
+    public func runsCommand(paneID: String, onMachine id: String) async -> Bool? {
+        guard let machine = try? machine(id) else { return nil }
+        return try? await client.runsCommand(paneID: paneID, on: machine)
+    }
+
     /// Submits a prompt to the agent in a pane. Herdr refuses while the agent asks a question.
     public func prompt(paneID: String, text: String, onMachine id: String) async throws {
         try await client.prompt(paneID: paneID, text: text, on: try machine(id))

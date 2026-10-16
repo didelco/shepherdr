@@ -63,6 +63,7 @@ struct MainView: View {
         .onChange(of: cluster.agents, initial: true) { model.notifier.observe(model.agents) }
         .onChange(of: cluster.lastRefresh, initial: true) {
             model.restoreSelection()
+            model.keepHolds()
             model.courier.observe()
             model.compass.observe()
         }

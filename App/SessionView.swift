@@ -450,6 +450,7 @@ struct RelationsPanel: View {
 
     private func chip(_ other: Agent.ID, removable: Bool) -> some View {
         let row = model.row(for: other)
+        let shell = row == nil ? model.shell(for: other) : nil
         return HStack(spacing: 6) {
             if let row {
                 StateGlyph(state: row.agent.state, stale: row.isStale, background: !model.backgroundCommands(of: row).isEmpty)
@@ -457,6 +458,12 @@ struct RelationsPanel: View {
                 if model.showsMachineNames { Text("@\(row.machineName)").foregroundStyle(Theme.faint) }
                 Text(row.agent.state == .blocked ? "needs you" : row.agent.state.title.lowercased())
                     .foregroundStyle(Theme.dim)
+            } else if let shell {
+                // Waited for until its command finishes, which ends the wait.
+                Text("$").foregroundStyle(Theme.faint)
+                Text(shell.pane.workspaceName).foregroundStyle(Theme.text)
+                if model.showsMachineNames { Text("@\(shell.machine.name)").foregroundStyle(Theme.faint) }
+                Text(model.shellRuns[other]?.isRunning == true ? "running" : "shell").foregroundStyle(Theme.dim)
             } else {
                 Text("◌").foregroundStyle(Theme.faint)
                 Text("session gone").foregroundStyle(Theme.faint)
@@ -471,8 +478,9 @@ struct RelationsPanel: View {
         .background(Theme.panel, in: RoundedRectangle(cornerRadius: 4))
         .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.line, lineWidth: 1))
         .contentShape(Rectangle())
-        .onTapGesture { if row != nil { model.open(other) } }
-        .help(row.map { "Open \($0.workspace)" } ?? "This session is no longer reported by Herdr")
+        .onTapGesture { if row != nil || shell != nil { model.open(other) } }
+        .help(row.map { "Open \($0.workspace)" } ?? shell.map { "Open \($0.pane.workspaceName). The wait ends when the command it runs finishes." }
+              ?? "This session is no longer reported by Herdr. Unless it comes back, Shepherdr stops waiting for it shortly.")
     }
 }
 

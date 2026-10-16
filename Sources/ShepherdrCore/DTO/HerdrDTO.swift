@@ -109,7 +109,10 @@ struct WorktreeListDTO: Decodable {
 struct ProcessInfoDTO: Decodable {
     struct Envelope: Decodable { let result: Result }
     struct Result: Decodable { let processInfo: ProcessInfoDTO }
+    struct Process: Decodable { let pid: Int }
     let shellPid: Int?
+    /// What the terminal runs in the foreground: the shell itself at its prompt.
+    let foregroundProcesses: [Process]?
 }
 
 struct PaneListDTO: Decodable {
@@ -153,6 +156,14 @@ enum HerdrJSON {
     /// The process ID of the shell a pane started with; nil when Herdr doesn't say.
     static func shellPID(_ data: Data) throws -> Int? {
         try decoder().decode(ProcessInfoDTO.Envelope.self, from: data).result.processInfo.shellPid
+    }
+
+    /// Whether a pane's shell runs a command in the foreground rather than waiting at its prompt;
+    /// nil when Herdr doesn't say.
+    static func runsCommand(_ data: Data) throws -> Bool? {
+        let info = try decoder().decode(ProcessInfoDTO.Envelope.self, from: data).result.processInfo
+        guard let shell = info.shellPid, let foreground = info.foregroundProcesses else { return nil }
+        return foreground.contains { $0.pid != shell }
     }
 
     /// How many lines above its latest output Herdr shows a terminal; nil when Herdr doesn't say.

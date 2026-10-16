@@ -167,6 +167,15 @@ public struct CLIHerdrClient: HerdrClient, HerdrTerminalClient {
         catch { throw decodingFailure(error) }
     }
 
+    public func runsCommand(paneID: String, on machine: Machine) async throws -> Bool? {
+        try requireArgument(paneID, "pane")
+        let prefix = machine.profileID.map { ["--machine", $0] } ?? []
+        let output = try await execute(prefix + ["pane", "process-info", "--pane", paneID])
+        try validate(output, machine: machine)
+        do { return try HerdrJSON.runsCommand(output.stdout) }
+        catch { throw decodingFailure(error) }
+    }
+
     public func startAgent(_ name: String, kind: String, paneID: String, on machine: Machine) async throws -> String? {
         try requireArgument(name, "agent name")
         try requireArgument(kind, "agent")

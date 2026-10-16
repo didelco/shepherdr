@@ -870,13 +870,63 @@ final class AppModel {
         let awaited = relations.waitingFor(id)
         guard !awaited.isEmpty else { return nil }
         let busy = awaited.contains { other in
-            guard let row = cluster.agents.first(where: { $0.id == other }), !row.isStale else { return false }
+            // A shell is waited for until its command finishes, which ends the hold on it.
+            guard let row = cluster.agents.first(where: { $0.id == other }) else { return shell(for: other).map { !$0.isStale } ?? false }
+            guard !row.isStale else { return false }
             return row.agent.state == .working || row.agent.state == .blocked
         }
         return busy ? .waiting : .ready
     }
 
     func row(for id: Agent.ID) -> AgentRow? { cluster.agents.first { $0.id == id } }
+
+    /// A pane without an agent, by its ID.
+    func shell(for id: Agent.ID) -> ShellRow? { allShells.first { $0.id == id } }
+
+    /// Shells sessions wait for, as last seen.
+    private(set) var shellRuns: [Agent.ID: ShellRun] = [:]
+    /// When each session in a hold was first missing from its machine's snapshots.
+    @ObservationIgnored private var missingSince: [Agent.ID: Date] = [:]
+    @ObservationIgnored private var isCheckingShells = false
+
+    /// After each refresh: holds forget sessions that closed, wherever they were closed, and a hold on
+    /// a shell ends once the command it runs, such as a script, is back at the shell's prompt.
+    func keepHolds() {
+        let held = Set(relations.waits.keys).union(relations.waits.values.joined())
+        let gone = HoldUpkeep.gone(held, machines: cluster.machines, missingSince: &missingSince)
+        for id in gone {
+            for waiter in relations.waiters(of: id) where !gone.contains(waiter) {
+                sessionNotices[waiter] = "A session this one waited for closed, so it no longer waits for it."
+            }
+            relations.forget(id)
+        }
+        checkShells()
+    }
+
+    /// Looks at each shell a session waits for, one at a time, unless the last look is still going.
+    private func checkShells() {
+        let shells = Set(relations.waits.values.joined()).filter { shell(for: $0) != nil }
+        shellRuns = shellRuns.filter { shells.contains($0.key) }
+        guard !shells.isEmpty, !isCheckingShells else { return }
+        isCheckingShells = true
+        Task {
+            defer { isCheckingShells = false }
+            for id in shells.sorted(by: { ($0.machineID, $0.terminalID) < ($1.machineID, $1.terminalID) }) {
+                guard let shell = shell(for: id), !shell.isStale,
+                      let running = await cluster.runsCommand(paneID: shell.pane.paneID, onMachine: id.machineID) else { continue }
+                let output = running ? nil : await cluster.recentOutput(paneID: shell.pane.paneID, onMachine: id.machineID, lines: 40)
+                guard relations.waits.values.contains(where: { $0.contains(id) }) else { continue }
+                var run = shellRuns[id] ?? ShellRun()
+                let finished = run.see(running: running, output: output)
+                shellRuns[id] = finished ? nil : run
+                guard finished else { continue }
+                for waiter in relations.waiters(of: id) {
+                    relations.setWaiting(waiter, for: id, false)
+                    sessionNotices[waiter] = "\(shell.pane.workspaceName) finished its command, so this session no longer waits for it."
+                }
+            }
+        }
+    }
 
     func machine(for id: Agent.ID) -> Machine {
         cluster.machines.first { $0.id == id.machineID }?.machine ?? .local
