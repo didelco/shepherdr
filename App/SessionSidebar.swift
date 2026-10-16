@@ -307,6 +307,7 @@ private struct SessionRowView: View {
             stateMark
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
+                    AgentMark(kind: row.agent.kind)
                     Text(row.workspace).font(Theme.mono(12, .semibold)).lineLimit(1)
                         .foregroundStyle(isSelected ? Theme.text : Theme.text.opacity(0.85))
                     if showsMachine {
@@ -433,7 +434,7 @@ private struct SessionRowView: View {
 
     private var accessibilityText: String {
         var text = isNested ? "" : "Priority \(row.manualPriority), "
-        text += "\(row.workspace), \(row.title), \(row.agent.state.title)"
+        text += "\(row.workspace), \(row.agent.kind), \(row.title), \(row.agent.state.title)"
         if tree.nestedCount > 0 { text += ", waits for \(tree.nestedCount)" + (tree.isCollapsed ? ", hidden" : "") }
         let background = model.backgroundCommands(of: row)
         if !background.isEmpty { text += ", left running: " + background.map(\.command).joined(separator: ", ") }
@@ -770,7 +771,10 @@ private struct ShellRowView: View {
             Text("$").font(Theme.mono(11, .bold)).foregroundStyle(isSelected ? Theme.phosphor : Theme.faint)
                 .frame(width: 30, alignment: .trailing)
             VStack(alignment: .leading, spacing: 2) {
-                Text(shell.pane.workspaceName).font(Theme.mono(11.5, .medium)).foregroundStyle(Theme.text.opacity(0.8)).lineLimit(1)
+                HStack(spacing: 6) {
+                    AgentMark(kind: AgentMark.shell, size: 11)
+                    Text(shell.pane.workspaceName).font(Theme.mono(11.5, .medium)).foregroundStyle(Theme.text.opacity(0.8)).lineLimit(1)
+                }
                 Text(showsMachine ? "shell @\(shell.machine.name)" : "shell")
                     .font(Theme.mono(10)).foregroundStyle(Theme.faint).lineLimit(1)
             }

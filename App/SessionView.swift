@@ -111,6 +111,7 @@ struct SessionView: View {
             }
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
+                    AgentMark(kind: context.agent?.agent.kind ?? AgentMark.shell, size: 16)
                     Text(context.target.workspace).font(Theme.mono(14, .bold)).foregroundStyle(Theme.text).lineLimit(1)
                     Text("›").font(Theme.mono(13)).foregroundStyle(Theme.faint)
                     Text(context.title).font(Theme.mono(13)).foregroundStyle(Theme.text.opacity(0.75)).lineLimit(1)
