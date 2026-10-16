@@ -127,8 +127,14 @@ struct GitHubInboxSection: View {
                         Text("\(item.repository.displayName)#\(item.number)").font(Theme.mono(11, .medium))
                             .lineLimit(1).truncationMode(.middle)
                             .foregroundStyle(isUnseen ? Theme.text : Theme.text.opacity(0.7))
+                        if item.isPullRequest {
+                            ChecksMark(state: monitor.checks[item.key]?.state).font(Theme.mono(10, .bold))
+                        }
                         if let badge = Self.badge(item) {
                             Text(badge.label).font(Theme.mono(9, .semibold)).foregroundStyle(badge.color)
+                        }
+                        if let linked = Self.linkedBadge(item) {
+                            Text(linked.label).font(Theme.mono(9, .semibold)).foregroundStyle(linked.color)
                         }
                     }
                     Text(item.title).font(Theme.mono(9.5)).foregroundStyle(Theme.dim).lineLimit(1).truncationMode(.tail)
@@ -164,6 +170,14 @@ struct GitHubInboxSection: View {
     private func help(for item: GitHubInboxItem) -> String {
         var lines = [item.title, "by @\(item.author) · updated \(item.updatedAt.formatted(date: .abbreviated, time: .shortened))"]
         if let badge = Self.badge(item) { lines.append(badge.help) }
+        if let checks = monitor.checks[item.key], !checks.summary.isEmpty { lines.append("Checks: \(checks.summary)") }
+        if !item.linkedPullRequests.isEmpty {
+            let pulls = item.linkedPullRequests.map { pull in
+                let state = pull.isOpen ? (pull.isDraft ? " (draft)" : "") : " (closed)"
+                return "#\(pull.number)\(state)"
+            }
+            lines.append("Linked pull request\(pulls.count == 1 ? "" : "s"): \(pulls.joined(separator: ", "))")
+        }
         lines.append(item.url.absoluteString)
         return lines.joined(separator: "\n")
     }
@@ -202,6 +216,14 @@ struct GitHubInboxSection: View {
         case "REVIEW_REQUIRED": return ("REVIEW", Theme.amber, "Review required")
         default: return nil
         }
+    }
+
+    /// The pull requests linked to an issue, in cyan like your own: dimmed once none is open.
+    private static func linkedBadge(_ item: GitHubInboxItem) -> (label: String, color: Color)? {
+        let linked = item.linkedPullRequests
+        guard !item.isPullRequest, let first = linked.first else { return nil }
+        let label = linked.count == 1 ? "⇄ PR #\(first.number)" : "⇄ \(linked.count) PRs"
+        return (label, linked.contains(where: \.isOpen) ? Theme.cyan : Theme.cyan.opacity(0.5))
     }
 
     /// `now`, `5m ago`, `3h ago`, `2d ago`.
