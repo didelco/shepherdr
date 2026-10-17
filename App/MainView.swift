@@ -30,9 +30,14 @@ struct MainView: View {
 
     private var layout: some View {
         HSplitView {
-            Group {
-                if model.mode == .compass { CompassSidebar(model: model, compass: model.compass) } else { SessionSidebar(model: model) }
+            VStack(spacing: 0) {
+                Group {
+                    if model.mode == .compass { CompassSidebar(model: model, compass: model.compass) } else { SessionSidebar(model: model) }
+                }
+                .frame(maxHeight: .infinity)
+                UpdateBanner(updates: model.updates)
             }
+            .background(Theme.panel)
             .frame(minWidth: 250, idealWidth: 280, maxWidth: 340)
             Group {
                 if model.mode == .compass { CompassWorkArea(model: model, compass: model.compass) } else { workArea }
@@ -56,6 +61,7 @@ struct MainView: View {
         }
         .task { await model.watchBackgroundWork() }
         .onAppear { model.compass.start() }
+        .onAppear { model.updates.start() }
         .onChange(of: refreshSeconds) { configureRefresh() }
         .onChange(of: cluster.agents.map(\.id), initial: true) {
             model.order.synchronize(with: model.agents.map(\.id))

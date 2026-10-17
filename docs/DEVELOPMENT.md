@@ -58,6 +58,8 @@ sh Tests/AgentTools/herdr-live.sh
 
 The agent tools' command line is a POSIX `sh` script that runs on Linux too: check changes to it with dash or BusyBox (`docker run --rm -v "$PWD":/src -w /src alpine sh Tests/AgentTools/test.sh`) and ShellCheck, as CI does. Bump `Sources/ShepherdrCore/Resources/AgentTools/VERSION` whenever you change the kit, so machines update. See [agent tools](AGENT-TOOLS.md).
 
+The updater (`Sources/ShepherdrCore/Resources/Updater/update.sh`) is checked by the Swift tests against a release made on the spot, signed ad hoc, which it must refuse. Its happy path needs a Developer ID release: `SHEPHERDR_LIVE_UPDATE_TEST=1 swift test --filter LiveUpdateTests` installs the published 0.8.6 over 0.8.5 in a scratch folder, without opening it. Add `--check-only` to the script to download and check a release without replacing anything. Local builds have no team, so their **Update** offers stay off.
+
 Tests use Swift Testing, synthetic JSON fixtures, mock cluster/terminal clients, isolated preferences, an injected command runner, and bounded real subprocess tests. They cover decoding, domain joins, all states, future states, duplicate IDs, aggregation, partial failures, stale retention, recovery, catalog failures, disabled/removed profiles, incremental results, cancellation, literal arguments, pipe draining, terminal JSON streams, observation/input boundaries, detach/reconnect, priority persistence and filtered reordering. No running Herdr or SSH access is needed for the test suite.
 
 Use **Settings → Machines** for failure details. A malformed response is **Incompatible**, never a successful empty session. Temporary failures keep cached rows visible with a stale marker and last-received timestamp. The summary counts exclude stale rows. Last-known snapshots are held in memory only; quitting clears them. The app does not collect telemetry or write snapshot/terminal contents to disk; saved priorities contain only session identifiers.
@@ -74,6 +76,7 @@ Sources/ShepherdrCore/
   Domain/                         Machine, Workspace, Agent, lifecycle and failure models, project gathering, letters and machine lists, Compass's schedule, settings and actions
   Store/                          MainActor cluster state, local priorities, groups, project headings and holds, terminal connections, agent tools and mail
   Resources/AgentTools/           The shepherdr command and skill installed on each machine
+  Resources/Updater/              The script that replaces the app with a new release
   Resources/Compass/              Compass's contract, page template, starter prompt and permissions
 Sources/ShepherdrTerminalUI/       Embeddable SwiftTerm AppKit terminal surface, palette and link handling
 Sources/ShepherdrDictation/        On-device dictation: microphone capture and Parakeet transcription via FluidAudio

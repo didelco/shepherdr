@@ -29,7 +29,7 @@ jobs:
         with:
           persist-credentials: false
       - name: ShellCheck
-        run: shellcheck -s sh Sources/ShepherdrCore/Resources/AgentTools/bin/shepherdr Tests/AgentTools/test.sh Tests/AgentTools/herdr-live.sh Tests/AgentTools/fake-herdr
+        run: shellcheck -s sh Sources/ShepherdrCore/Resources/AgentTools/bin/shepherdr Tests/AgentTools/test.sh Tests/AgentTools/herdr-live.sh Tests/AgentTools/fake-herdr Sources/ShepherdrCore/Resources/Updater/update.sh
       - name: Command line with dash
         run: TEST_SHELL=dash dash Tests/AgentTools/test.sh
       - name: Command line with BusyBox

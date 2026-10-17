@@ -13,7 +13,7 @@ git tag -a v0.1.0 -m 'Shepherdr 0.1.0'
 git push origin v0.1.0
 ```
 
-Use a new version number for each release. The workflow first creates a draft and uploads all assets, then makes the release public and marks it latest. A failed run can leave a draft, which can be resumed using **Actions → Release → Run workflow** with the existing tag. An already-public release is never overwritten; use a new tag for corrections. Besides the [signing credentials](#signing-and-notarization), the workflow only needs GitHub's automatic `GITHUB_TOKEN` with `contents: write`; no personal access token is required.
+Use a new version number for each release. Installed copies [update themselves](GUIDE.md#updates) from the latest release: they read `Shepherdr-<version>-macos-arm64.zip` and `SHA256SUMS`, so keep those names, and install only an app signed by the same team. The workflow first creates a draft and uploads all assets, then makes the release public and marks it latest. A failed run can leave a draft, which can be resumed using **Actions → Release → Run workflow** with the existing tag. An already-public release is never overwritten; use a new tag for corrections. Besides the [signing credentials](#signing-and-notarization), the workflow only needs GitHub's automatic `GITHUB_TOKEN` with `contents: write`; no personal access token is required.
 
 Update [release notes](RELEASE-NOTES.md) when installation requirements change. GitHub-generated change notes are appended automatically. The build takes its version from the tag, so changing the Xcode project's development version is optional.
 

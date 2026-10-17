@@ -9,7 +9,7 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
-            GeneralSettings()
+            GeneralSettings(updates: model.updates)
                 .tabItem { Label("General", systemImage: "slider.horizontal.3") }
             MachineSettings(model: model)
                 .tabItem { Label("Machines", systemImage: "server.rack") }
@@ -25,6 +25,7 @@ struct SettingsView: View {
 }
 
 private struct GeneralSettings: View {
+    let updates: UpdateController
     @AppStorage("refreshSeconds") private var refreshSeconds = 5
     @AppStorage("openMode") private var openMode = TerminalMode.control.rawValue
     @AppStorage("terminalFontSize") private var fontSize = 13.0
@@ -59,6 +60,7 @@ private struct GeneralSettings: View {
                 Text("New Session's folder picker starts here, a folder name alone means a folder inside it, and GitHub repositories are cloned into it. Other machines have their own in Machines.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            UpdateSettings(updates: updates)
             Section("Notifications") {
                 Toggle("Notify when an agent finishes or needs you", isOn: $notifies)
                 Text("Shows the session, its state and what the agent last said. Click one to open the session. The session you are looking at never notifies.")
@@ -102,6 +104,33 @@ private struct GeneralSettings: View {
         if panel.runModal() == .OK, let url = panel.url {
             projectsFolder = (url.path as NSString).abbreviatingWithTildeInPath
         }
+    }
+}
+
+/// Looking for new releases once a day, and checking now.
+private struct UpdateSettings: View {
+    let updates: UpdateController
+    @AppStorage(UpdateController.automaticKey) private var automatic = true
+
+    var body: some View {
+        Section("Updates") {
+            Toggle("Look for a new version once a day", isOn: $automatic)
+                .disabled(!updates.canUpdate)
+            LabeledContent("Shepherdr \(updates.version?.description ?? "(local build)")") {
+                HStack(spacing: 8) {
+                    if updates.state == .checking { ProgressView().controlSize(.small) }
+                    Button("Check Now") { Task { await updates.check(asked: true) } }
+                        .disabled(!updates.canUpdate || updates.state == .checking)
+                }
+            }
+            Text(caption).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private var caption: String {
+        guard updates.canUpdate else { return "This build isn't a signed release, so it doesn't update itself." }
+        let checked = updates.lastCheck.map { "Last checked \($0.formatted(date: .abbreviated, time: .shortened)). " } ?? ""
+        return checked + "New versions come from GitHub. Before replacing itself, Shepherdr checks the download against the release's checksums and that the new app is signed by The Agile Monkeys and notarized by Apple; then it restarts in the new version."
     }
 }
 

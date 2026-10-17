@@ -15,6 +15,10 @@ Recommended: install the GitHub CLI (https://cli.github.com) and sign in with
 "gh auth login". Shepherdr uses it to confirm pull requests and issues, fetch
 their titles and watch pull requests' CI checks.
 
+Shepherdr looks for a new version once a day and offers to update itself:
+it checks the download and its signature, quits, replaces itself and opens
+again. Settings > General > Updates turns that off.
+
 Pick a session in the sidebar to open its live terminal and send it the next
 prompt. Switching sessions or quitting only detaches; Herdr keeps them running.
 Interactive terminals require compatible Herdr terminal session commands

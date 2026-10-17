@@ -24,6 +24,9 @@ struct ShepherdrApp: App {
         .defaultSize(width: 1_280, height: 800)
         .windowStyle(.hiddenTitleBar)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { Task { await model.updates.check(asked: true) } }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("New Session…") { model.startNewSession() }
                     .keyboardShortcut("n", modifiers: .command)

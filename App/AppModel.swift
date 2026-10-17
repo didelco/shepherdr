@@ -331,6 +331,8 @@ final class AppModel {
     let background = BackgroundWorkStore()
     /// The agent tools on each machine, and the letters agents send through them.
     let courier = Courier()
+    /// New releases of Shepherdr, and updating to them.
+    let updates = UpdateController()
 
     init(cluster: ClusterStore = ClusterStore(), order: SessionOrderStore = SessionOrderStore(),
          relations: SessionRelationStore = SessionRelationStore(), sessionStates: SessionStateStore = SessionStateStore()) {

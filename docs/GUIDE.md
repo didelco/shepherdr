@@ -40,6 +40,14 @@ Download the `.dmg` from [the latest GitHub release](../../../releases/latest), 
 
 Downloads are **signed with The Agile Monkeys' Developer ID and notarized by Apple**, so macOS opens them after its usual confirmation for apps from the internet. Earlier versions had an ad hoc signature: if macOS blocks one of those and you trust the download, use **System Settings → Privacy & Security → Open Anyway** for Shepherdr, following [Apple's instructions](https://support.apple.com/en-us/102445).
 
+### Updates
+
+Once a day, while it's open, Shepherdr asks GitHub for its latest release. When there's a newer one, the foot of the sidebar offers it: **UPDATE** installs it, **NOTES** opens what's new, and **LATER** asks again the next day. **Shepherdr → Check for Updates…**, or **Check Now** in **Settings → General → Updates**, asks right away; the same section turns the daily check off.
+
+Updating runs a script that comes with the app. Before it touches anything, it checks the download against the release's `SHA256SUMS`, and that the new app is validly signed by the same Apple team as the one running, is Shepherdr in the version expected, and passes Gatekeeper. Then Shepherdr quits. The script puts the new app where the old one was, keeping the old one aside until that works, and opens it. The new version says how the update went; if anything failed after Shepherdr quit, the old app is back and says why.
+
+When Shepherdr can't write to its folder, or macOS runs it from a temporary copy because it was opened where it was downloaded, **DOWNLOAD** opens the release page instead. Builds you make yourself aren't signed with a Developer ID, so they don't update themselves.
+
 Install and start Herdr separately, then open Shepherdr. The app reads your existing sessions and saved machines. Installing the [GitHub CLI](https://cli.github.com) and signing in with `gh auth login` is recommended: see the requirements below.
 
 ## Requirements
