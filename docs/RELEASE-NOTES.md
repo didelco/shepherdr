@@ -1,18 +1,13 @@
 Native macOS console for herding your coding agents across your Herdr machines: one prioritized queue, the real terminal of every session, a browser per session, and a notification when it's your turn.
 
-### What's new in 0.8.6
+### What's new in 0.8.7
 
-- **Compass, a page of your day.** A second mode (**⌥⌘2**) where an agent of its own keeps a page of what deserves your attention, updated on the schedule you choose in **Settings → Compass**. Talk to it in its terminal beside the page, and use the page's buttons to start the sessions it suggests. Its pages can be kept in a Git remote and restored from it.
-- **Sessions from GitHub links and in worktrees.** Paste a repository's link in **New Session** and Shepherdr opens your clone, or clones it into that machine's projects folder first. Paste a pull request's link and it opens a worktree of its branch, with the pull request in **Resources**. **IN A NEW WORKTREE** works on any folder. Each machine now has a projects folder of its own, in **Settings → Machines**; on another machine, a folder name alone now means a folder inside it.
-- **Projects inside groups.** Turn on **projects** in the queue's header to gather each repository's sessions, worktrees included, under a heading of their own.
-- **Hand off and close.** A session that others wait for can wrap up with **HANDOFF AND CLOSE**: its agent hands its work back with `shepherdr handoff`, and Shepherdr closes the session once the handoff arrives.
-- **Find sessions by typing.** **Wait For…** opens a search instead of a long menu: a few letters, **↑**/**↓** and **Return**, with `@` for a machine.
-- **Click a session named in a terminal.** Pane IDs such as `w5:p1`, terminal IDs and other sessions' names open those sessions.
+- **Shepherdr updates itself.** Once a day it looks for a new version and offers it at the foot of the sidebar: **UPDATE** checks the download and its signature, restarts Shepherdr in the new version, and tells you how it went. **Shepherdr → Check for Updates…** asks right away, and **Settings → General → Updates** turns the daily check off. This is the last version you install by hand.
+- **Compass comes first.** **COMPASS** is now the first tab, with **⌥⌘1**, and **AGENTS** the second, with **⌥⌘2**.
 
 ### Fixed
 
-- A session waiting for a shell, such as a script, never stopped waiting. Now the wait ends when the command finishes.
-- A session waiting for one that had closed kept waiting and showed "session gone". Closed sessions now drop out of holds.
+- The overview showed sessions waiting for other agents or shells as done. They now show the queue's hourglass with **ON HOLD**, or **READY** once what they wait for has finished, and an **ON HOLD** tile counts and filters them.
 
 ### Download and install
 
@@ -22,6 +17,7 @@ Native macOS console for herding your coding agents across your Herdr machines: 
 - **Recommended:** the [GitHub CLI](https://cli.github.com), signed in with `gh auth login`, to confirm pull requests and issues, fetch their titles and watch pull requests' CI checks.
 - Terminals require `terminal session observe/control` on the target machine (verified with CLI/server 0.9.3). Remote terminals, folder checks, machine load and commands left running use an already-trusted SSH host and noninteractive authentication on Unix-like hosts.
 - The agent tools are optional. Shepherdr installs them over SSH only when you accept, writing only `~/.shepherdr` and the agents' skill folders, without `sudo`; on each machine they need only `sh` and Herdr.
+- Once installed, Shepherdr offers new versions as they come out and updates itself in place, only with an app signed by the same team and notarized by Apple.
 - Shepherdr is **signed with The Agile Monkeys' Developer ID and notarized by Apple**: it opens like any other download, with no trip to **Privacy & Security**.
 - macOS asks for permission the first time Shepherdr notifies you or you dictate. Dictation downloads its speech model (about 460 MB) from Hugging Face once, after asking.
 - `SHA256SUMS` contains checksums for both downloads. In their download directory, run `shasum -a 256 -c SHA256SUMS` after downloading both packages.
