@@ -90,32 +90,52 @@ struct SessionSidebar: View {
         // Sessions on hold list the sessions they wait for under them, instead of in their own place.
         let forest = model.waitForest
         let items = model.queue
-        return ScrollView {
-            // A plain stack: the queue is short, and a lazy stack whose rows measure themselves
-            // could loop on layout and freeze the window.
-            VStack(alignment: .leading, spacing: 0) {
-                queueHeader
-                ForEach(model.slots(of: items, forest: forest)) { slot in
-                    switch slot {
-                    case .item(.session(let row)):
-                        if !forest.isNested(row.id) {
-                            ForEach(forest.rows(from: row)) { tree in sessionRow(tree, in: nil, isFirst: false, isLast: false) }
-                        }
-                    case .item(.group(let group)):
-                        groupSection(group, forest: forest, filtering: filtering)
-                    case .project(let run):
-                        ProjectHeaderView(run: run, group: nil, isFirst: false, isLast: false, model: model, hint: $dropHint)
-                        if !run.isCollapsed {
-                            ForEach(run.rows.flatMap(forest.rows(from:))) { tree in
-                                sessionRow(tree, in: nil, run: run, isFirst: false, isLast: false)
+        return ScrollViewReader { proxy in
+            ScrollView {
+                // A plain stack: the queue is short, and a lazy stack whose rows measure themselves
+                // could loop on layout and freeze the window.
+                VStack(alignment: .leading, spacing: 0) {
+                    queueHeader
+                    ForEach(model.slots(of: items, forest: forest)) { slot in
+                        switch slot {
+                        case .item(.session(let row)):
+                            if !forest.isNested(row.id) {
+                                ForEach(forest.rows(from: row)) { tree in sessionRow(tree, in: nil, isFirst: false, isLast: false) }
+                            }
+                        case .item(.group(let group)):
+                            groupSection(group, forest: forest, filtering: filtering)
+                        case .project(let run):
+                            ProjectHeaderView(run: run, group: nil, isFirst: false, isLast: false, model: model, hint: $dropHint)
+                            if !run.isCollapsed {
+                                ForEach(run.rows.flatMap(forest.rows(from:))) { tree in
+                                    sessionRow(tree, in: nil, run: run, isFirst: false, isLast: false)
+                                }
                             }
                         }
                     }
+                    if items.isEmpty { emptyQueue }
+                    QueueEndView(model: model, hint: $dropHint)
+                    shellsSection
                 }
-                if items.isEmpty { emptyQueue }
-                QueueEndView(model: model, hint: $dropHint)
-                shellsSection
             }
+            // The session on screen stays in sight: opened from Compass, a notification or ⌘1…⌘9.
+            .onAppear { reveal(model.selectedID, with: proxy, animated: false) }
+            .onChange(of: model.selectedID) { _, id in reveal(id, with: proxy, animated: true) }
+        }
+    }
+
+    /// Scrolls the queue just enough to show a session, or the header of the collapsed group hiding it.
+    private func reveal(_ id: Agent.ID?, with proxy: ScrollViewProxy, animated: Bool) {
+        guard let id else { return }
+        let target: SidebarAnchor
+        if let group = model.groups.first(where: { $0.members.contains(id) }), group.isCollapsed, model.search.isEmpty {
+            target = .group(group.id)
+        } else {
+            target = model.row(for: id) == nil ? .shell(id) : .session(id)
+        }
+        // Once the row is laid out, as when the sidebar just appeared.
+        DispatchQueue.main.async {
+            if animated { withAnimation(.snappy(duration: 0.2)) { proxy.scrollTo(target) } } else { proxy.scrollTo(target) }
         }
     }
 
@@ -124,6 +144,7 @@ struct SessionSidebar: View {
         GroupHeaderView(group: group, isExpanded: expanded,
                         containsSelection: model.selectedID.map(group.group.members.contains) == true,
                         model: model, hint: $dropHint)
+            .id(SidebarAnchor.group(group.group.id))
         if expanded {
             let slots = model.slots(of: group, forest: forest)
             let listed = Self.listing(slots, forest: forest)
@@ -185,6 +206,7 @@ struct SessionSidebar: View {
         SessionRowView(tree: tree, group: group?.group, run: run, isFirst: isFirst, isLast: isLast,
                        isSelected: model.selectedID == tree.id, showsMachine: model.showsMachineNames,
                        model: model, hint: $dropHint)
+            .id(SidebarAnchor.session(tree.id))
     }
 
     @ViewBuilder private var shellsSection: some View {
@@ -206,6 +228,7 @@ struct SessionSidebar: View {
     private func shellRow(_ shell: ShellRow, grouped: Bool) -> some View {
         ShellRowView(shell: shell, isGrouped: grouped, isSelected: model.selectedID == shell.id,
                      showsMachine: model.showsMachineNames) { model.open(shell.id) }
+            .id(SidebarAnchor.shell(shell.id))
             .contextMenu {
                 Button("Open") { model.open(shell.id) }
                 Button("Rename…") { model.promptRename(shell.id) }.disabled(shell.isStale)
@@ -1006,6 +1029,12 @@ private struct ShellRowView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
     }
+}
+
+/// Where the queue can scroll to. Distinct per kind, like the lists' own identities: a shell and
+/// the agent Herdr later detects in it share an `Agent.ID`.
+private enum SidebarAnchor: Hashable {
+    case session(Agent.ID), shell(Agent.ID), group(String)
 }
 
 /// Lazy stacks need identities unique across the whole list. A shell and the agent Herdr later
