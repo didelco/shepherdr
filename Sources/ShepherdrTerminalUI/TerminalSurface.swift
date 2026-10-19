@@ -616,7 +616,7 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
 
     /// Keys that edit the line as they do in macOS text fields, sent as the Meta (Escape-prefixed)
     /// and Control keys that agents and shells read; Option otherwise types characters. SwiftTerm
-    /// would move a word on ⌘← and ⌘→ and send nothing on ⌘⌫.
+    /// would move a word on ⌘← and ⌘→, and send nothing on ⌘⌫ or Shift-arrows.
     static func sequence(for event: NSEvent) -> [UInt8]? {
         let flags = event.modifierFlags.intersection([.shift, .control, .option, .command])
         switch (event.keyCode, flags) {
@@ -629,6 +629,12 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
         case (124, .command): return [5] // Control-E: the end of the line
         case (51, .command): return [21] // Control-U: delete to the start of the line
         case (117, .command): return [11] // Control-K: delete to the end of the line
+        // Shift-arrows, as xterm sends them, which Codex asks for in its questions. SwiftTerm reads
+        // them as selection commands and sends nothing.
+        case (126, .shift): return Array("\u{1b}[1;2A".utf8)
+        case (125, .shift): return Array("\u{1b}[1;2B".utf8)
+        case (124, .shift): return Array("\u{1b}[1;2C".utf8)
+        case (123, .shift): return Array("\u{1b}[1;2D".utf8)
         default: return nil
         }
     }

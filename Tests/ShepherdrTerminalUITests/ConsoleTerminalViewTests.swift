@@ -41,6 +41,16 @@ struct ConsoleTerminalViewTests {
         #expect(ConsoleTerminalView.sequence(for: key(123, "\u{F702}", arrows.union([.command, .shift]))) == nil)
     }
 
+    @Test func shiftArrowsReachTheProgramAsXtermSendsThem() {
+        let arrows: NSEvent.ModifierFlags = [.function, .numericPad, .shift]
+        #expect(ConsoleTerminalView.sequence(for: key(126, "\u{F700}", arrows)) == Array("\u{1b}[1;2A".utf8))
+        #expect(ConsoleTerminalView.sequence(for: key(125, "\u{F701}", arrows)) == Array("\u{1b}[1;2B".utf8))
+        #expect(ConsoleTerminalView.sequence(for: key(124, "\u{F703}", arrows)) == Array("\u{1b}[1;2C".utf8))
+        #expect(ConsoleTerminalView.sequence(for: key(123, "\u{F702}", arrows)) == Array("\u{1b}[1;2D".utf8))
+        // Plain arrows stay SwiftTerm's, which follows the program's cursor-key mode.
+        #expect(ConsoleTerminalView.sequence(for: key(126, "\u{F700}", [.function, .numericPad])) == nil)
+    }
+
     @Test func optionTypesWhatTheKeyboardLayoutGives() {
         // Spanish layout: Option-2 is "@" and Option-3 is "#".
         #expect(ConsoleTerminalView.sequence(for: key(19, "@", ignoring: "2", .option)) == nil)
