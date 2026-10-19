@@ -1,13 +1,18 @@
 Native macOS console for herding your coding agents across your Herdr machines: one prioritized queue, the real terminal of every session, a browser per session, and a notification when it's your turn.
 
-### What's new in 0.8.7
+### What's new in 0.8.8
 
-- **Shepherdr updates itself.** Once a day it looks for a new version and offers it at the foot of the sidebar: **UPDATE** checks the download and its signature, restarts Shepherdr in the new version, and tells you how it went. **Shepherdr → Check for Updates…** asks right away, and **Settings → General → Updates** turns the daily check off. This is the last version you install by hand.
-- **Compass comes first.** **COMPASS** is now the first tab, with **⌥⌘1**, and **AGENTS** the second, with **⌥⌘2**.
+From 0.8.7 on, Shepherdr offers this version itself, at the foot of the sidebar.
+
+- **Go anywhere with ⌘T.** A panel like Spotlight lists your sessions, shells and Compass, the one you visited last first, so **⌘T** and **Return** take you back to where you just were. Type a few letters to narrow it, with `name@machine` for a machine. It replaces the queue's filter.
+- **Agents can close sessions.** `shepherdr close` closes the agent's own session once its turn ends, or other sessions by name, when you ask it to. A session that's working or needs you stays open unless the agent insists. From another machine, closing a session elsewhere waits for your **CLOSE**. Your machines are offered the updated agent tools.
+- **Open a session's folder in Finder** with the folder button in its header, its context menu, or **⇧⌘O**.
+- **The queue keeps the open session in sight,** scrolling to it when you open it from Compass, a notification or ⌘T.
+- **Lighter on your Mac.** Shepherdr redraws only what a refresh changed and works out the queue once per change. While its window can't be seen, the terminal on screen rests after 30 seconds, other machines are asked every 30 seconds instead of every 5, and browser pages out of sight for 10 minutes let go of their memory. Shepherdr's own SSH commands share one connection per machine.
 
 ### Fixed
 
-- The overview showed sessions waiting for other agents or shells as done. They now show the queue's hourglass with **ON HOLD**, or **READY** once what they wait for has finished, and an **ON HOLD** tile counts and filters them.
+- Shift with an arrow key, which Codex asks for in some questions, did nothing in the terminal.
 
 ### Download and install
 
