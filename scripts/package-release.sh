@@ -59,6 +59,19 @@ notarize() {
     echo "Apple notarized ${file##*/}."
 }
 
+# Stapling and validating ask Apple's ticket service, which drops runners' connections now and
+# then ("The network connection was lost", error 68): try a few times before giving up.
+stapler() {
+    local attempt
+    for attempt in 1 2 3 4; do
+        xcrun stapler "$@" && return 0
+        [[ $attempt -lt 4 ]] || break
+        echo "stapler $1 failed; trying again in $((attempt * 15)) seconds." >&2
+        sleep $((attempt * 15))
+    done
+    return 1
+}
+
 # Asks Gatekeeper what a downloader's Mac would decide. Runners may have assessments
 # disabled, in which case only the stapled ticket and the signature are checked.
 assess() {
@@ -122,8 +135,8 @@ if [[ -n "$identity" ]]; then
     # Staple the app itself so the ZIP's copy opens offline too, then package the stapled app.
     ditto -c -k --keepParent "$app" "$work_dir/notarize.zip"
     notarize "$work_dir/notarize.zip"
-    xcrun stapler staple "$app"
-    xcrun stapler validate "$app"
+    stapler staple "$app"
+    stapler validate "$app"
     assess --type execute "$app"
 fi
 
@@ -135,7 +148,7 @@ codesign --verify --deep --strict --verbose=2 "$work_dir/unpacked/Shepherdr.app"
 cmp "$binary" "$work_dir/unpacked/Shepherdr.app/Contents/MacOS/Shepherdr"
 cmp Sources/ShepherdrTerminalUI/Resources/SwiftTerm-LICENSE "$work_dir/unpacked/Shepherdr.app/Contents/Resources/SwiftTerm-LICENSE"
 if [[ -n "$identity" ]]; then
-    xcrun stapler validate "$work_dir/unpacked/Shepherdr.app"
+    stapler validate "$work_dir/unpacked/Shepherdr.app"
 fi
 
 mkdir "$work_dir/dmg"
@@ -148,8 +161,8 @@ if [[ -n "$identity" ]]; then
     codesign --sign "$identity" --timestamp "$work_dir/$asset.dmg"
     codesign --verify --strict --verbose=2 "$work_dir/$asset.dmg"
     notarize "$work_dir/$asset.dmg"
-    xcrun stapler staple "$work_dir/$asset.dmg"
-    xcrun stapler validate "$work_dir/$asset.dmg"
+    stapler staple "$work_dir/$asset.dmg"
+    stapler validate "$work_dir/$asset.dmg"
     assess --type open --context context:primary-signature "$work_dir/$asset.dmg"
 fi
 hdiutil verify "$work_dir/$asset.dmg"
