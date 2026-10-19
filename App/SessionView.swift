@@ -141,12 +141,17 @@ struct SessionView: View {
                 AgentMark(program: agent.agent.program, style: .tag)
                 StateTag(state: agent.agent.state, stale: agent.isStale)
             }
+            Button { model.showFolder(of: id) } label: { Image(systemName: "folder").font(.system(size: 10.5, weight: .semibold)) }
+                .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
+                .disabled(model.localFolder(of: id) == nil)
+                .help(model.folderHelp(for: id))
+                .accessibilityLabel("Show the session's folder in Finder")
             lockButton
             Button { showDetails.toggle() } label: { Text("i") }
                 .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
                 .help("Session details")
                 .popover(isPresented: $showDetails, arrowEdge: .bottom) {
-                    SessionDetails(context: context).frame(width: 320)
+                    SessionDetails(context: context, cluster: model.cluster).frame(width: 320)
                 }
         }
         .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 10)

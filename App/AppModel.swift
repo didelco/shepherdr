@@ -1012,6 +1012,32 @@ final class AppModel {
             .first { $0.terminalID == id.terminalID }?.directory
     }
 
+    /// The folder a session works in, when it is on this Mac and still there: Finder can open it.
+    func localFolder(of id: Agent.ID) -> URL? {
+        guard id.machineID == Machine.local.id, let directory = directory(of: id) else { return nil }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
+        return URL(fileURLWithPath: directory, isDirectory: true)
+    }
+
+    /// Opens a session's folder in a Finder window.
+    func showFolder(of id: Agent.ID) {
+        guard let folder = localFolder(of: id) else {
+            NSSound.beep()
+            return
+        }
+        NSWorkspace.shared.open(folder)
+    }
+
+    /// What the Finder button says: where the folder is, or why Finder can't open it.
+    func folderHelp(for id: Agent.ID) -> String {
+        guard let directory = directory(of: id) else { return "Herdr doesn't say which folder this session works in" }
+        guard id.machineID == Machine.local.id else {
+            return "\(directory) is on \(machine(for: id).name). Finder only opens folders on this Mac."
+        }
+        return localFolder(of: id) == nil ? "\(directory) isn't there anymore" : "Open \((directory as NSString).abbreviatingWithTildeInPath) in Finder (⇧⌘O)"
+    }
+
     /// The main checkouts sessions on a machine work in whose repository has this name, where a
     /// clone of it may already be.
     func clones(named name: String, on machineID: String) -> [String] {

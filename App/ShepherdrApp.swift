@@ -81,6 +81,9 @@ struct ShepherdrApp: App {
                     .disabled(model.activeTerminal == nil)
                 Button("Browser") { model.toggleBrowser() }
                     .keyboardShortcut("b", modifiers: .command)
+                Button("Show Folder in Finder") { if let id = model.selectedID { model.showFolder(of: id) } }
+                    .keyboardShortcut("o", modifiers: [.command, .shift])
+                    .disabled(model.selectedID?.machineID != Machine.local.id)
                 Button(model.dictation.isRecording ? "Stop Dictation" : "Dictate Prompt") { model.toggleDictation() }
                     .keyboardShortcut("d", modifiers: [.command, .shift])
                     .disabled(model.focusedID == nil && !model.dictation.isRecording)

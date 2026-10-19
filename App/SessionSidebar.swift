@@ -212,6 +212,8 @@ struct SessionSidebar: View {
                 Button("Rename…") { model.promptRename(shell.id) }.disabled(shell.isStale)
                 Button("New Session in Same Folder…") { model.startNewSession(besides: shell.id) }
                     .disabled(!model.canStartNewSession(besides: shell.id))
+                Button("Show Folder in Finder") { model.showFolder(of: shell.id) }
+                    .disabled(shell.id.machineID != Machine.local.id)
                 if grouped {
                     Divider()
                     Button("Remove from Group") { model.moveToGroup(shell.id, nil) }
@@ -464,6 +466,8 @@ private struct SessionRowView: View {
         Button("Rename…") { model.promptRename(row.id) }.disabled(row.isStale)
         Button("New Session in Same Folder…") { model.startNewSession(besides: row.id) }
             .disabled(!model.canStartNewSession(besides: row.id))
+        Button("Show Folder in Finder") { model.showFolder(of: row.id) }
+            .disabled(row.id.machineID != Machine.local.id)
         Divider()
         PriorityMenu(item: item, model: model)
         Divider()
