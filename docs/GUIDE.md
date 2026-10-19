@@ -227,6 +227,8 @@ For remote terminals, Shepherdr invokes the remote installed Herdr CLI through `
 
 When a terminal's connection drops, Shepherdr reconnects on its own. The banner keeps the error and counts down to the next attempt; the wait doubles after each one, from 1 second up to 5 minutes, and **RECONNECT** stays disabled meanwhile. After an hour of trying it stops, says how many times it tried, and **RECONNECT** tries again. Time asleep with the lid closed doesn't count toward the hour. A terminal Herdr no longer has, or an incompatible Herdr, isn't retried.
 
+When nobody can see the terminal on screen for 30 seconds, because Shepherdr's window is minimized, covered or on another Space, or the screens are asleep or locked, Shepherdr detaches it, so an agent writing all the while costs nothing meanwhile. It attaches again as soon as the window shows, locked or unlocked as it was, and keeps the last screen until Herdr sends the whole one. That is not a dropped connection: nothing reconnects in the meantime. Links the session prints while the window is hidden are collected for **Resources** when it shows again.
+
 ## Agents that coordinate
 
 Agents can start sessions, wait for them and hand work back through Shepherdr, on any of your machines. They do it with `~/.shepherdr/bin/shepherdr`, a small command Shepherdr installs on each machine, and a skill that teaches Claude Code and Codex when to use it. Say "start a session on buildbox that fixes the failing test" to an agent, and it starts one there with your prompt. The new session nests under the agent's own, which goes on hold until it finishes. When the new session is done, its result comes back to the agent as a prompt.

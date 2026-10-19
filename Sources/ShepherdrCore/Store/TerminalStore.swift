@@ -40,6 +40,14 @@ public final class TerminalStore {
     @ObservationIgnored private let reconnecting: ReconnectPolicy
     @ObservationIgnored private var reconnectTask: Task<Void, Never>?
 
+    /// Detached because nobody could see it for a while: it attaches again as soon as it shows.
+    @ObservationIgnored public private(set) var isResting = false
+    /// How long the terminal may be out of sight before it detaches.
+    @ObservationIgnored private let restsAfter: Duration
+    @ObservationIgnored private var restTask: Task<Void, Never>?
+    /// Back from a rest: the screen keeps its last frame until Herdr sends the whole one again.
+    @ObservationIgnored private var keepsScreen = false
+
     /// How many lines above the latest output Herdr shows: 0 at the bottom. Herdr keeps the history.
     public private(set) var linesBack = 0
     /// When you last typed or pasted here, such as to tell whether you're talking to an agent.
@@ -48,17 +56,55 @@ public final class TerminalStore {
     @ObservationIgnored private var scrolledSinceCheck = false
 
     public init(target: TerminalTarget, mode: TerminalMode = .observe,
-                client: any HerdrTerminalClient = CLIHerdrClient(), reconnecting: ReconnectPolicy = .standard) {
+                client: any HerdrTerminalClient = CLIHerdrClient(), reconnecting: ReconnectPolicy = .standard,
+                restsAfter: Duration = .seconds(30)) {
         self.target = target
         self.mode = mode == .takeover ? .control : mode
         self.client = client
         self.reconnecting = reconnecting
+        self.restsAfter = restsAfter
     }
 
     /// Connects afresh, as the user asks: any reconnection in progress starts over.
     public func open(mode: TerminalMode? = nil) {
         reconnection = nil
+        isResting = false
+        keepsScreen = false
         connect(mode: mode ?? self.mode)
+    }
+
+    /// Whether anyone can see this terminal: Shepherdr's window shows, and the screens are on and
+    /// unlocked. Out of sight for a while, the terminal detaches, so a busy agent's output costs
+    /// nothing while nobody looks; it attaches again, in the same mode, as soon as it shows. A
+    /// detach on purpose is not a drop: nothing reconnects meanwhile, and coming back starts afresh.
+    public func setVisible(_ visible: Bool) {
+        guard visible else {
+            guard restTask == nil, !isResting else { return }
+            let patience = restsAfter
+            restTask = Task { [weak self] in
+                do { try await Task.sleep(for: patience) } catch { return }
+                self?.rest()
+            }
+            return
+        }
+        restTask?.cancel()
+        restTask = nil
+        guard isResting else { return }
+        isResting = false
+        keepsScreen = true
+        // Coming back never takes over another client's input on its own.
+        connect(mode: mode == .takeover ? .control : mode)
+    }
+
+    /// Detaches a terminal that streams, or is on its way to: one that ended for good, or gave up
+    /// reconnecting, stays as it is.
+    private func rest() {
+        restTask = nil
+        let attached = status == .connecting || status == .observing || status == .interactive
+        guard attached || reconnection?.gaveUp == false else { return }
+        reconnection = nil
+        isResting = true
+        detach()
     }
 
     private func connect(mode: TerminalMode) {
@@ -67,7 +113,7 @@ public final class TerminalStore {
         status = .connecting
         if mode != .observe { isControlledElsewhere = false }
         // While reconnecting, the banner keeps the last failure and the screen its last frame.
-        if reconnection == nil {
+        if reconnection == nil && !keepsScreen {
             message = nil
             detail = nil
             resetDisplay?()
@@ -87,8 +133,9 @@ public final class TerminalStore {
                     switch event {
                     case .frame(let frame):
                         self.busyRetries = 0
-                        if self.reconnection != nil {
+                        if self.reconnection != nil || self.keepsScreen {
                             self.reconnection = nil
+                            self.keepsScreen = false
                             self.message = nil
                             self.detail = nil
                             self.resetDisplay?()
@@ -172,6 +219,10 @@ public final class TerminalStore {
     /// Detaches and stops reconnecting.
     public func disconnect() {
         reconnection = nil
+        restTask?.cancel()
+        restTask = nil
+        isResting = false
+        keepsScreen = false
         detach()
     }
 

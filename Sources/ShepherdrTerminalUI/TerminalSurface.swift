@@ -82,6 +82,11 @@ public struct TerminalSurface: NSViewRepresentable {
         store.resetDisplay = { [weak view] in view?.resetScreen() }
         store.resize(columns: view.getTerminal().cols, rows: view.getTerminal().rows)
         store.open()
+        context.coordinator.sight = TerminalSight(view: view) { [weak store, weak view] visible in
+            store?.setVisible(visible)
+            if visible { view?.scanDeferredResources() }
+        }
+        view.onWindowChange = { [weak sight = context.coordinator.sight] in sight?.update() }
         return view
     }
 
@@ -103,6 +108,9 @@ public struct TerminalSurface: NSViewRepresentable {
     }
 
     public static func dismantleNSView(_ view: ConsoleTerminalView, coordinator: Coordinator) {
+        coordinator.sight?.stop()
+        coordinator.sight = nil
+        view.onWindowChange = nil
         view.removeInteractions()
         coordinator.store.disconnect()
         coordinator.store.display = nil
@@ -129,6 +137,8 @@ public struct TerminalSurface: NSViewRepresentable {
         let store: TerminalStore
         var palette: TerminalPalette?
         var focusRequest: Int?
+        /// Whether anyone can see the terminal, which the store rests on while nobody does.
+        var sight: TerminalSight?
         init(store: TerminalStore) { self.store = store }
         public func sizeChanged(source: SwiftTerm.TerminalView, newCols: Int, newRows: Int) {
             if (source as? ConsoleTerminalView)?.applyingFrame != true { store.resize(columns: newCols, rows: newRows) }
@@ -162,11 +172,15 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
     var onScroll: ((_ up: Bool, _ lines: Int) -> Void)?
     /// Passes a click on a cell to the program, for programs that read the mouse.
     var onClick: ((_ column: Int, _ row: Int) -> Void)?
+    /// The view joined or left a window: whether it can be seen may have changed.
+    var onWindowChange: (() -> Void)?
     /// Lines the wheel turned that are not sent yet; fractions wait for more turning.
     private var pendingScroll: CGFloat = 0
     private var scrollSendScheduled = false
     private var cellMetrics: (font: NSFont, size: CGSize)?
     private var scanPending = false
+    /// A scan put off while the window couldn't be seen, done when it shows again.
+    private var scanDeferred = false
     /// Bumped by every frame, so the menu found under the pointer is reused until the screen changes.
     private var screenGeneration = 0
     private var menuCache: (generation: Int, row: Int, moves: Int?)?
@@ -361,13 +375,18 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
         scheduleResourceScan()
     }
 
-    /// Looks for links worth keeping at most once a second while output flows.
+    /// Looks for links worth keeping at most once a second while output flows, and only while the
+    /// window can be seen: a scan put off meanwhile happens when it shows again.
     private func scheduleResourceScan() {
         guard !scanPending, onResources != nil else { return }
         scanPending = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             guard let self else { return }
             self.scanPending = false
+            guard self.window?.occlusionState.contains(.visible) == true else {
+                self.scanDeferred = true
+                return
+            }
             let terminal = self.getTerminal()
             var found = SessionResources.find(onScreen: self.screenRows())
             // Links agents mark up explicitly keep their whole URL in every cell, however they wrap.
@@ -382,6 +401,18 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
             }
             if !found.isEmpty { self.onResources?(found) }
         }
+    }
+
+    /// Does the scan put off while the window couldn't be seen.
+    func scanDeferredResources() {
+        guard scanDeferred else { return }
+        scanDeferred = false
+        scheduleResourceScan()
+    }
+
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onWindowChange?()
     }
 
     /// The visible screen, one character per column.
@@ -696,3 +727,59 @@ extension ConsoleTerminalView {
         NSCursor.pointingHand.set()
     }
 }
+
+/// Whether anyone can see a terminal: its window is on screen and not covered, minimized or on
+/// another Space, and the screens are awake, unlocked and this user's. Says so on every change.
+@MainActor final class TerminalSight {
+    private weak var view: NSView?
+    private let changed: (Bool) -> Void
+    private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
+    private var screensAway = false
+    private var locked = false
+    private var visible: Bool?
+
+    init(view: NSView, changed: @escaping (Bool) -> Void) {
+        self.view = view
+        self.changed = changed
+        let workspace = NSWorkspace.shared.notificationCenter
+        let away: [(Notification.Name, Bool)] = [
+            (NSWorkspace.screensDidSleepNotification, true), (NSWorkspace.screensDidWakeNotification, false),
+            (NSWorkspace.sessionDidResignActiveNotification, true), (NSWorkspace.sessionDidBecomeActiveNotification, false),
+        ]
+        for (name, isAway) in away {
+            observe(workspace, name) { $0.screensAway = isAway }
+        }
+        let distributed = DistributedNotificationCenter.default()
+        observe(distributed, Notification.Name("com.apple.screenIsLocked")) { $0.locked = true }
+        observe(distributed, Notification.Name("com.apple.screenIsUnlocked")) { $0.locked = false }
+        observe(NotificationCenter.default, NSWindow.didChangeOcclusionStateNotification) { _ in }
+        update()
+    }
+
+    private func observe(_ center: NotificationCenter, _ name: Notification.Name, _ change: @escaping @MainActor (TerminalSight) -> Void) {
+        let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                change(self)
+                self.update()
+            }
+        }
+        observers.append((center, token))
+    }
+
+    /// Works out whether the terminal can be seen, and says so when that changed.
+    func update() {
+        let now = view?.window?.occlusionState.contains(.visible) == true && !screensAway && !locked
+        guard now != visible else { return }
+        // Until it is in a window, it can't be seen, but it isn't hidden either: say nothing yet.
+        if visible == nil, view?.window == nil { return }
+        visible = now
+        changed(now)
+    }
+
+    func stop() {
+        for observer in observers { observer.center.removeObserver(observer.token) }
+        observers = []
+    }
+}
+

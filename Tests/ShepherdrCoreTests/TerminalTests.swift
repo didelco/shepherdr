@@ -389,6 +389,86 @@ private actor MockTerminalClient: HerdrTerminalClient {
         #expect(store.reconnection == nil)
     }
 
+    @Test func aTerminalNobodySeesRestsAndComesBackInItsMode() async throws {
+        let first = MockTerminalConnection()
+        let second = MockTerminalConnection(holdsFrame: true)
+        let client = MockTerminalClient([first, second])
+        let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
+        let store = TerminalStore(target: target, mode: .control, client: client, restsAfter: .milliseconds(20))
+        var resets = 0
+        store.resetDisplay = { resets += 1 }
+        defer { store.disconnect() }
+        store.open()
+        try await wait { store.status == .interactive }
+        store.setVisible(false)
+        try await wait { store.isResting }
+        #expect(store.status == .disconnected && store.reconnection == nil && first.isClosed)
+        // Resting isn't a drop: nothing reconnects meanwhile.
+        try await Task.sleep(for: .milliseconds(60))
+        #expect(await client.requestedModes() == [.control])
+        #expect(store.reconnection == nil)
+        let before = resets
+        store.setVisible(true)
+        #expect(!store.isResting && store.status == .connecting)
+        // The screen keeps its last frame until Herdr sends the whole screen again.
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(resets == before)
+        second.frame()
+        try await wait { store.status == .interactive }
+        #expect(resets == before + 1)
+        #expect(await client.requestedModes() == [.control, .control])
+    }
+
+    @Test func aGlanceAwayKeepsTheTerminalAttached() async throws {
+        let client = MockTerminalClient([MockTerminalConnection()])
+        let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
+        let store = TerminalStore(target: target, mode: .control, client: client, restsAfter: .milliseconds(30))
+        defer { store.disconnect() }
+        store.open()
+        try await wait { store.status == .interactive }
+        store.setVisible(false)
+        store.setVisible(true)
+        try await Task.sleep(for: .milliseconds(90))
+        #expect(!store.isResting && store.status == .interactive)
+        #expect(await client.requestedModes() == [.control])
+    }
+
+    @Test func aTerminalThatEndedForGoodDoesNotRest() async throws {
+        let gone = MockTerminalConnection()
+        let client = MockTerminalClient([gone])
+        let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
+        let store = TerminalStore(target: target, client: client, restsAfter: .milliseconds(10))
+        defer { store.disconnect() }
+        store.open()
+        try await wait { store.status == .observing }
+        gone.continuation.yield(.closed("terminal attach ended: terminal a not found"))
+        gone.continuation.finish()
+        try await wait { store.status == .ended }
+        store.setVisible(false)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(!store.isResting && store.status == .ended)
+        store.setVisible(true)
+        #expect(await client.requestedModes() == [.observe])
+    }
+
+    @Test func aTerminalReconnectingWhileNobodySeesItStartsAfreshWhenItShows() async throws {
+        let client = MockTerminalClient([MockTerminalConnection()], failing: 1)
+        let target = TerminalTarget(machine: .local, terminalID: "a", title: "Agent", workspace: "Project")
+        let store = TerminalStore(target: target, client: client,
+                                  reconnecting: .init(first: .seconds(60), longest: .seconds(60), budget: .seconds(3_600)),
+                                  restsAfter: .milliseconds(10))
+        defer { store.disconnect() }
+        store.open()
+        try await wait { store.reconnection?.next != nil }
+        store.setVisible(false)
+        try await wait { store.isResting }
+        #expect(store.reconnection == nil)
+        store.setVisible(true)
+        try await wait { store.status == .observing }
+        #expect(store.reconnection == nil && store.message == nil)
+        #expect(await client.requestedModes() == [.observe, .observe])
+    }
+
     @Test func aTerminalThatIsGoneIsNotRetried() async throws {
         let gone = MockTerminalConnection()
         let client = MockTerminalClient([gone])
