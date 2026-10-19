@@ -99,16 +99,23 @@ enum LocalPage {
 @MainActor @Observable
 final class BrowserTab: NSObject, Identifiable, WKNavigationDelegate, WKUIDelegate {
     let id = UUID()
-    let webView: WKWebView
+    /// Replaced by a fresh one when the tab lets go of its page.
+    private(set) var webView: WKWebView
     private(set) var title = ""
     private(set) var url: URL?
     private(set) var isLoading = false
-    /// A restored page waiting to be shown before it loads.
+    /// A restored or unloaded page waiting to be shown before it loads.
     @ObservationIgnored private var pending: URL?
     private(set) var canGoBack = false
     private(set) var canGoForward = false
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored private weak var browser: SessionBrowser?
+    @ObservationIgnored private let configuration: WKWebViewConfiguration
+    /// Whether its web view holds a page: not a tab waiting to load, nor an empty one.
+    @ObservationIgnored private(set) var holdsPage = false
+    /// On screen now, and when it last was, or was opened if it never was.
+    @ObservationIgnored private(set) var isShown = false
+    @ObservationIgnored private(set) var lastShown = Date()
     /// A tab that can't be closed, such as Compass's page.
     var isPinned = false
     /// Links clicked in the page go here instead of loading in this tab, such as Compass's page,
@@ -127,27 +134,58 @@ final class BrowserTab: NSObject, Identifiable, WKNavigationDelegate, WKUIDelega
 
     init(url: URL?, browser: SessionBrowser, configuration: WKWebViewConfiguration = BrowserTab.configuration, loadsNow: Bool = true) {
         webView = WKWebView(frame: .zero, configuration: configuration)
+        self.configuration = configuration
         self.browser = browser
         self.url = url
         super.init()
-        webView.navigationDelegate = self
-        webView.uiDelegate = self
-        webView.allowsBackForwardNavigationGestures = true
-        webView.allowsMagnification = true
+        attach(webView)
+        if let url { if loadsNow { load(url) } else { pending = url } }
+    }
+
+    /// Becomes the web view's delegate and follows its title, address, loading and history.
+    private func attach(_ view: WKWebView) {
+        view.navigationDelegate = self
+        view.uiDelegate = self
+        view.allowsBackForwardNavigationGestures = true
+        view.allowsMagnification = true
         observations = [
-            webView.observe(\.title) { [weak self] view, _ in MainActor.assumeIsolated { self?.title = view.title ?? "" } },
-            webView.observe(\.url) { [weak self] view, _ in
+            view.observe(\.title) { [weak self] view, _ in MainActor.assumeIsolated { self?.title = view.title ?? "" } },
+            view.observe(\.url) { [weak self] view, _ in
                 MainActor.assumeIsolated {
                     guard let self, let url = view.url, url != self.url else { return }
                     self.url = url
                     self.browser?.changed()
                 }
             },
-            webView.observe(\.isLoading) { [weak self] view, _ in MainActor.assumeIsolated { self?.isLoading = view.isLoading } },
-            webView.observe(\.canGoBack) { [weak self] view, _ in MainActor.assumeIsolated { self?.canGoBack = view.canGoBack } },
-            webView.observe(\.canGoForward) { [weak self] view, _ in MainActor.assumeIsolated { self?.canGoForward = view.canGoForward } },
+            view.observe(\.isLoading) { [weak self] view, _ in MainActor.assumeIsolated { self?.isLoading = view.isLoading } },
+            view.observe(\.canGoBack) { [weak self] view, _ in MainActor.assumeIsolated { self?.canGoBack = view.canGoBack } },
+            view.observe(\.canGoForward) { [weak self] view, _ in MainActor.assumeIsolated { self?.canGoForward = view.canGoForward } },
         ]
-        if let url { if loadsNow { load(url) } else { pending = url } }
+    }
+
+    /// Whether the tab may let go of its page while out of sight. Compass's page and pages
+    /// opened as another page's window keep theirs, and so does a page still loading.
+    var canUnload: Bool { !isPinned && opensLink == nil && configuration === Self.configuration && !isLoading }
+
+    /// The tab is on screen, or has just left it.
+    func shown(_ isShown: Bool) {
+        self.isShown = isShown
+        lastShown = Date()
+    }
+
+    /// Lets go of the page, and of everything it keeps running, for a fresh web view that loads
+    /// the same address when the tab is shown again. Its scroll position, history and anything
+    /// typed in it are lost.
+    func unload() {
+        guard holdsPage, !isShown, canUnload else { return }
+        let address = url
+        tearDown()
+        webView = WKWebView(frame: .zero, configuration: configuration)
+        attach(webView)
+        holdsPage = false
+        canGoBack = false
+        canGoForward = false
+        pending = address
     }
 
     var displayTitle: String {
@@ -167,6 +205,7 @@ final class BrowserTab: NSObject, Identifiable, WKNavigationDelegate, WKUIDelega
     func load(_ url: URL) {
         self.url = url
         pending = nil
+        holdsPage = true
         switch LocalPage(url) {
         case .markdown:
             let text = (try? String(contentsOf: url, encoding: .utf8)) ?? "*Could not read \(url.lastPathComponent).*"
@@ -332,7 +371,13 @@ struct BrowserPanel: View {
             toolbar
             Rectangle().fill(Theme.line).frame(height: 1)
             if let tab = browser.selected {
-                WebViewHost(webView: tab.webView).onAppear { tab.activate() }.id(tab.id)
+                WebViewHost(webView: tab.webView)
+                    .onAppear {
+                        tab.shown(true)
+                        tab.activate()
+                    }
+                    .onDisappear { tab.shown(false) }
+                    .id(tab.id)
             } else {
                 Text("no pages open").font(Theme.mono(11)).foregroundStyle(Theme.faint)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -437,7 +482,8 @@ struct BrowserPanel: View {
 }
 
 /// Hosts a tab's web view. The view belongs to the tab, not to SwiftUI, so leaving a session
-/// detaches it without unloading the page.
+/// detaches it without unloading the page; only a tab out of sight for a while lets it go
+/// (`AppModel.unloadIdlePages`).
 private struct WebViewHost: NSViewRepresentable {
     let webView: WKWebView
 

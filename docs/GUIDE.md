@@ -170,7 +170,7 @@ Shepherdr never takes input away from another client implicitly. If one is attac
 
 ### Browser
 
-Each session has its own browser column, to the right of the terminal. Clicking a link opens it there in a new tab, or switches to the tab already showing it; **◫ BROWSER** in the bottom bar or **⌘B** shows or hides the column, and **+** opens an empty tab. The tabs stay loaded, scrolled and signed in while you switch sessions, so a pull request you are reviewing is still where you left it. Pages that open new windows open new tabs. **⧉** opens the current page in your default browser.
+Each session has its own browser column, to the right of the terminal. Clicking a link opens it there in a new tab, or switches to the tab already showing it; **◫ BROWSER** in the bottom bar or **⌘B** shows or hides the column, and **+** opens an empty tab. The tabs stay loaded, scrolled and signed in while you switch sessions, so a pull request you are reviewing is still where you left it. A page out of sight for 10 minutes lets go of its memory and of whatever it keeps running, and so do the least recently seen ones while more than 12 are loaded: the tab keeps its address and title and loads the page again when you show it, without its scroll position, back and forward history, or anything typed in a form. Compass's page, a page still loading, and pages another page opened as a window stay loaded. Pages that open new windows open new tabs. **⧉** opens the current page in your default browser.
 
 **⌘-click** a link in a page to open it in your default browser instead.
 

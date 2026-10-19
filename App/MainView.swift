@@ -60,6 +60,7 @@ struct MainView: View {
             await cluster.monitor()
         }
         .task { await model.watchBackgroundWork() }
+        .task { await model.watchBrowsers() }
         .onAppear { model.compass.start() }
         .onAppear { model.updates.start() }
         .onChange(of: refreshSeconds) { configureRefresh() }

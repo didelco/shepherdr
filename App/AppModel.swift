@@ -1033,6 +1033,24 @@ final class AppModel {
         row.isStale || row.agent.state == .working ? [] : background.commands[row.id] ?? []
     }
 
+    /// Once a minute, lets go of the pages of browser tabs nobody has looked at in a while, in every
+    /// session's browser, the overview's and Compass's. They load again when shown.
+    func watchBrowsers() async {
+        while !Task.isCancelled {
+            do { try await Task.sleep(for: .seconds(60)) } catch { return }
+            unloadIdlePages()
+        }
+    }
+
+    func unloadIdlePages(now: Date = Date()) {
+        let tabs = (workspaces.values.map(\.browser) + [overviewBrowser, compass.browser]).flatMap(\.tabs)
+        let pages = tabs.map {
+            PageUnloading.Page(id: $0.id, isLoaded: $0.holdsPage, isShown: $0.isShown, canUnload: $0.canUnload, lastShown: $0.lastShown)
+        }
+        let unloading = Set(PageUnloading.pages(toUnload: pages, now: now))
+        for tab in tabs where unloading.contains(tab.id) { tab.unload() }
+    }
+
     /// Looks for commands agents left running every 10 seconds while the window shows, and as soon
     /// as it shows again.
     func watchBackgroundWork() async {
