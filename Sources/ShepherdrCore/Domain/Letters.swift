@@ -49,6 +49,9 @@ public struct Letter: Equatable, Sendable {
         case pin(URL, title: String?)
         case open(URL)
         case notify
+        /// Close these sessions; the sender's own when empty. `force` closes them even while their
+        /// agent works or needs the user.
+        case close([String], force: Bool)
     }
 
     public let id: String
@@ -156,6 +159,9 @@ extension Letter {
         case "notify":
             guard message?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { throw LetterError("The notification is empty.") }
             content = .notify
+        case "close":
+            content = .close(try (dto.sessions ?? []).map { try Self.text($0, "session", limit: 200) ?? "" }.filter { !$0.isEmpty },
+                             force: dto.force ?? false)
         default:
             throw LetterError("Unknown kind of letter: \(dto.kind.prefix(40)).")
         }
@@ -219,4 +225,5 @@ private struct LetterDTO: Decodable {
     let sessions: [String]?
     let url: String?
     let title: String?
+    let force: Bool?
 }

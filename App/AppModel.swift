@@ -1189,15 +1189,19 @@ final class AppModel {
     }
 
     /// Ends the pane in Herdr after the user confirmed. Leaving the view first detaches this client.
-    func closeSession(_ id: Agent.ID) async {
+    /// Returns whether Herdr closed it.
+    @discardableResult
+    func closeSession(_ id: Agent.ID) async -> Bool {
         closingSession = nil
-        guard let context = context(for: id) else { return }
+        guard let context = context(for: id) else { return false }
         if selectedID == id { selection = .overview }
         do {
             try await cluster.closeSession(paneID: context.paneID, onMachine: id.machineID)
             forgetSession(id)
+            return true
         } catch {
             actionFailure = Self.failure(error)
+            return false
         }
     }
 

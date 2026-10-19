@@ -81,6 +81,7 @@ final class SessionNotifier: NSObject {
         case .handoff, .prompt: "Handoff from \(sender)"
         case .spawnRequest: "\(sender) asks for a session on \(item.request?.machine ?? "another machine")"
         case .openPage: "\(sender) suggests a page"
+        case .close: "\(sender) asks to close \(item.addressedTo ?? "a session")"
         }
         let subtitle = switch item.status {
         case .needsApproval: "Waiting for your approval"

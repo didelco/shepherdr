@@ -1,6 +1,6 @@
 ---
 name: shepherdr
-description: "Start agent sessions on this machine or on other machines in the user's Shepherdr network, wait for them, hand results back to the session coordinating you, and pin links or notify the user in Shepherdr. Use when the user asks to create, start or launch a session or agent on a machine or server by name, to hand off or report back to a coordinating session, or to wait for another session. Requires HERDR_ENV=1."
+description: "Start agent sessions on this machine or on other machines in the user's Shepherdr network, wait for them, hand results back to the session coordinating you, close sessions, and pin links or notify the user in Shepherdr. Use when the user asks to create, start or launch a session or agent on a machine or server by name, to hand off or report back to a coordinating session, to wait for another session, or to close a session, this one included. Requires HERDR_ENV=1."
 ---
 
 # Shepherdr
@@ -68,6 +68,20 @@ When you finish work that another session asked for, hand the result back:
 ```
 
 `wait-for` puts your session on hold until those sessions finish. `resume` takes it off hold, or stops waiting for the sessions you name.
+
+## Close sessions
+
+Close a session only when the user asks you to. Closing ends its Herdr pane and the agent in it, and nothing in it can be recovered.
+
+```bash
+~/.shepherdr/bin/shepherdr close
+~/.shepherdr/bin/shepherdr close reviewer tester@buildbox
+```
+
+- With no name, it closes your own session once you finish this turn. Keep your last message short: the session closes right after it, and the user may not get to read it.
+- With names, it closes those sessions, by agent or workspace name like `handoff --to`. A session that is working or waiting for the user stays open, and Shepherdr shows you why; add `--force` only when the user asked to close it anyway.
+- Closing a session on another machine may wait for the user's approval in Shepherdr.
+- If you finish work another session waits for, hand it back with `handoff` before you close.
 
 ## Links and notices
 

@@ -255,11 +255,14 @@ When Shepherdr brings newer tools, the machine's sessions offer **UPDATE**. **Se
 | `shepherdr pin URL [--title TEXT]` | Adds a link to the caller's resources |
 | `shepherdr open URL` | Opens a page in the caller's browser in Shepherdr |
 | `shepherdr notify MESSAGE` | Shows you a notification |
+| `shepherdr close [--force] [NAME…]` | Closes those sessions, or the caller's own once its turn ends |
 | `shepherdr status` | This machine, the caller's pane and letters not collected yet |
 
 `spawn` creates a Herdr workspace in the folder (or splits the caller's pane with `--split`), starts the agent, by default the caller's own kind, and sends it the prompt. Shepherdr puts the new session right after the caller, in its group, nested under it, and keeps the caller on hold until the new one finishes; `--no-wait` only places it. If the agent stops at a startup question, such as trusting the folder, Shepherdr sends the prompt once it is ready. Names are Herdr agent names, and the workspace gets the same one.
 
 A handoff goes to the sessions waiting for its sender, unless `--to` names another by its agent or workspace name, with `@machine` to tell machines apart. Shepherdr delivers it as a prompt once that session is free (idle or done), one at a time, with the message and the paths of its files. The files are kept on this Mac in `~/.shepherdr/inbox`; for a session on another machine, Shepherdr copies them there first. If nobody waits for its sender, the handoff waits in the session's mail panel with **SEND TO**.
+
+Ask an agent to close a session, its own included, and it runs `shepherdr close`; the skill tells agents to close sessions only when you ask. Shepherdr closes them as **Close Session** does, ending their pane and agent. With no name, the agent's own session closes once it finishes its turn, so its last answer gets written. Named sessions close right away, except one whose agent is working or needs you: that one stays open and the asking session says why, unless the agent added `--force`, which the skill keeps for when you asked for it. Compass's own agent never closes this way.
 
 ### Machine lists
 
@@ -271,11 +274,12 @@ The lists only hold names and routes: never hosts, users, ports or keys. Herdr p
 
 Machines never connect to this Mac. The command leaves each request as a letter in `~/.shepherdr/outbox` on its machine, and rings a doorbell: a token on the caller's Herdr pane, which Shepherdr sees in its next refresh. Shepherdr then collects the machine's letters over SSH, keeps them in `~/.shepherdr/inbox` on this Mac, and moves them to `outbox/.collected` there. A manual refresh (**⌘R**) also looks in every outbox, for letters whose doorbell was lost when Herdr restarted. While Shepherdr is closed, letters wait.
 
-Letters are data: Shepherdr checks every field, accepts only http and https links and plain files with safe names, and never runs anything in them. Letters from this Mac apply on their own. From another machine, three things wait for you in the session's mail panel, on the overview and as a notification, with an amber envelope in the queue:
+Letters are data: Shepherdr checks every field, accepts only http and https links and plain files with safe names, and never runs anything in them. Letters from this Mac apply on their own. From another machine, four things wait for you in the session's mail panel, on the overview and as a notification, with an amber envelope in the queue:
 
 - **Handoffs to a session on a different machine**, since their text becomes a prompt for an agent there: **LET THROUGH** delivers them, **VIEW** shows the message first.
 - **Requests for sessions** on machines it can't reach: **START** starts it with the requested folder, agent and prompt, linked to the session that asked.
 - **Pages to open:** **OPEN** opens it in the session's browser.
+- **Requests to close a session on a different machine:** **CLOSE** closes it.
 
 **Settings → Agents → Trust its letters** lets a machine's letters through without asking. A cyan envelope means mail waits for its session to be free. Shepherdr keeps the letters' files for a month.
 

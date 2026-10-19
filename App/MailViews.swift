@@ -116,7 +116,8 @@ struct MailPanel: View {
 
     private func row(_ item: MailItem) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: item.kind == .spawnRequest ? "plus.rectangle.on.rectangle" : item.kind == .openPage ? "safari" : "envelope.fill")
+            Image(systemName: item.kind == .spawnRequest ? "plus.rectangle.on.rectangle" : item.kind == .openPage ? "safari"
+                              : item.kind == .close ? "xmark.rectangle" : "envelope.fill")
                 .font(.system(size: 10, weight: .semibold)).foregroundStyle(tint(item)).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -143,6 +144,7 @@ struct MailPanel: View {
         case .prompt: "FIRST PROMPT"
         case .spawnRequest: "SESSION REQUEST"
         case .openPage: "PAGE"
+        case .close: "CLOSE REQUEST"
         }
     }
 
@@ -166,13 +168,20 @@ struct MailPanel: View {
             return "\(what) on \(request.machine), in \(request.directory)" + (item.hasMessage ? " · with a prompt" : "")
         case .openPage:
             return item.url?.absoluteString
+        case .close:
+            let target = item.recipient.flatMap { model.row(for: $0) }.map(\.workspace) ?? item.addressedTo ?? "a session"
+            return "Close \(target): its pane and its agent end."
         }
     }
 
     private func status(_ item: MailItem) -> String? {
         switch item.status {
         case .needsApproval:
-            return item.kind == .handoff ? "It comes from another machine: let it through to deliver it." : nil
+            switch item.kind {
+            case .handoff: return "It comes from another machine: let it through to deliver it."
+            case .close: return "It comes from another machine: close the session only if you meant it to."
+            default: return nil
+            }
         case .needsRecipient:
             return item.problem ?? "Choose the session it goes to."
         case .queued:
@@ -193,7 +202,9 @@ struct MailPanel: View {
             }
             switch item.status {
             case .needsApproval:
-                Button(item.kind == .spawnRequest ? "START" : item.kind == .openPage ? "OPEN" : "LET THROUGH") { courier.approve(item) }
+                Button(item.kind == .spawnRequest ? "START" : item.kind == .openPage ? "OPEN" : item.kind == .close ? "CLOSE" : "LET THROUGH") {
+                    courier.approve(item)
+                }
                     .buttonStyle(ConsoleButtonStyle(tint: Theme.amber, prominent: true))
             case .needsRecipient:
                 Menu {
@@ -211,7 +222,7 @@ struct MailPanel: View {
                 .background(Theme.amber, in: RoundedRectangle(cornerRadius: 4))
                 .help("Choose the session it goes to")
             case .failed:
-                if item.kind != .openPage {
+                if item.kind != .openPage, item.kind != .close {
                     Button("RETRY") { courier.approve(item) }.buttonStyle(ConsoleButtonStyle(tint: Theme.red))
                 }
             case .queued:

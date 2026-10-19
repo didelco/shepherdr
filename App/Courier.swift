@@ -29,6 +29,8 @@ final class Courier {
     private(set) var handoffCloses: [Agent.ID: HandoffClose] = [:]
     /// Sessions whose agent is being asked to hand off right now.
     @ObservationIgnored private var asking = Set<Agent.ID>()
+    /// Sessions that asked to close themselves, waiting for their agent to finish its turn.
+    @ObservationIgnored private var closingWhenFree = Set<Agent.ID>()
 
     /// A session's agent gets one delivery at a time: the next waits until it worked on this one.
     private static let deliveryGap: TimeInterval = 20
@@ -84,6 +86,7 @@ final class Courier {
         deliver()
         settleMissingRecipients()
         advanceHandoffCloses()
+        closeFinishedSessions()
     }
 
     /// Checks again a machine whose session you opened, when its last check is a while ago.
@@ -291,7 +294,8 @@ final class Courier {
     private func apply(_ letter: Letter, from machine: Machine, folder: URL) {
         guard let model else { return }
         let context = MailContext(origin: machine, isTrusted: tools.trusted.contains(machine.id), rows: model.cluster.agents,
-                                  machines: catalog, macName: tools.macName, waits: model.relations.waits)
+                                  machines: catalog, macName: tools.macName, waits: model.relations.waits,
+                                  protected: model.compass.terminal.map { [$0] } ?? [])
         let actions = MailPlanner.plan(letter, folder: folder.path, context: context)
         for action in actions {
             switch action {
@@ -317,6 +321,12 @@ final class Courier {
                 model.workspace(for: session).browser.open(url)
             case .notify(let session, let text):
                 model.notifier.letterNotice(text, from: session, machine: name(of: machine.id))
+            case .close(let session, let asker, true) where asker == nil:
+                closingWhenFree.insert(session)
+                model.sessionNotices[session] = "Its agent asked to close this session: Shepherdr closes it once the agent finishes this turn."
+                closeFinishedSessions()
+            case .close(let session, let asker, _):
+                close(session, asked: asker)
             case .problem(let session?, let text):
                 model.sessionNotices[session] = text
             case .problem(nil, let text):
@@ -397,6 +407,32 @@ final class Courier {
                 $0.status = .failed
                 $0.problem = "Its session closed before it could be delivered."
             }
+        }
+    }
+
+    // MARK: Closing
+
+    /// Ends a session as Close Session does, and tells the session that asked, if another did.
+    private func close(_ session: Agent.ID, asked asker: Agent.ID?) {
+        guard let model else { return }
+        closingWhenFree.remove(session)
+        let name = model.row(for: session)?.workspace ?? model.shell(for: session)?.pane.workspaceName ?? "A session"
+        Task {
+            guard await model.closeSession(session), let asker, asker != session, model.row(for: asker) != nil else { return }
+            model.sessionNotices[asker] = "Closed \(name), as this session's agent asked."
+        }
+    }
+
+    /// Closes the sessions that asked to close themselves once their agent is idle or done; forgets
+    /// the ones that closed some other way.
+    private func closeFinishedSessions() {
+        guard let model else { return }
+        for id in closingWhenFree {
+            guard let row = model.row(for: id) else {
+                closingWhenFree.remove(id)
+                continue
+            }
+            if !row.isStale, row.agent.state == .idle || row.agent.state == .done { close(id, asked: nil) }
         }
     }
 
@@ -509,6 +545,9 @@ final class Courier {
         case .openPage:
             if let url = item.url, let session = item.recipient { model?.workspace(for: session).browser.open(url) }
             mail.remove(item.id)
+        case .close:
+            mail.remove(item.id)
+            if let session = item.recipient { close(session, asked: item.sender) }
         }
     }
 

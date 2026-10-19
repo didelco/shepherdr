@@ -98,7 +98,7 @@ done_test() { passed=$((passed + 1)); }
 setup version
 run version
 expect_status 0
-expect_output "shepherdr 1 (protocol 1)"
+expect_output "shepherdr 2 (protocol 1)"
 run help
 expect_output "shepherdr spawn [options]"
 run skill
@@ -305,6 +305,27 @@ the_letter
 expect_json '"kind":"resume","from":{"pane":"w1:p1","terminal":"term_caller1"},"sessions":[]'
 run_outside wait-for reviewer
 expect_status 1
+done_test
+
+setup close
+run close
+expect_status 0
+expect_output "once you finish this turn"
+the_letter
+expect_json '"kind":"close","from":{"pane":"w1:p1","terminal":"term_caller1"},"sessions":[],"force":false'
+expect_doorbell
+rm -rf "$home/.shepherdr/outbox"
+run close --force reviewer -- "test runner@buildbox"
+expect_status 0
+expect_output "Asked Shepherdr to close reviewer test runner@buildbox"
+the_letter
+expect_json '"sessions":["reviewer","test runner@buildbox"],"force":true'
+rm -rf "$home/.shepherdr/outbox"
+run close --everything
+expect_status 2
+run_outside close reviewer
+expect_status 1
+expect_no_letter
 done_test
 
 setup links

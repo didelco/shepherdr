@@ -47,6 +47,14 @@ struct LetterTests {
         #expect(throws: LetterError.self) { try Letter(id: "../../etc", contents: ["letter.json": Data("{}".utf8)]) }
     }
 
+    @Test func closeLettersNameSessionsOrNone() throws {
+        #expect(try letter("{\(from),\"kind\":\"close\",\"sessions\":[],\"force\":false}").content == .close([], force: false))
+        #expect(try letter("{\(from),\"kind\":\"close\",\"sessions\":[\"api\",\" \"],\"force\":true}").content == .close(["api"], force: true))
+        // A letter that leaves out force closes nothing by force.
+        #expect(try letter("{\(from),\"kind\":\"close\",\"sessions\":[\"api\"]}").content == .close(["api"], force: false))
+        #expect(throws: LetterError.self) { try letter("{\(from),\"kind\":\"close\",\"sessions\":[\"a\\nb\"]}") }
+    }
+
     @Test func headlinesAreTheFirstLineOfTheMessage() throws {
         let handoff = try letter("{\(from),\"kind\":\"handoff\",\"to\":null,\"files\":[]}", message: "\n  PR opened: theam/api#41  \nDetails")
         #expect(handoff.headline == "PR opened: theam/api#41")
@@ -164,6 +172,68 @@ struct MailPlannerTests {
         let asked = items(MailPlanner.plan(request, folder: "/x", context: context(box)))
         #expect(asked[0].status == .needsApproval && asked[0].request == .init(machine: "Studio", directory: "~/src/api", agent: "codex", name: nil, wait: true))
         #expect(items(MailPlanner.plan(request, folder: "/x", context: context(box, trusted: true)))[0].status == .queued)
+    }
+}
+
+struct ClosePlanTests {
+    private let planner = row("term_planner", name: "planner", workspace: "coordination")
+    private let fixer = row("term_fixer", on: box, name: "fixer", workspace: "api", state: .working)
+    private let reviewer = row("term_rev", on: box, name: "reviewer")
+    private let busy = row("term_busy", on: box, name: "busy", workspace: "busy", state: .working)
+    private let asking = row("term_ask", on: box, name: "asking", workspace: "asking", state: .blocked)
+    private let compass = row("term_compass", name: "compass")
+
+    private func plan(_ json: String, from origin: Machine, trusted: Bool = false) throws -> [MailAction] {
+        let context = MailContext(origin: origin, isTrusted: trusted, rows: [planner, fixer, reviewer, busy, asking, compass],
+                                  machines: machines, macName: "Studio", waits: [:], protected: [compass.id])
+        return MailPlanner.plan(try letter("{\(from),\"kind\":\"close\",\(json)}"), folder: "/x", context: context)
+    }
+
+    @Test func aSessionClosesItselfOnceItsTurnEnds() throws {
+        // Its agent is working: it ran the command in this turn.
+        #expect(try plan(#""sessions":[],"force":false"#, from: box) == [.close(fixer.id, asked: nil, whenFree: true)])
+        #expect(try plan(#""sessions":[],"force":true"#, from: box) == [.close(fixer.id, asked: nil, whenFree: false)])
+        // Its own name means itself too.
+        #expect(try plan(#""sessions":["fixer"],"force":false"#, from: box) == [.close(fixer.id, asked: nil, whenFree: true)])
+        // A shell, such as a script's, has no turn to wait for.
+        let shell = Agent.ID(machineID: lab.id, terminalID: "term_fixer")
+        #expect(try plan(#""sessions":[],"force":false"#, from: lab) == [.close(shell, asked: nil, whenFree: false)])
+    }
+
+    @Test func otherSessionsCloseUnlessTheyWorkOrNeedTheUser() throws {
+        #expect(try plan(#""sessions":["reviewer"],"force":false"#, from: box) == [.close(reviewer.id, asked: fixer.id, whenFree: false)])
+        let refused = try plan(#""sessions":["busy","asking","ghost"],"force":false"#, from: box)
+        #expect(refused.count == 3)
+        for (action, words) in zip(refused, ["busy is working", "asking needs the user", "No session is named ghost"]) {
+            if case .problem(let who, let text) = action { #expect(who == fixer.id && text.contains(words), "\(text)") }
+            else { Issue.record("expected a problem, got \(action)") }
+        }
+        #expect(try plan(#""sessions":["busy","asking"],"force":true"#, from: box) ==
+                [.close(busy.id, asked: fixer.id, whenFree: false), .close(asking.id, asked: fixer.id, whenFree: false)])
+    }
+
+    @Test func closingASessionElsewhereIsTheUsersCall() throws {
+        // From buildbox, a session on this Mac waits for approval unless buildbox is trusted.
+        let asked = try plan(#""sessions":["planner"],"force":false"#, from: box)
+        guard case .keep(let item) = asked.first else {
+            Issue.record("expected an item, got \(asked)")
+            return
+        }
+        #expect(item.kind == .close && item.status == .needsApproval && item.recipient == planner.id && item.sender == fixer.id
+                && item.addressedTo == "planner")
+        #expect(try plan(#""sessions":["planner"],"force":false"#, from: box, trusted: true) == [.close(planner.id, asked: fixer.id, whenFree: false)])
+        // This Mac's letters apply on their own.
+        let sender = Agent.ID(machineID: "local", terminalID: "term_fixer")
+        #expect(try plan(#""sessions":["reviewer@buildbox"],"force":false"#, from: .local) == [.close(reviewer.id, asked: sender, whenFree: false)])
+    }
+
+    @Test func compassAndLettersWithoutASenderCloseNothing() throws {
+        let compassClose = try plan(#""sessions":["compass"],"force":true"#, from: .local)
+        if case .problem(_, let text) = compassClose.first { #expect(text.contains("Compass")) } else { Issue.record("expected a problem") }
+        let outside = MailPlanner.plan(try letter(#"{"protocol":1,"id":"20261015T101502Z-7f3a9c","from":{},"kind":"close","sessions":["reviewer"]}"#),
+                                       folder: "/x", context: MailContext(origin: box, isTrusted: true, rows: [reviewer], machines: machines,
+                                                                          macName: "Studio", waits: [:]))
+        if case .problem(nil, _) = outside.first {} else { Issue.record("expected a problem without a session, got \(outside)") }
     }
 }
 

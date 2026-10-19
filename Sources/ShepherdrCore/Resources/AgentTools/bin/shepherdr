@@ -1,6 +1,6 @@
 #!/bin/sh
 # Shepherdr's command line for agents in Herdr panes: start sessions that Shepherdr links to
-# yours, wait for them, and hand work back. Shepherdr installs it on every machine it reaches,
+# yours, wait for them, hand work back, and close them. Shepherdr installs it on every machine it reaches,
 # Linux included; `shepherdr skill` prints the instructions agents follow.
 #
 # It only talks to this machine's Herdr, and through it to the machines Herdr has saved.
@@ -558,6 +558,43 @@ cmd_resume() {
     if [ $# -eq 0 ]; then say "Shepherdr takes this session off hold."; else say "Shepherdr stops this session waiting for $*."; fi
 }
 
+# Closing ends a session's pane and its agent, so the skill tells agents to do it only when the
+# user asks. Shepherdr closes the caller once its turn ends, and refuses to close a session that is
+# working or waiting for the user unless --force.
+cmd_close() {
+    force=false close_json='' close_names=''
+    while [ $# -gt 0 ]; do
+        case $1 in
+        --force) force=true; shift ;;
+        --) shift; break ;;
+        -?*) usage_error "Unknown option for close: $1" ;;
+        *) add_close_name "$1"; shift ;;
+        esac
+    done
+    for cl_name in "$@"; do add_close_name "$cl_name"; done
+    learn_caller
+    [ -n "$caller_terminal" ] || fail "Run this inside a Herdr pane: Shepherdr closes sessions for the session that asks."
+    begin_letter
+    finish_letter close ",\"sessions\":[${close_json}],\"force\":$force"
+    if [ -z "$close_names" ]; then
+        if $force; then
+            say "Shepherdr closes this session now: its pane and its agent end."
+        else
+            say "Shepherdr closes this session once you finish this turn: its pane and its agent end."
+        fi
+    else
+        say "Asked Shepherdr to close $close_names: their panes and agents end."
+        $force || say "A session that is working or waiting for the user stays open; Shepherdr tells it why."
+        say "On another machine, the user may approve it first."
+    fi
+}
+
+add_close_name() {
+    cl_value=$(json_string "$1") || usage_error "Session names can't have control characters."
+    close_json=${close_json:+$close_json,}$cl_value
+    close_names=${close_names:+$close_names }$1
+}
+
 cmd_pin() {
     url='' title=''
     while [ $# -gt 0 ]; do
@@ -643,6 +680,7 @@ Usage:
                                        Hand work back to the session waiting for you
   shepherdr wait-for NAME...           Put this session on hold until those finish
   shepherdr resume [NAME...]           Stop waiting for them, or for all
+  shepherdr close [--force] [NAME...]  Close sessions, or this one once this turn ends
   shepherdr pin URL [--title TEXT]     Add a link to this session's resources
   shepherdr open URL                   Open a page in this session's browser
   shepherdr notify MESSAGE             Show the user a notification
@@ -664,6 +702,7 @@ folders) cmd_folders "$@" ;;
 handoff) cmd_handoff "$@" ;;
 wait-for) cmd_wait_for "$@" ;;
 resume) cmd_resume "$@" ;;
+close) cmd_close "$@" ;;
 pin) cmd_pin "$@" ;;
 open) cmd_open "$@" ;;
 notify) cmd_notify "$@" ;;

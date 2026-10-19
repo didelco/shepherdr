@@ -13,6 +13,8 @@ public struct MailItem: Identifiable, Codable, Equatable, Sendable {
         case spawnRequest
         /// A page a session on another machine suggests opening.
         case openPage
+        /// A session another machine's agent asks to close.
+        case close
     }
 
     public enum Status: String, Codable, Sendable {
@@ -97,6 +99,9 @@ public enum MailAction: Equatable, Sendable {
     case pin(Agent.ID, SessionResource)
     case open(Agent.ID, URL)
     case notify(Agent.ID?, String)
+    /// Ends a session, as Close Session does. `asked` is the session that asked, when it isn't the
+    /// one closing; `whenFree` waits for its agent to finish its turn first.
+    case close(Agent.ID, asked: Agent.ID?, whenFree: Bool)
     /// Something in the letter couldn't be done, to show on the sender if there is one.
     case problem(Agent.ID?, String)
 }
@@ -111,22 +116,26 @@ public struct MailContext: Sendable {
     public let macName: String
     /// Each waiting session and the sessions it waits for.
     public let waits: [Agent.ID: [Agent.ID]]
+    /// Sessions letters can't close, such as Compass's own agent.
+    public let protected: Set<Agent.ID>
 
     public init(origin: Machine, isTrusted: Bool, rows: [AgentRow], machines: [Machine], macName: String,
-                waits: [Agent.ID: [Agent.ID]]) {
+                waits: [Agent.ID: [Agent.ID]], protected: Set<Agent.ID> = []) {
         self.origin = origin
         self.isTrusted = isTrusted
         self.rows = rows
         self.machines = machines
         self.macName = macName
         self.waits = waits
+        self.protected = protected
     }
 }
 
 public enum MailPlanner {
     /// Turns a letter into actions. Letters from this Mac apply on their own. From another
-    /// machine, text that would reach a session on a different machine, a request for a session
-    /// and a page to open wait for the user, unless you trust that machine.
+    /// machine, text that would reach a session on a different machine, a request for a session,
+    /// a page to open and closing a session on a different machine wait for the user, unless you
+    /// trust that machine.
     public static func plan(_ letter: Letter, folder: String, context: MailContext, now: Date = Date()) -> [MailAction] {
         let origin = context.origin
         let sender = letter.sender.map { Agent.ID(machineID: origin.id, terminalID: $0.terminalID) }
@@ -236,6 +245,39 @@ public enum MailPlanner {
 
         case .notify:
             return [.notify(sender, letter.message ?? "")]
+
+        case .close(let names, let force):
+            guard let sender else { return [needsSender("close a session")] }
+            let protected = "Compass's own session can't be closed this way."
+            // Its own session: once its agent has finished the turn it asked in, unless forced. A
+            // shell, such as a script's, has no turn to finish.
+            func closeSelf() -> MailAction {
+                if context.protected.contains(sender) { return .problem(sender, protected) }
+                return .close(sender, asked: nil, whenFree: !force && context.rows.contains { $0.id == sender })
+            }
+            guard !names.isEmpty else { return [closeSelf()] }
+            return names.enumerated().map { index, name in
+                let id: Agent.ID
+                switch SessionLookup.find(name, in: context.rows, machines: context.machines, macName: context.macName,
+                                          preferring: origin.id) {
+                case .found(let found): id = found
+                case .missing: return .problem(sender, "No session is named \(name), so nothing was closed.")
+                case .ambiguous: return .problem(sender, "Several sessions are named \(name). Add @machine to pick one.")
+                }
+                if id == sender { return closeSelf() }
+                if context.protected.contains(id) { return .problem(sender, protected) }
+                guard let row = context.rows.first(where: { $0.id == id }) else { return .problem(sender, "No session is named \(name).") }
+                if row.isStale { return .problem(sender, "\(row.workspace) is on a machine that isn't answering, so it wasn't closed.") }
+                if !force, row.agent.state == .working || row.agent.state == .blocked {
+                    let doing = row.agent.state == .working ? "is working" : "needs the user"
+                    return .problem(sender, "\(row.workspace) \(doing), so it wasn't closed. Close it with --force only if the user asked for that.")
+                }
+                // Ending an agent on a different machine is the user's call, as its prompts are.
+                if !origin.isLocal, !context.isTrusted, id.machineID != origin.id {
+                    return .keep(item(.close, index: index, recipient: id, status: .needsApproval, addressedTo: name))
+                }
+                return .close(id, asked: sender, whenFree: false)
+            }
         }
     }
 

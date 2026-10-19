@@ -124,7 +124,7 @@ struct AgentToolsTests {
     /// every change to the command or the skill needs a new `VERSION`. Each version keeps its
     /// fingerprint here: after bumping it, add the new one this test prints.
     @Test func changingTheToolsTakesANewVersion() throws {
-        let fingerprints = [1: "421ecfaa5c879c75"]
+        let fingerprints = [1: "421ecfaa5c879c75", 2: "6e89f6a3e43a9be2"]
         let kit = try AgentTools.bundled()
         var hash = SHA256()
         for path in kit.files.keys.sorted() where path != "VERSION" {
@@ -258,6 +258,8 @@ struct LetterContractTests {
             ["open", "http://localhost:3000"],
             ["notify", "Migration finished"],
             ["handoff", "--to", "planner@Studio", "Done"],
+            ["close"],
+            ["close", "--force", "reviewer", "test runner@buildbox"],
         ]
         for command in commands {
             let result = try home.shepherdr(command)
@@ -275,6 +277,8 @@ struct LetterContractTests {
         #expect(letters.contains { $0.content == .open(URL(string: "http://localhost:3000")!) })
         #expect(letters.contains { $0.content == .notify && $0.message == "Migration finished\n" })
         #expect(letters.contains { $0.content == .handoff(to: "planner@Studio") })
+        #expect(letters.contains { $0.content == .close([], force: false) })
+        #expect(letters.contains { $0.content == .close(["reviewer", "test runner@buildbox"], force: true) })
     }
 
     @Test func aTripStopsAtItsLimitsAndSaysMoreAreWaiting() throws {
