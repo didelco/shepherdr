@@ -74,6 +74,8 @@ struct ShepherdrApp: App {
                     model.selection = .overview
                 }
                     .keyboardShortcut("0", modifiers: .command)
+                Button("Go to Session…") { model.toggleSwitcher() }
+                    .keyboardShortcut("t", modifiers: .command)
                 Button("Next Session") { model.step(1) }
                     .keyboardShortcut("]", modifiers: .command)
                 Button("Previous Session") { model.step(-1) }

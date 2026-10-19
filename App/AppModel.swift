@@ -265,6 +265,7 @@ final class AppModel {
             sessionStates.lastSelection = selectedID
             checksMonitor.watch(selectedID)
             if let selectedID, selectedID != oldValue.sessionID { courier.sessionOpened(selectedID) }
+            if mode == .agents { noteVisit() }
         }
     }
     /// Until the session open at the last quit is back, or known to be gone.
@@ -275,7 +276,6 @@ final class AppModel {
     @ObservationIgnored var openMainWindow: (() -> Void)?
     /// The session being renamed, presented as a name prompt.
     var renaming: RenamePrompt?
-    var search = ""
     var drafts: [Agent.ID: String] = [:] {
         didSet {
             // Typing to the Compass agent holds back its next run.
@@ -287,6 +287,7 @@ final class AppModel {
         didSet {
             UserDefaults.standard.set(mode.rawValue, forKey: "mode")
             if mode == .compass { compass.viewed() }
+            noteVisit()
         }
     }
     /// The Compass agent, its page and its schedule.
@@ -333,6 +334,10 @@ final class AppModel {
     let courier = Courier()
     /// New releases of Shepherdr, and updating to them.
     let updates = UpdateController()
+    /// When you last looked at each session and at Compass, for ⌘T.
+    let visits = VisitStore()
+    /// The quick switcher (⌘T), while it is open.
+    var isSwitching = false
     /// Whether Shepherdr can be seen: off screen, other machines are asked less often.
     @ObservationIgnored let presence = ScreenPresence()
 
@@ -429,7 +434,6 @@ final class AppModel {
         let waits: [Agent.ID: [Agent.ID]]
         let collapsedWaits: Set<Agent.ID>
         let checkouts: [String: WorkspaceCheckout]
-        let search: String
         let selected: Agent.ID?
     }
 
@@ -458,7 +462,7 @@ final class AppModel {
                                  compass: compass.isSetUp ? compass.terminal : nil, entries: order.entries,
                                  gathersProjects: order.gathersProjects, collapsedProjects: order.collapsedProjects,
                                  waits: relations.waits, collapsedWaits: relations.collapsed, checkouts: cluster.checkouts,
-                                 search: search, selected: selectedID)
+                                 selected: selectedID)
         if inputs != derivedInputs {
             derivedInputs = inputs
             derived = QueueDerived()
@@ -472,37 +476,19 @@ final class AppModel {
     /// The sessions in the queue: every agent but Compass's own, which lives in its mode.
     var agents: [AgentRow] { memo(\.agents) { cluster.agents.filter { !compass.isCompass($0.id) } } }
     var rankedRows: [AgentRow] { memo(\.rankedRows) { order.ranked(agents, projects: gatheredProjects) } }
-    /// Sessions matching the filter, in priority order, whether or not their group is collapsed.
-    var matchingRows: [AgentRow] { rankedRows.filter { $0.matches(search) } }
-    /// The overview's sessions: those matching the search, in the chosen states and on the chosen machines.
+    /// The overview's sessions, in priority order: those in the chosen states and on the chosen machines.
     var overviewRows: [AgentRow] {
         let held = heldSessions
-        return matchingRows.filter { sessionFilter.includes($0, held: held) }
+        return rankedRows.filter { sessionFilter.includes($0, held: held) }
     }
     /// Sessions waiting for others, which the overview shows as on hold.
     var heldSessions: Set<Agent.ID> { Set(relations.waits.keys) }
 
-    /// The queue as the sidebar shows it. While filtering, groups list only their matching
-    /// sessions, unless the group's own name matches.
-    var queue: [QueueItem] { memo(\.queue) { layoutQueue() } }
-
-    private func layoutQueue() -> [QueueItem] {
-        let items = order.layout(agents, projects: gatheredProjects)
-        guard !search.isEmpty else { return items }
-        return items.compactMap { item in
-            switch item {
-            case .session(let row):
-                return row.matches(search) ? item : nil
-            case .group(var group):
-                if group.group.name.localizedStandardContains(search) { return item }
-                group.rows = group.rows.filter { $0.matches(search) }
-                return group.rows.isEmpty && shells(in: group.group).isEmpty ? nil : .group(group)
-            }
-        }
-    }
+    /// The queue as the sidebar shows it.
+    var queue: [QueueItem] { memo(\.queue) { order.layout(agents, projects: gatheredProjects) } }
 
     /// Sessions shown in the sidebar, in order: ⌘1…⌘9 address these. Collapsed groups, projects
-    /// and sessions hide theirs, except while filtering.
+    /// and sessions hide theirs.
     var visibleRows: [AgentRow] {
         listedMembers.compactMap { if case .session(let row) = $0 { row } else { nil } }
     }
@@ -521,7 +507,7 @@ final class AppModel {
             case .project(let run): return project(run)
             case .item(.session(let row)): return tree(row)
             case .item(.group(let group)):
-                if group.group.isCollapsed, search.isEmpty { return [] }
+                if group.group.isCollapsed { return [] }
                 return slots(of: group, forest: forest).flatMap { slot -> [GroupMember] in
                     switch slot {
                     case .project(let run): return project(run)
@@ -546,7 +532,7 @@ final class AppModel {
             if !nested.isEmpty { children[waiter] = nested }
         }
         return WaitForest(parents: parents, children: children,
-                          collapsed: search.isEmpty ? relations.collapsed : [], selected: selectedID)
+                          collapsed: relations.collapsed, selected: selectedID)
     }
 
     func toggleNestedSessions(of id: Agent.ID) {
@@ -574,14 +560,12 @@ final class AppModel {
         }
     }
 
-    /// Shells matching the filter.
-    var shells: [ShellRow] { allShells.filter { $0.matches(search) } }
+    /// Panes without an agent, on every machine.
+    var shells: [ShellRow] { allShells }
 
     /// Shells placed in a group, such as a session created there whose agent has not started.
-    /// Like the group's sessions, all of them show while the filter matches the group's name.
     func shells(in group: SessionGroup) -> [ShellRow] {
-        let pool = group.name.localizedStandardContains(search) ? allShells : shells
-        let byID = Dictionary(pool.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let byID = Dictionary(allShells.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return group.members.compactMap { byID[$0] }
     }
 
@@ -632,8 +616,9 @@ final class AppModel {
             focusInput(of: id)
             return
         }
-        mode = .agents
+        // The session first: switching modes notes a visit to whatever is selected then.
         selection = .session(id)
+        mode = .agents
         focusInput(of: id)
     }
 
@@ -1332,7 +1317,7 @@ final class AppModel {
     }
 
     private func projectRun(_ id: ProjectRunID, _ rows: [AgentRow]) -> ProjectRun {
-        ProjectRun(id: id, rows: rows, isCollapsed: search.isEmpty && order.isCollapsed(id))
+        ProjectRun(id: id, rows: rows, isCollapsed: order.isCollapsed(id))
     }
 
     /// The heading each session is listed under.
@@ -1413,6 +1398,49 @@ final class AppModel {
         order.ungroup(group.id)
     }
 
+    // MARK: Quick switcher
+
+    /// Where you are: Compass, or the session open in Agents.
+    private var currentPlace: VisitStore.Place? {
+        mode == .compass ? .compass : selectedID.map(VisitStore.Place.session)
+    }
+
+    private func noteVisit() {
+        if let currentPlace { visits.record(currentPlace) }
+    }
+
+    /// What ⌘T offers for what was typed: Compass, every session and every shell, the one visited
+    /// most recently first and never the one on screen. Every word must match somewhere, and
+    /// `name@machine` narrows to a machine, as in Wait For.
+    func switchTargets(matching query: String) -> [SwitchTarget] {
+        let (words, machine) = SessionSearch.terms(of: query)
+        func onMachine(_ name: String) -> Bool { machine.map { name.localizedStandardContains($0) } ?? true }
+        var targets: [SwitchTarget] = []
+        if machine == nil, words.allSatisfy({ "compass".localizedStandardContains($0) }) { targets.append(.compass) }
+        targets += rankedRows.filter { onMachine($0.machineName) && words.allSatisfy($0.matches) }.map(SwitchTarget.session)
+        targets += allShells.filter { onMachine($0.machine.name) && words.allSatisfy($0.matches) }.map(SwitchTarget.shell)
+        return visits.recentFirst(targets, place: \.place, excluding: currentPlace)
+    }
+
+    func toggleSwitcher() {
+        if isSwitching { closeSwitcher() } else { isSwitching = true }
+    }
+
+    /// Closes the switcher without going anywhere: the keyboard goes back where it was.
+    func closeSwitcher() {
+        isSwitching = false
+        if let focusedID { focusInput(of: focusedID) }
+    }
+
+    func switchTo(_ target: SwitchTarget) {
+        isSwitching = false
+        switch target {
+        case .compass: mode = .compass
+        case .session(let row): open(row.id)
+        case .shell(let shell): open(shell.id)
+        }
+    }
+
     // MARK: Composer
 
     func remember(_ prompt: String, for id: Agent.ID) {
@@ -1422,4 +1450,21 @@ final class AppModel {
     }
 
     func prompts(for id: Agent.ID) -> [String] { history[id] ?? [] }
+}
+
+/// Somewhere the quick switcher (⌘T) can take you.
+enum SwitchTarget: Identifiable {
+    case compass
+    case session(AgentRow)
+    case shell(ShellRow)
+
+    var place: VisitStore.Place {
+        switch self {
+        case .compass: .compass
+        case .session(let row): .session(row.id)
+        case .shell(let shell): .session(shell.id)
+        }
+    }
+
+    var id: VisitStore.Place { place }
 }

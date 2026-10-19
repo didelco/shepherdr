@@ -95,7 +95,7 @@ struct OverviewView: View {
         HStack(spacing: 10) {
             ConsoleHeader(title: "Sessions by priority",
                           trailing: model.sessionFilter.isEmpty ? (rows.isEmpty ? nil : "⌘1–⌘9 to jump")
-                                                                : "\(rows.count) of \(model.matchingRows.count)")
+                                                                : "\(rows.count) of \(model.rankedRows.count)")
             if !model.sessionFilter.isEmpty {
                 Button("SHOW ALL") { model.sessionFilter = SessionFilter() }
                     .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
@@ -120,8 +120,7 @@ struct OverviewView: View {
     }
 
     private var emptyMessage: String {
-        if !model.matchingRows.isEmpty { return "No sessions in the chosen states and machines." }
-        if !model.search.isEmpty { return "No sessions match \"\(model.search)\"." }
+        if !model.rankedRows.isEmpty { return "No sessions in the chosen states and machines." }
         if cluster.isRefreshing && cluster.lastRefresh == nil { return "Connecting to Herdr…" }
         if cluster.onlineCount == 0 { return "Herdr is not reachable. Open Settings (⌘,) → Machines for details, then refresh (⌘R)." }
         return "Connected. Agents appear here when Herdr detects them in a workspace."

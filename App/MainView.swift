@@ -46,6 +46,8 @@ struct MainView: View {
         }
         // In the strip the hidden title bar leaves beside the window's buttons.
         .overlay(alignment: .topLeading) { ModeTabs(model: model).padding(.leading, 78).padding(.top, 8) }
+        // ⌘T, over everything else.
+        .overlay { if model.isSwitching { QuickSwitcher(model: model) } }
         .background(Theme.background)
         .ignoresSafeArea(.container, edges: .top)
         .preferredColorScheme(.dark)

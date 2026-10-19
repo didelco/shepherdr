@@ -9,6 +9,7 @@ A bilingual (English/Spanish) quick guide with the same content comes with the a
 ## Features
 
 - **Session queue:** every agent session in your own priority order, shown by workspace, what the agent is doing, which agent it is, by the mark its own interface shows (✻ Claude Code, >_ Codex, ✦ Gemini CLI, ◇ the rest), and where it works: its folder, or for a Git worktree its project, in cyan. Overview cards show the agent too, and the session's header names it. When a session has a pull request among its resources, its number is there too, or how many it has; click it to open the session with the pull request in its browser, or the ten most relevant in tabs. An agent that isn't working but left commands running, such as a dev server or a watcher, shows a turning clock **◴** instead of its state's mark. Drag to reorder, use the ▲▼ controls, **⌥⌘↑ / ⌥⌘↓**, or jump with **⌘1…⌘9**. Gather sessions into **groups** that you prioritize like a single session, each with its own internal order, and optionally gather each project's sessions under a heading.
+- **Go anywhere with ⌘T:** a panel like Spotlight lists your sessions and Compass, the one you visited last first; type a few letters to narrow it.
 - **Work area:** the selected session's live terminal, embedded in the main window like Herdr's own client. Switching sessions detaches the previous one; the pane keeps running in Herdr.
 - **Type in the terminal:** work in the agent's own TUI; **⇧⏎** adds a line instead of sending. Drop files or images on it to paste their paths, so Claude Code and Codex attach them. A bottom bar has quick keys (Esc, ^C, Tab, arrows, Return).
 - **Optional prompt editor:** open it (**⌘L**) for long prompts you want to think through and edit with the mouse. **⏎** sends, **⇧⏎** adds a line, **↑/↓** recall this session's prompts.
@@ -98,6 +99,12 @@ Agents often leave commands running after their turn: dev servers, watchers, tes
 
 Agents run each command in a shell of their own, so Shepherdr counts the shells still alive under an agent that is not working: shells the agent started, not ones you open inside its pane, and only after five seconds, so its hooks and status line don't count. Herdr only reports a pane's foreground processes, so Shepherdr asks Herdr once for each pane's shell and lists the processes under them every 10 seconds while its window shows: with `ps` on this Mac, and on other machines over SSH, which returns only the processes under those panes.
 
+## Go to a session
+
+**⌘T**, or **⌘T to search** at the top of the queue, opens a panel over the window, like Spotlight, to go anywhere: any session, any shell, or Compass. It lists them by when you last looked at them, the most recent first, and never the one on screen, so **⌘T** then **Return** takes you back to where you just were. Type a few letters to narrow the list, which stays in that order: every word must match the session's name, agent, folder, task or machine, and `name@machine` narrows to a machine. **↑** and **↓** choose, **Return** or a click opens, and **Esc** closes it. Opening a session scrolls the queue to it.
+
+When you last visited each session and Compass is kept on this Mac with your priorities: identifiers and times only.
+
 ## Prioritize sessions
 
 The sidebar queue is your saved order across all machines; its numbers are each session's priority. Drag a session to a new position (a line shows where it will land), use the ▲▼ controls that appear on hover or selection, press **⌥⌘↑ / ⌥⌘↓** for the selected session, or choose **Move to Top/Bottom** from its context menu. **⌘1…⌘9** open the first nine sessions, **⌘[ / ⌘]** step through them and **⌘0** returns to the overview.
@@ -110,13 +117,13 @@ Groups gather sessions however you like: a project, a client, personal work. Cre
 
 - A group is one position in the queue: drag its header, use its ▲▼ controls or its context menu to prioritize it like a session. Inside, its sessions keep their own order with the same controls.
 - Drop a session on a group's header to add it, or between grouped sessions to place it exactly. **Move to Group** and **Remove from Group** in a session's context menu do the same without dragging. Groups do not nest.
-- Click a header to collapse or expand the group. A collapsed group still shows how many of its sessions need you, and its sessions are skipped by **⌘1…⌘9**. Filtering shows matching sessions even inside collapsed groups.
+- Click a header to collapse or expand the group. A collapsed group still shows how many of its sessions need you, and its sessions are skipped by **⌘1…⌘9**.
 - Hover a header and click **+** (or use **New Session in Group…** in its context menu) to create a session in the group. Until you start an agent in it, it is listed in the group as a shell.
 - **Rename…** and **Ungroup** are in the header's context menu. Ungrouping leaves the sessions where the group was, in their order; it never closes them.
 
 Numbers run through the whole queue, groups included, so they always reflect overall priority.
 
-You can reorder while filtering the queue (**⌘F**): movement is relative to the visible sessions, and hidden sessions retain their saved slots, so a filtered list can have gaps in its numbers. Only stable identifiers, their order, group names, whether projects are gathered, and which groups and project headings are collapsed are stored in the app's local preferences. Priorities are independent of Herdr state and are not synchronized between Macs.
+Only stable identifiers, their order, group names, whether projects are gathered, and which groups and project headings are collapsed are stored in the app's local preferences. Priorities are independent of Herdr state and are not synchronized between Macs.
 
 ### Projects
 
@@ -126,7 +133,7 @@ Turn on **View → Gather Sessions by Project**, or click **[ ] projects** in th
 - Numbers follow the queue as it shows, so **⌘1…⌘9** and **⌘[ / ⌘]** go down the list you see.
 - Under a heading, a session moves among its project's sessions: its ▲▼, **⌥⌘↑ / ⌥⌘↓** and its context menu reorder them there. Anything else steps over the whole project. Hover a heading and use its ▲▼, or its context menu, to move the project with all its sessions.
 - Drag a session among its project's sessions to reorder them. Anything else dropped on a project lands just before or after it. Within the same list a session can't leave its project's heading, since it would only come back; move it to another group instead. Headings move with ▲▼, not by dragging.
-- Click a heading to collapse or expand it. A collapsed heading still shows how many of its sessions need you, and **⌘1…⌘9** skip its sessions. Filtering shows matching sessions even under collapsed headings, and a heading only while two or more of its sessions match.
+- Click a heading to collapse or expand it. A collapsed heading still shows how many of its sessions need you, and **⌘1…⌘9** skip its sessions.
 - Sessions on hold still list the sessions they wait for under them, whatever their project.
 - Moving or dropping sessions while projects are gathered saves the order as it shows, so those moves stay when you turn the option off.
 
@@ -204,7 +211,7 @@ macOS asks for permission the first time one is due. Turn them off in **Settings
 
 When one session has to wait for others, such as a planner that launched subagents, choose **Wait For…** in its context menu, or **Session → Wait For…** while it's open, and type a few letters of a session it waits for: names that start with them come first, and `@` narrows to a machine, as in `api@buildbox`. **↑** and **↓** move through the matches, and **Return** or a click puts the session on hold for the one highlighted. Sessions it already waits for show **✓**; choosing one again stops waiting for it. The session shows an hourglass in the queue instead of its state: blue while any of them is still working or needs you, green once they have all finished.
 
-The sessions it waits for move under it in the queue, joined by tree lines, and move with it. Click **▾** with their count to hide them and **▸** to show them again; while hidden, the count turns amber if one of them needs you. A session waited for by several others is listed under the first of them. Filtering shows matching sessions even when hidden. To take one out of the tree, choose **Stop … Waiting for This** in its context menu.
+The sessions it waits for move under it in the queue, joined by tree lines, and move with it. Click **▾** with their count to hide them and **▸** to show them again; while hidden, the count turns amber if one of them needs you. A session waited for by several others is listed under the first of them. To take one out of the tree, choose **Stop … Waiting for This** in its context menu.
 
 In the tree, the sessions it waits for don't show their priority number: they follow the session waiting for them.
 

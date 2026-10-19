@@ -19,6 +19,12 @@ public enum SessionSearch {
             .map(\.row)
     }
 
+    /// What was typed, as words that must each match somewhere and the machine after an `@`.
+    public static func terms(of query: String) -> (words: [String], machine: String?) {
+        let (text, machine) = split(query)
+        return (text.split(whereSeparator: \.isWhitespace).map(String.init), machine)
+    }
+
     /// The text before the last `@`, and the machine after it when one is typed.
     private static func split(_ query: String) -> (text: String, machine: String?) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)

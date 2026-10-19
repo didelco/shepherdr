@@ -7,14 +7,13 @@ struct SessionSidebar: View {
     @ViewState<Bool> private var showShells = true
     /// Where a drag in progress would land, drawn as a line or a highlighted group.
     @ViewState<QueueDrop?> private var dropHint: QueueDrop?
-    @FocusState private var searchFocused: Bool
 
     private var cluster: ClusterStore { model.cluster }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            searchField.padding(.horizontal, 12).padding(.bottom, 10)
+            SwitcherButton(model: model).padding(.horizontal, 12).padding(.bottom, 10)
             Rectangle().fill(Theme.line).frame(height: 1)
             queue
             Rectangle().fill(Theme.line).frame(height: 1)
@@ -66,27 +65,7 @@ struct SessionSidebar: View {
         return blocked > 0 ? "\(blocked) need you · \(working) working" : "\(live.count) agent\(live.count == 1 ? "" : "s") · \(working) working"
     }
 
-    private var searchField: some View {
-        HStack(spacing: 6) {
-            Text("/").font(Theme.mono(12, .bold)).foregroundStyle(Theme.phosphor)
-            TextField("filter sessions", text: $model.search)
-                .textFieldStyle(.plain).font(Theme.mono(12)).foregroundStyle(Theme.text)
-                .focused($searchFocused)
-                .onExitCommand { model.search = ""; searchFocused = false }
-            if !model.search.isEmpty {
-                Button { model.search = "" } label: { Text("×").font(Theme.mono(13)) }
-                    .buttonStyle(.plain).foregroundStyle(Theme.dim).help("Clear filter")
-            }
-        }
-        .padding(.horizontal, 8).padding(.vertical, 6)
-        .background(Theme.background, in: RoundedRectangle(cornerRadius: 4))
-        .overlay(RoundedRectangle(cornerRadius: 4)
-            .strokeBorder(searchFocused ? Theme.phosphor.opacity(0.6) : Theme.line, lineWidth: 1))
-        .background { Button("") { searchFocused = true }.keyboardShortcut("f", modifiers: .command).opacity(0) }
-    }
-
     private var queue: some View {
-        let filtering = !model.search.isEmpty
         // Sessions on hold list the sessions they wait for under them, instead of in their own place.
         let forest = model.waitForest
         let items = model.queue
@@ -103,7 +82,7 @@ struct SessionSidebar: View {
                                 ForEach(forest.rows(from: row)) { tree in sessionRow(tree, in: nil, isFirst: false, isLast: false) }
                             }
                         case .item(.group(let group)):
-                            groupSection(group, forest: forest, filtering: filtering)
+                            groupSection(group, forest: forest)
                         case .project(let run):
                             ProjectHeaderView(run: run, group: nil, isFirst: false, isLast: false, model: model, hint: $dropHint)
                             if !run.isCollapsed {
@@ -128,7 +107,7 @@ struct SessionSidebar: View {
     private func reveal(_ id: Agent.ID?, with proxy: ScrollViewProxy, animated: Bool) {
         guard let id else { return }
         let target: SidebarAnchor
-        if let group = model.groups.first(where: { $0.members.contains(id) }), group.isCollapsed, model.search.isEmpty {
+        if let group = model.groups.first(where: { $0.members.contains(id) }), group.isCollapsed {
             target = .group(group.id)
         } else {
             target = model.row(for: id) == nil ? .shell(id) : .session(id)
@@ -139,8 +118,8 @@ struct SessionSidebar: View {
         }
     }
 
-    @ViewBuilder private func groupSection(_ group: QueueGroupRow, forest: WaitForest, filtering: Bool) -> some View {
-        let expanded = !group.group.isCollapsed || filtering
+    @ViewBuilder private func groupSection(_ group: QueueGroupRow, forest: WaitForest) -> some View {
+        let expanded = !group.group.isCollapsed
         GroupHeaderView(group: group, isExpanded: expanded,
                         containsSelection: model.selectedID.map(group.group.members.contains) == true,
                         model: model, hint: $dropHint)
@@ -186,8 +165,7 @@ struct SessionSidebar: View {
     private var queueHeader: some View {
         let gathers = model.order.gathersProjects
         return HStack(spacing: 10) {
-            ConsoleHeader(title: "Queue", trailing: model.search.isEmpty ? "\(model.matchingRows.count)"
-                                                                          : "\(model.matchingRows.count) match")
+            ConsoleHeader(title: "Queue", trailing: "\(model.rankedRows.count)")
             Button { model.order.gathersProjects.toggle() } label: {
                 Text(gathers ? "[x] projects" : "[ ] projects").font(Theme.mono(9.5, .semibold))
             }
@@ -246,8 +224,7 @@ struct SessionSidebar: View {
     }
 
     @ViewBuilder private var emptyQueue: some View {
-        let text: String = if !model.search.isEmpty { "no match for \"\(model.search)\"" }
-            else if cluster.isRefreshing && cluster.lastRefresh == nil { "connecting to herdr…" }
+        let text: String = if cluster.isRefreshing && cluster.lastRefresh == nil { "connecting to herdr…" }
             else if cluster.onlineCount == 0 { "herdr is not reachable.\nopen settings (⌘,) for details." }
             else { "no agents running.\nstart one in herdr." }
         Text(text).font(Theme.mono(11)).foregroundStyle(Theme.faint)
