@@ -170,7 +170,7 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
     /// Bumped by every frame, so the menu found under the pointer is reused until the screen changes.
     private var screenGeneration = 0
     private var menuCache: (generation: Int, row: Int, moves: Int?)?
-    private var hoverCache: (generation: Int, row: Int, column: Int, clickable: Bool)?
+    private var hoverCache: (generation: Int, row: Int, column: Int, clickable: Bool, at: TimeInterval)?
     /// A click that chose a menu option is not a selection to copy.
     private var clickWasConsumed = false
     /// Set while a Herdr frame resizes the view, so that resize is not reported back as the user's.
@@ -427,14 +427,19 @@ public final class ConsoleTerminalView: SwiftTerm.TerminalView {
     }
 
     /// Whether a click at a point opens something or chooses a menu option. The pointer moves many
-    /// times within a cell, so the answer holds until it leaves the cell or the screen changes.
+    /// times within a cell, so the answer holds until it leaves the cell, or the screen changes and a
+    /// tenth of a second has passed.
     func isClickable(at point: NSPoint) -> Bool {
         guard let cell = cell(at: point) else { return false }
-        if let hover = hoverCache, hover.generation == screenGeneration, hover.row == cell.row, hover.column == cell.column {
+        // A working agent repaints the screen many times a second; within a cell, an answer a tenth
+        // of a second old is still good, and saves reading the screen on every move.
+        let now = ProcessInfo.processInfo.systemUptime
+        if let hover = hoverCache, hover.row == cell.row, hover.column == cell.column,
+           hover.generation == screenGeneration || now - hover.at < 0.1 {
             return hover.clickable
         }
         let clickable = link(at: point) != nil || menuMoves(at: point) != nil
-        hoverCache = (screenGeneration, cell.row, cell.column, clickable)
+        hoverCache = (screenGeneration, cell.row, cell.column, clickable, now)
         return clickable
     }
 

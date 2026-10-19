@@ -402,9 +402,64 @@ final class AppModel {
         }
     }
 
+    // MARK: The queue, worked out once
+
+    /// Everything the queue is worked out from. Reading these is also what makes views follow them.
+    /// Comparing them is cheap: stored arrays compare by their storage first, and are replaced only
+    /// when their contents change.
+    private struct QueueInputs: Equatable {
+        let agents: [AgentRow]
+        let machines: [MachineState]
+        let compass: Agent.ID?
+        let entries: [SessionOrderStore.Entry]
+        let gathersProjects: Bool
+        let collapsedProjects: Set<ProjectRunID>
+        let waits: [Agent.ID: [Agent.ID]]
+        let collapsedWaits: Set<Agent.ID>
+        let checkouts: [String: WorkspaceCheckout]
+        let search: String
+        let selected: Agent.ID?
+    }
+
+    /// What the sidebar, the menus and moves derive from the queue, filled in as they ask for it.
+    /// Views ask many times per update, some once per row.
+    private struct QueueDerived {
+        var agents: [AgentRow]?
+        var rankedRows: [AgentRow]?
+        var gatheredProjects: [Agent.ID: String]??
+        var queue: [QueueItem]?
+        var forest: WaitForest?
+        var listedMembers: [GroupMember]?
+        var movableItems: Set<QueueItemID>?
+        var allShells: [ShellRow]?
+        var projectHeadings: [Agent.ID: ProjectRunID]?
+        var directory: SessionDirectory?
+    }
+
+    @ObservationIgnored private var derivedInputs: QueueInputs?
+    @ObservationIgnored private var derived = QueueDerived()
+
+    /// A derived value for the queue as it is now: worked out the first time it is asked for after
+    /// any input changed, then kept.
+    private func memo<Value>(_ path: WritableKeyPath<QueueDerived, Value?>, _ compute: () -> Value) -> Value {
+        let inputs = QueueInputs(agents: cluster.agents, machines: cluster.machines,
+                                 compass: compass.isSetUp ? compass.terminal : nil, entries: order.entries,
+                                 gathersProjects: order.gathersProjects, collapsedProjects: order.collapsedProjects,
+                                 waits: relations.waits, collapsedWaits: relations.collapsed, checkouts: cluster.checkouts,
+                                 search: search, selected: selectedID)
+        if inputs != derivedInputs {
+            derivedInputs = inputs
+            derived = QueueDerived()
+        }
+        if let value = derived[keyPath: path] { return value }
+        let value = compute()
+        derived[keyPath: path] = value
+        return value
+    }
+
     /// The sessions in the queue: every agent but Compass's own, which lives in its mode.
-    var agents: [AgentRow] { cluster.agents.filter { !compass.isCompass($0.id) } }
-    var rankedRows: [AgentRow] { order.ranked(agents, projects: gatheredProjects) }
+    var agents: [AgentRow] { memo(\.agents) { cluster.agents.filter { !compass.isCompass($0.id) } } }
+    var rankedRows: [AgentRow] { memo(\.rankedRows) { order.ranked(agents, projects: gatheredProjects) } }
     /// Sessions matching the filter, in priority order, whether or not their group is collapsed.
     var matchingRows: [AgentRow] { rankedRows.filter { $0.matches(search) } }
     /// The overview's sessions: those matching the search, in the chosen states and on the chosen machines.
@@ -639,14 +694,17 @@ final class AppModel {
     /// A link to the other session or pane that the text at a column of a session's terminal names:
     /// its pane or terminal ID, or its name, as `shepherdr` prints them.
     func sessionLink(in row: [Character], column: Int, from id: Agent.ID) -> URL? {
-        let entries = cluster.machines.flatMap { state -> [SessionDirectory.Entry] in
-            guard let snapshot = state.snapshot else { return [] }
-            let agents = snapshot.agents.map(SessionDirectory.Entry.init(agent:))
-            let agentTerminals = Set(snapshot.agents.map(\.id.terminalID))
-            return agents + snapshot.panes.filter { !agentTerminals.contains($0.terminalID) }
-                .map { SessionDirectory.Entry(pane: $0, machineID: state.id) }
+        // Asked as the pointer moves over a terminal: the sessions it can name are gathered once per change.
+        let directory = memo(\.directory) {
+            let entries = cluster.machines.flatMap { state -> [SessionDirectory.Entry] in
+                guard let snapshot = state.snapshot else { return [] }
+                let agents = snapshot.agents.map(SessionDirectory.Entry.init(agent:))
+                let agentTerminals = Set(snapshot.agents.map(\.id.terminalID))
+                return agents + snapshot.panes.filter { !agentTerminals.contains($0.terminalID) }
+                    .map { SessionDirectory.Entry(pane: $0, machineID: state.id) }
+            }
+            return SessionDirectory(entries: entries, machines: cluster.machines.map(\.machine))
         }
-        let directory = SessionDirectory(entries: entries, machines: cluster.machines.map(\.machine))
         return directory.session(in: row, column: column, from: id).map(SessionLink.url(for:))
     }
 
