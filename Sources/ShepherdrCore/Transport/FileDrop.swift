@@ -42,9 +42,7 @@ public enum FileDrop {
         find "$HOME/.cache/shepherdr/drops" -mindepth 1 -maxdepth 1 -mtime +7 -exec rm -rf {} + 2>/dev/null
         mkdir -p "$HOME/.cache/shepherdr/drops/\(folder)" && cat > "\(file)" && printf '%s' "\(file)"
         """
-        return (URL(fileURLWithPath: "/usr/bin/ssh"),
-                ["-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=10",
-                 "--", sshTarget, "sh -c \(TerminalCommand.quote(script))"])
+        return (URL(fileURLWithPath: "/usr/bin/ssh"), SSHOptions.command() + ["--", sshTarget, "sh -c \(TerminalCommand.quote(script))"])
     }
 
     /// Copies a file to a remote machine over SSH and returns its path there.

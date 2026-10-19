@@ -44,11 +44,9 @@ struct TerminalCommand: Sendable {
         if [ -z "$shepherdr_herdr" ]; then echo 'Herdr is not installed or not on the remote PATH.' >&2; exit 127; fi
         exec "$shepherdr_herdr" \(arguments.map(quote).joined(separator: " "))
         """
+        // A connection of its own: ending it must end the remote session and release the terminal.
         return Self(executable: URL(fileURLWithPath: "/usr/bin/ssh"),
-                    arguments: ["-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
-                                "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2",
-                                "-o", "ClearAllForwardings=yes", "-o", "ForwardAgent=no", "--", sshTarget,
-                                "sh -c \(quote(script))"], environment: clean)
+                    arguments: SSHOptions.stream + ["--", sshTarget, "sh -c \(quote(script))"], environment: clean)
     }
 
     static func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }

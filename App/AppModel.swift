@@ -354,6 +354,8 @@ final class AppModel {
             if cluster.automaticRefresh { Task { await self.cluster.refresh() } }
             checksMonitor.lookAgain()
         }
+        // Commands to each machine share one SSH connection from now on.
+        SSHOptions.prepareSharing()
     }
 
     /// A refresh you asked for: also looks in every outbox for letters whose doorbell was lost.

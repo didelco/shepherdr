@@ -2,7 +2,7 @@
 
 How agents start sessions and hand work back through Shepherdr: the `shepherdr` command and skill Shepherdr installs on each machine, the letters they leave, and how Shepherdr collects them. The [guide](GUIDE.md#agents-that-coordinate) explains what you see.
 
-The design rests on one constraint: **machines never connect to the Mac.** Remote servers are often locked down, and they can't reach a laptop anyway. The command only talks to its machine's Herdr, and through it to the machines Herdr saved. Anything for Shepherdr becomes a letter on disk, announced by a Herdr pane token. Shepherdr fetches letters over the SSH connection it already uses for terminals and dropped files, with the same options: `BatchMode=yes`, `StrictHostKeyChecking=yes`, no agent or port forwarding.
+The design rests on one constraint: **machines never connect to the Mac.** Remote servers are often locked down, and they can't reach a laptop anyway. The command only talks to its machine's Herdr, and through it to the machines Herdr saved. Anything for Shepherdr becomes a letter on disk, announced by a Herdr pane token. Shepherdr fetches letters over the SSH connection it shares with its other commands to that machine, with the same options as for terminals and dropped files: `BatchMode=yes`, `StrictHostKeyChecking=yes`, no agent or port forwarding.
 
 ## What ships and where it goes
 
