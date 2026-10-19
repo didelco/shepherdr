@@ -1,10 +1,76 @@
 import AppKit
 import ShepherdrCore
 
+/// Whether Shepherdr can be seen: a window of it shows, the displays are awake, the screen isn't
+/// locked, and this user's session is the active one. Work that only matters while you look slows
+/// down or waits while it can't be: other machines' refreshes, CI checks, machine load and the
+/// commands agents left running.
+@MainActor
+final class ScreenPresence {
+    private(set) var isOnScreen = true
+    private var windowShows = true, displaysAwake = true, unlocked = true, sessionActive = true
+    private var handlers: [(Bool) -> Void] = []
+    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
+
+    init() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        observe(workspace, NSWorkspace.screensDidSleepNotification) { $0.displaysAwake = false }
+        observe(workspace, NSWorkspace.screensDidWakeNotification) { $0.displaysAwake = true }
+        observe(workspace, NSWorkspace.sessionDidResignActiveNotification) { $0.sessionActive = false }
+        observe(workspace, NSWorkspace.sessionDidBecomeActiveNotification) { $0.sessionActive = true }
+        observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsLocked")) { $0.unlocked = false }
+        observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsUnlocked")) { $0.unlocked = true }
+        // Hidden, minimized or covered windows all leave the app occluded.
+        observe(NotificationCenter.default, NSApplication.didChangeOcclusionStateNotification) {
+            $0.windowShows = NSApplication.shared.occlusionState.contains(.visible)
+        }
+    }
+
+    /// Tells `handler` whenever Shepherdr comes on screen or leaves it.
+    func onChange(_ handler: @escaping (Bool) -> Void) { handlers.append(handler) }
+
+    /// Returns once Shepherdr is on screen, right away if it is, or when the task is cancelled.
+    func untilOnScreen() async {
+        guard !isOnScreen else { return }
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if isOnScreen || Task.isCancelled { continuation.resume() } else { waiters[id] = continuation }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.waiters.removeValue(forKey: id)?.resume() }
+        }
+    }
+
+    private func observe(_ center: NotificationCenter, _ name: Notification.Name, _ change: @escaping @MainActor (ScreenPresence) -> Void) {
+        let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                change(self)
+                self.update()
+            }
+        }
+        observers.append((center, token))
+    }
+
+    private func update() {
+        let now = windowShows && displaysAwake && unlocked && sessionActive
+        guard now != isOnScreen else { return }
+        isOnScreen = now
+        if now {
+            let resumed = waiters
+            waiters = [:]
+            resumed.values.forEach { $0.resume() }
+        }
+        handlers.forEach { $0(now) }
+    }
+}
+
 /// Watches the CI checks of the pull requests of the session on screen, and whether its issues are
 /// still open, through the GitHub CLI: one GraphQL query for its pull requests and one for its
 /// issues, every 15 seconds while checks run and every 2 minutes once they're done, paused while
-/// the Mac sleeps. A notification tells you when checks finish.
+/// Shepherdr isn't on screen. A notification tells you when checks finish.
 @MainActor @Observable
 final class ChecksMonitor {
     /// The last known checks of each pull request, by resource key.
@@ -20,20 +86,20 @@ final class ChecksMonitor {
 
     init() {
         let center = NSWorkspace.shared.notificationCenter
-        let pauses: [(Notification.Name, Bool)] = [
-            (NSWorkspace.willSleepNotification, true), (NSWorkspace.didWakeNotification, false),
-            (NSWorkspace.screensDidSleepNotification, true), (NSWorkspace.screensDidWakeNotification, false),
-            (NSWorkspace.sessionDidResignActiveNotification, true), (NSWorkspace.sessionDidBecomeActiveNotification, false),
-        ]
+        let pauses: [(Notification.Name, Bool)] = [(NSWorkspace.willSleepNotification, true), (NSWorkspace.didWakeNotification, false)]
         observers = pauses.map { name, asleep in
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.isAsleep = asleep
-                    // Back awake: look right away rather than at the next tick.
-                    if !asleep, let watched = self?.watched { self?.restart(watching: watched) }
+                    if !asleep { self?.lookAgain() }
                 }
             }
         }
+    }
+
+    /// Back awake or back on screen: looks right away rather than at the next tick.
+    func lookAgain() {
+        if let watched { restart(watching: watched) }
     }
 
     /// Watches the session on screen, and stops watching the previous one.
@@ -69,7 +135,7 @@ final class ChecksMonitor {
     private enum Poll { case running, settled, unanswered }
 
     private func poll(_ id: Agent.ID) async -> Poll {
-        guard !isAsleep, let model else { return .settled }
+        guard !isAsleep, let model, model.presence.isOnScreen else { return .settled }
         await pollIssues(id, model: model)
         // Open pull requests only: merged and closed ones are done.
         let pulls = model.pullRequests(of: id).filter { $0.github != nil && checks[$0.key]?.isOpen != false }.prefix(10)

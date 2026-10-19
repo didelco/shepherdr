@@ -333,6 +333,8 @@ final class AppModel {
     let courier = Courier()
     /// New releases of Shepherdr, and updating to them.
     let updates = UpdateController()
+    /// Whether Shepherdr can be seen: off screen, other machines are asked less often.
+    @ObservationIgnored let presence = ScreenPresence()
 
     init(cluster: ClusterStore = ClusterStore(), order: SessionOrderStore = SessionOrderStore(),
          relations: SessionRelationStore = SessionRelationStore(), sessionStates: SessionStateStore = SessionStateStore()) {
@@ -344,6 +346,14 @@ final class AppModel {
         checksMonitor.model = self
         courier.model = self
         compass.model = self
+        presence.onChange { [weak self] onScreen in
+            guard let self else { return }
+            cluster.isOnScreen = onScreen
+            guard onScreen else { return }
+            // Back on screen: every machine is asked now, rather than at its next turn.
+            if cluster.automaticRefresh { Task { await self.cluster.refresh() } }
+            checksMonitor.lookAgain()
+        }
     }
 
     /// A refresh you asked for: also looks in every outbox for letters whose doorbell was lost.
@@ -1055,7 +1065,9 @@ final class AppModel {
     /// as it shows again.
     func watchBackgroundWork() async {
         while !Task.isCancelled {
-            let looks = cluster.lastRefresh != nil && NSApp.occlusionState.contains(.visible)
+            // Nothing to look at while Shepherdr can't be seen: wait, rather than check every second.
+            await presence.untilOnScreen()
+            let looks = cluster.lastRefresh != nil
             if looks { await background.refresh(agents, machines: onlineMachines.map(\.machine)) }
             do { try await Task.sleep(for: .seconds(looks ? 10 : 1)) } catch { return }
         }

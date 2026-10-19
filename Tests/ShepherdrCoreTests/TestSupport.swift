@@ -31,7 +31,13 @@ actor MockHerdrClient: HerdrClient {
         responses[machine.id] = value
         delays[machine.id] = delay
     }
-    func machines() async throws -> [Machine] { try catalog.get() }
+    var catalogReads = 0
+    func machines() async throws -> [Machine] {
+        catalogReads += 1
+        return try catalog.get()
+    }
+    func catalogReadCount() -> Int { catalogReads }
+    func snapshotCalls() -> [String] { calls }
     func snapshot(for machine: Machine) async throws -> MachineSnapshot {
         calls.append(machine.id)
         if let delay = delays[machine.id], delay > .zero { try await Task.sleep(for: delay) }

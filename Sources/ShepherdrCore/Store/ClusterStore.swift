@@ -12,6 +12,9 @@ public final class ClusterStore {
     public private(set) var lastRefresh: Date?
     public var automaticRefresh = true
     public var refreshInterval: TimeInterval = 5
+    /// Whether Shepherdr can be seen: off screen, other machines are asked less often.
+    @ObservationIgnored public var isOnScreen = true
+    @ObservationIgnored private var schedule = RefreshSchedule()
     @ObservationIgnored private let client: any HerdrClient
     /// The Git checkout of each workspace, by machine and workspace ID; learned once per workspace.
     public private(set) var checkouts: [String: WorkspaceCheckout] = [:]
@@ -105,12 +108,27 @@ public final class ClusterStore {
         await refreshAfterChange()
     }
 
+    /// Asks every machine and reads the catalog, such as when you refresh or come back to the window.
     /// Local querying and catalog discovery start together. Every machine publishes as it finishes.
     /// A slow remote never delays display of a healthy machine. Overlapping refreshes are coalesced.
     public func refresh() async {
+        await refresh(only: nil, catalog: true)
+    }
+
+    /// A regular refresh: the machines `RefreshSchedule` says are due, and the catalog when it is.
+    func tick(now: Date = Date()) async {
+        let plan = schedule.due(machines.map(\.machine), interval: refreshInterval, onScreen: isOnScreen, now: now)
+        guard !plan.machines.isEmpty || plan.catalog else { return }
+        await refresh(only: plan.machines, catalog: plan.catalog, now: now)
+    }
+
+    /// - Parameter due: the machines to ask, by ID; nil for all. Machines the catalog brings that
+    ///   weren't enabled before are asked too.
+    private func refresh(only due: Set<String>?, catalog readsCatalog: Bool, now: Date = Date()) async {
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
+        let wasEnabled = Set(machines.filter(\.machine.isEnabled).map(\.id))
         enum Update: Sendable {
             case catalog(Result<[Machine], HerdrFailure>)
             case snapshot(String, Result<MachineSnapshot, HerdrFailure>)
@@ -120,7 +138,7 @@ public final class ClusterStore {
         await withTaskGroup(of: Update.self) { group in
             // Also refresh known remotes immediately if catalog discovery is temporarily failing.
             var scheduled = Set<String>()
-            for index in machines.indices where machines[index].machine.isEnabled {
+            for index in machines.indices where machines[index].machine.isEnabled && due?.contains(machines[index].id) != false {
                 let machine = machines[index].machine
                 scheduled.insert(machine.id)
                 group.addTask {
@@ -129,16 +147,20 @@ public final class ClusterStore {
                     catch { return .snapshot(machine.id, .failure(Self.failure(error))) }
                 }
             }
-            group.addTask {
-                do { return .catalog(.success(try await client.machines())) }
-                catch is CancellationError { return .cancelled }
-                catch { return .catalog(.failure(Self.failure(error))) }
+            schedule.didAsk(scheduled, catalog: readsCatalog, at: now)
+            if readsCatalog {
+                group.addTask {
+                    do { return .catalog(.success(try await client.machines())) }
+                    catch is CancellationError { return .cancelled }
+                    catch { return .catalog(.failure(Self.failure(error))) }
+                }
             }
             for await update in group {
                 guard !Task.isCancelled else { group.cancelAll(); continue }
                 switch update {
                 case .catalog(.success(let discovered)):
                     discoveryFailure = nil
+                    schedule.catalogFailed = false
                     let catalog = [Machine.local] + discovered.filter { !$0.isLocal }
                     // Defend the protocol boundary even for alternate clients.
                     var seen = Set<String>()
@@ -156,7 +178,10 @@ public final class ClusterStore {
                     if updated != machines { machines = updated }
                     for index in machines.indices where machines[index].machine.isEnabled {
                         let machine = machines[index].machine
-                        guard scheduled.insert(machine.id).inserted else { continue }
+                        // A machine that isn't due waits for its turn, unless it just joined.
+                        guard due?.contains(machine.id) != false || !wasEnabled.contains(machine.id),
+                              scheduled.insert(machine.id).inserted else { continue }
+                        schedule.didAsk([machine.id], catalog: false, at: now)
                         group.addTask {
                             do { return .snapshot(machine.id, .success(try await client.snapshot(for: machine))) }
                             catch is CancellationError { return .cancelled }
@@ -165,6 +190,7 @@ public final class ClusterStore {
                     }
                 case .catalog(.failure(let failure)):
                     discoveryFailure = failure
+                    schedule.catalogFailed = true
                 case .snapshot(let id, let result):
                     guard let index = machines.firstIndex(where: { $0.id == id }),
                           machines[index].machine.isEnabled else { continue }
@@ -237,12 +263,13 @@ public final class ClusterStore {
     }
 
     /// Cancellation belongs to the window's SwiftUI task. No detached polling task survives it.
+    /// Each tick asks only the machines due: all of them while Shepherdr is on screen.
     public func monitor() async {
         await refresh()
         while !Task.isCancelled {
             do { try await Task.sleep(for: .seconds(refreshInterval)) }
             catch { return }
-            if automaticRefresh { await refresh() }
+            if automaticRefresh { await tick() }
         }
     }
 

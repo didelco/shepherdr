@@ -32,7 +32,7 @@ struct OverviewView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Theme.background)
-        .task { await model.usageMonitor.monitor { [cluster] in cluster.machines.map(\.machine).filter(\.isEnabled) } }
+        .task { await model.usageMonitor.monitor(while: model.presence) { [cluster] in cluster.machines.map(\.machine).filter(\.isEnabled) } }
         .onChange(of: machines.map(\.id), initial: true) { model.sessionFilter.keep(machines: Set(machines.map(\.id))) }
     }
 
@@ -298,17 +298,16 @@ final class MachineUsageMonitor {
     @ObservationIgnored private var measuring = Set<String>()
 
     /// Measures until cancelled, such as when the overview leaves the screen; a machine that joins
-    /// is measured right away. Nothing is measured while no window shows, such as while the
-    /// screens sleep.
-    func monitor(_ machines: @escaping @MainActor () -> [Machine]) async {
+    /// is measured right away. Nothing is measured while Shepherdr isn't on screen, such as while
+    /// the screens sleep: it waits for it to be.
+    func monitor(while presence: ScreenPresence, _ machines: @escaping @MainActor () -> [Machine]) async {
         await withDiscardingTaskGroup { group in
             while !Task.isCancelled {
-                if NSApp.occlusionState.contains(.visible) {
-                    for machine in machines() where isDue(machine.id) {
-                        measuring.insert(machine.id)
-                        startedAt[machine.id] = Date()
-                        group.addTask { await self.measure(machine) }
-                    }
+                await presence.untilOnScreen()
+                for machine in machines() where isDue(machine.id) {
+                    measuring.insert(machine.id)
+                    startedAt[machine.id] = Date()
+                    group.addTask { await self.measure(machine) }
                 }
                 do { try await Task.sleep(for: .seconds(1)) } catch { break }
             }
