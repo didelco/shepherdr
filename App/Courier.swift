@@ -391,7 +391,7 @@ final class Courier {
             guard let recipient = item.recipient,
                   let state = cluster.machines.first(where: { $0.id == recipient.machineID }),
                   state.connection == .online, let snapshot = state.snapshot,
-                  let taken = state.lastSuccess, taken.timeIntervalSince(item.received) > 30,
+                  let taken = cluster.lastSuccess[state.id], taken.timeIntervalSince(item.received) > 30,
                   !snapshot.panes.contains(where: { $0.terminalID == recipient.terminalID }) else { continue }
             mail.update(item.id) {
                 $0.status = .failed

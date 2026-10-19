@@ -26,13 +26,14 @@ import Foundation
         await client.set(Fixture.remote, .success(try Fixture.snapshot(machine: Fixture.remote)))
         let store = ClusterStore(client: client)
         await store.refresh()
-        let lastSuccess = store.machines[1].lastSuccess
+        let lastSuccess = store.lastSuccess[Fixture.remote.id]
         await client.set(Fixture.remote, .failure(HerdrFailure(.unreachable, "SSH timeout")))
         await store.refresh()
         #expect(store.onlineCount == 1)
         #expect(store.agents.count == 8)
         #expect(store.agents.filter(\.isStale).count == 4)
-        #expect(store.machines[1].lastSuccess == lastSuccess)
+        #expect(lastSuccess != nil)
+        #expect(store.lastSuccess[Fixture.remote.id] == lastSuccess)
         #expect(store.machines[1].failure?.message == "SSH timeout")
         await client.set(Fixture.remote, .success(MachineSnapshot(version: "test", protocolVersion: 22, workspaces: [], agents: [])))
         await store.refresh()
@@ -71,7 +72,6 @@ import Foundation
         refresh.cancel()
         await refresh.value
         #expect(!(store.isRefreshing))
-        #expect(!store.machines.contains { $0.isRefreshing })
     }
 
     @Test func testCatalogFailureKeepsKnownMachinesAndRefreshesThem() async throws {

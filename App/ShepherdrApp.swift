@@ -66,6 +66,9 @@ struct ShepherdrApp: App {
                     .disabled(!model.compass.isSetUp)
             }
             CommandMenu("Session") {
+                // Built once per update: each of these walks the whole queue.
+                let rows = model.visibleRows
+                let selected = model.selectedID
                 Button("Overview") {
                     model.mode = .agents
                     model.selection = .overview
@@ -95,23 +98,24 @@ struct ShepherdrApp: App {
                     .disabled(model.activeTerminal?.status != .interactive)
                 Divider()
                 ForEach(0..<9, id: \.self) { position in
-                    Button(sessionTitle(position)) { model.open(position: position) }
+                    Button(Self.sessionTitle(position, in: rows)) { model.open(position: position) }
                         .keyboardShortcut(KeyEquivalent(Character("\(position + 1)")), modifiers: .command)
-                        .disabled(!model.visibleRows.indices.contains(position))
+                        .disabled(!rows.indices.contains(position))
                 }
                 Divider()
+                // Moves are only worked out for a selected session.
                 Button("Raise Priority") { model.moveSelection(.up) }
                     .keyboardShortcut(.upArrow, modifiers: [.command, .option])
-                    .disabled(!model.canMove(model.selectedID, .up))
+                    .disabled(selected == nil || !model.canMove(selected, .up))
                 Button("Lower Priority") { model.moveSelection(.down) }
                     .keyboardShortcut(.downArrow, modifiers: [.command, .option])
-                    .disabled(!model.canMove(model.selectedID, .down))
+                    .disabled(selected == nil || !model.canMove(selected, .down))
                 Button("Move to Top") { model.moveSelection(.first) }
                     .keyboardShortcut(.upArrow, modifiers: [.command, .option, .shift])
-                    .disabled(!model.canMove(model.selectedID, .first))
+                    .disabled(selected == nil || !model.canMove(selected, .first))
                 Divider()
-                Button("Wait For…") { if let id = model.selectedID { model.pickWaits(for: id) } }
-                    .disabled(model.selectedID.flatMap(model.row(for:)) == nil || model.rankedRows.count < 2)
+                Button("Wait For…") { if let id = selected { model.pickWaits(for: id) } }
+                    .disabled(selected.flatMap(model.row(for:)) == nil || model.cluster.agents.count < 2)
                 Button("New Group…") { model.promptNewGroup(with: model.selectedID) }
             }
             CommandGroup(replacing: .help) {
@@ -126,9 +130,8 @@ struct ShepherdrApp: App {
         }
     }
 
-    private func sessionTitle(_ position: Int) -> String {
-        guard model.visibleRows.indices.contains(position) else { return "Session \(position + 1)" }
-        let row = model.visibleRows[position]
-        return "\(row.workspace) — \(row.title)"
+    private static func sessionTitle(_ position: Int, in rows: [AgentRow]) -> String {
+        guard rows.indices.contains(position) else { return "Session \(position + 1)" }
+        return "\(rows[position].workspace) — \(rows[position].title)"
     }
 }

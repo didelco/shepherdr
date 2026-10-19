@@ -9,7 +9,7 @@ private func session(_ terminal: String, on machine: Machine, workspace: String)
     let agent = Agent(id: .init(machineID: machine.id, terminalID: terminal), name: workspace, kind: "claude", state: .idle,
                       reportedState: "idle", workspaceID: "w-\(terminal)", workspaceName: workspace, tabID: "w1:t1", tabName: "1",
                       paneID: "w1:p1", directory: nil, project: nil, summary: nil, isLaunchPending: false)
-    return AgentRow(agent: agent, machineName: machine.name, isStale: false, lastSuccess: nil)
+    return AgentRow(agent: agent, machineName: machine.name, isStale: false)
 }
 
 /// A letter from the fixer's pane, as `shepherdr` writes it.

@@ -736,9 +736,10 @@ final class CompassController {
     }
 
     /// Sends the decorations to the page, which applies them in Shepherdr's own script world.
-    func pushDecorations() {
+    /// - Parameter force: for a page that just loaded, which has nothing yet.
+    func pushDecorations(force: Bool = false) {
         guard let tab = pageTab, let bridge else { return }
-        bridge.apply(decorations(), to: tab.webView)
+        bridge.apply(decorations(), to: tab.webView, force: force)
     }
 
     // MARK: Backup
@@ -807,6 +808,8 @@ final class CompassBridge: NSObject, WKScriptMessageHandler {
     static let world = WKContentWorld.world(name: "shepherdr-compass")
     weak var controller: CompassController?
     let configuration: WKWebViewConfiguration
+    /// What the page was last given: the same again on every refresh would only wake its web process.
+    private var applied: (page: ObjectIdentifier, json: String)?
 
     init(controller: CompassController) {
         self.controller = controller
@@ -820,9 +823,12 @@ final class CompassBridge: NSObject, WKScriptMessageHandler {
         configuration.userContentController = content
     }
 
-    func apply(_ decorations: [String: Any], to webView: WKWebView) {
-        guard let data = try? JSONSerialization.data(withJSONObject: decorations),
+    func apply(_ decorations: [String: Any], to webView: WKWebView, force: Bool = false) {
+        guard let data = try? JSONSerialization.data(withJSONObject: decorations, options: [.sortedKeys]),
               let json = String(data: data, encoding: .utf8) else { return }
+        let page = ObjectIdentifier(webView)
+        guard force || applied?.page != page || applied?.json != json else { return }
+        applied = (page, json)
         webView.evaluateJavaScript("window.__shepherdrCompass && window.__shepherdrCompass.apply(\(json))", in: nil, in: Self.world)
     }
 
@@ -832,7 +838,7 @@ final class CompassBridge: NSObject, WKScriptMessageHandler {
               url.standardizedFileURL.path.hasPrefix(controller.folder.root.standardizedFileURL.path + "/") else { return }
         switch body["type"] as? String {
         case "ready":
-            controller.pushDecorations()
+            controller.pushDecorations(force: true)
         case "action":
             guard let raw = body["fields"] as? [String: Any] else { return }
             let fields = raw.compactMapValues { $0 as? String }

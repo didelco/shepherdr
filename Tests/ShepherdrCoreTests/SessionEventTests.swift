@@ -8,7 +8,7 @@ struct SessionEventTests {
                           state: state, reportedState: state.rawValue, workspaceID: "w1", workspaceName: terminal,
                           tabID: "w1:t1", tabName: "1", paneID: "w1:p1", directory: nil, project: nil,
                           summary: nil, isLaunchPending: false)
-        return AgentRow(agent: agent, machineName: "Local", isStale: stale, lastSuccess: nil)
+        return AgentRow(agent: agent, machineName: "Local", isStale: stale)
     }
 
     @Test func agentsThatStopWorkingAreReportedOnce() {

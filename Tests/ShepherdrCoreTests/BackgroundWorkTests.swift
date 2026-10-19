@@ -86,7 +86,7 @@ struct BackgroundWorkTests {
         let agent = Agent(id: .init(machineID: "local", terminalID: "t-\(pane)"), name: "Claude Code", kind: "claude",
                           state: state, reportedState: state.rawValue, workspaceID: "w", workspaceName: pane,
                           tabID: "t", tabName: "1", paneID: pane, directory: nil, project: nil, summary: nil, isLaunchPending: false)
-        return AgentRow(agent: agent, machineName: "Local", isStale: false, lastSuccess: nil)
+        return AgentRow(agent: agent, machineName: "Local", isStale: false)
     }
 }
 

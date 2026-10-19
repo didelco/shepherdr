@@ -34,7 +34,9 @@ public final class BackgroundWorkStore {
             }
         }
         let looked = Set(idle.map(\.id)), present = Set(rows.map(\.id))
-        commands = commands.filter { looked.contains($0.key) }
+        // Every row reads `commands`: only a change should redraw them.
+        let kept = commands.filter { looked.contains($0.key) }
+        if kept.count != commands.count { commands = kept }
         shells = shells.filter { present.contains($0.key) }
     }
 

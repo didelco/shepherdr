@@ -79,7 +79,8 @@ final class ChecksMonitor {
         for pull in pulls {
             guard let latest = found[pull.key] else { continue }
             let previous = checks[pull.key]
-            checks[pull.key] = latest
+            // Rows with pull requests read these: only a change should redraw them.
+            if previous != latest { checks[pull.key] = latest }
             if latest.justFinished(after: previous) { model.notifier.checksFinished(pull, latest, in: id) }
         }
         return found.values.contains { $0.isOpen && $0.isRunning } ? .running : .settled

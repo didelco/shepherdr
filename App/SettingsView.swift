@@ -154,7 +154,7 @@ private struct MachineSettings: View {
                     .padding([.horizontal, .top], 16)
             }
             List(cluster.machines) { state in
-                MachineRow(state: state, isBusy: busyMachine == state.id) {
+                MachineRow(state: state, lastSuccess: cluster.lastSuccess[state.id], isBusy: busyMachine == state.id) {
                     change(state) { try await cluster.setMachine(state.id, enabled: !state.machine.isEnabled) }
                 } remove: {
                     removing = state
@@ -204,6 +204,7 @@ private struct MachineSettings: View {
 
 private struct MachineRow: View {
     let state: MachineState
+    let lastSuccess: Date?
     let isBusy: Bool
     let toggle: () -> Void
     let remove: () -> Void
@@ -235,7 +236,7 @@ private struct MachineRow: View {
                             Text(detail).foregroundStyle(.secondary).lineLimit(expanded ? nil : 2)
                                 .onTapGesture { expanded.toggle() }
                         }
-                        if state.isStale, let date = state.lastSuccess {
+                        if state.isStale, let date = lastSuccess {
                             Text("Last received \(date.formatted(date: .abbreviated, time: .standard))").foregroundStyle(.secondary)
                         }
                     }

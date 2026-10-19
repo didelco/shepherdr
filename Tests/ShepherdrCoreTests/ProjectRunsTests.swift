@@ -11,7 +11,7 @@ import Testing
         let agent = Agent(id: id(terminal, on: machine), name: "Claude Code", kind: "claude", state: .idle, reportedState: "idle",
                           workspaceID: "w-\(terminal)", workspaceName: terminal, tabID: "w1:t1", tabName: "1", paneID: "w1:p1",
                           directory: nil, project: nil, summary: nil, isLaunchPending: false)
-        return AgentRow(agent: agent, machineName: machine, isStale: false, lastSuccess: nil)
+        return AgentRow(agent: agent, machineName: machine, isStale: false)
     }
 
     private func withDefaults(_ body: @MainActor (UserDefaults) async throws -> Void) async throws {

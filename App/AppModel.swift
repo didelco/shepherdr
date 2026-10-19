@@ -913,7 +913,8 @@ final class AppModel {
     /// Looks at each shell a session waits for, one at a time, unless the last look is still going.
     private func checkShells() {
         let shells = Set(relations.waits.values.joined()).filter { shell(for: $0) != nil }
-        shellRuns = shellRuns.filter { shells.contains($0.key) }
+        let kept = shellRuns.filter { shells.contains($0.key) }
+        if kept.count != shellRuns.count { shellRuns = kept }
         guard !shells.isEmpty, !isCheckingShells else { return }
         isCheckingShells = true
         Task {

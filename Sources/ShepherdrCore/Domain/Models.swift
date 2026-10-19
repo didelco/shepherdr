@@ -149,13 +149,13 @@ public struct HerdrFailure: Error, Equatable, LocalizedError, Sendable {
     public var errorDescription: String? { message }
 }
 
-public struct MachineState: Identifiable, Sendable {
+/// A machine as the last refresh left it. When it last answered is kept apart, in
+/// `ClusterStore.lastSuccess`: it changes on every refresh, and everything reads this.
+public struct MachineState: Identifiable, Equatable, Sendable {
     public var machine: Machine
     public var connection: ConnectionState = .loading
     public var snapshot: MachineSnapshot?
     public var failure: HerdrFailure?
-    public var lastSuccess: Date?
-    public var isRefreshing = false
     public var id: String { machine.id }
     public var isStale: Bool { snapshot != nil && connection != .online }
     public var agents: [Agent] { snapshot?.agents ?? [] }
@@ -171,7 +171,6 @@ public struct AgentRow: Identifiable, Equatable, Sendable {
     public let agent: Agent
     public let machineName: String
     public let isStale: Bool
-    public let lastSuccess: Date?
     public var manualPriority: Int = 0
     /// The user-defined group holding this session, if any.
     public var groupID: String?

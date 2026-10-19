@@ -9,7 +9,7 @@ struct OverviewTests {
                           state: state, reportedState: state.rawValue, workspaceID: "w-\(terminal)", workspaceName: terminal,
                           tabID: "w1:t1", tabName: "1", paneID: "w1:p1", directory: directory, project: nil,
                           summary: nil, isLaunchPending: false)
-        return AgentRow(agent: agent, machineName: machine, isStale: stale, lastSuccess: nil)
+        return AgentRow(agent: agent, machineName: machine, isStale: stale)
     }
 
     @Test func statesAndMachinesCombine() {

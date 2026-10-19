@@ -11,7 +11,7 @@ private func row(_ terminal: String, on machine: Machine = .local, name: String 
     let agent = Agent(id: .init(machineID: machine.id, terminalID: terminal), name: name, kind: "claude", state: state,
                       reportedState: state.rawValue, workspaceID: "w-\(terminal)", workspaceName: workspace ?? terminal,
                       tabID: "w1:t1", tabName: "1", paneID: "w1:p1", directory: nil, project: nil, summary: nil, isLaunchPending: false)
-    return AgentRow(agent: agent, machineName: machine.name, isStale: false, lastSuccess: nil)
+    return AgentRow(agent: agent, machineName: machine.name, isStale: false)
 }
 
 private func letter(_ json: String, message: String? = nil, files: [String: Data] = [:]) throws -> Letter {

@@ -4,7 +4,6 @@ import ShepherdrCore
 /// The priority queue: every agent session in the user's order, with reordering controls.
 struct SessionSidebar: View {
     @Bindable var model: AppModel
-    @AppStorage("refreshSeconds") private var refreshSeconds = 5
     @ViewState<Bool> private var showShells = true
     /// Where a drag in progress would land, drawn as a line or a highlighted group.
     @ViewState<QueueDrop?> private var dropHint: QueueDrop?
@@ -235,14 +234,23 @@ struct SessionSidebar: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 7) {
             LidStatus(cluster: cluster)
-            connectionStatus
+            ConnectionStatus(model: model)
         }
         .font(Theme.mono(10))
         .foregroundStyle(Theme.dim)
         .padding(.horizontal, 14).padding(.vertical, 10)
     }
+}
 
-    private var connectionStatus: some View {
+/// How many machines answer and when the next refresh is. A view of its own: refreshing starts and
+/// ends every few seconds, and only this line needs to follow it, not the whole queue.
+private struct ConnectionStatus: View {
+    let model: AppModel
+    @AppStorage("refreshSeconds") private var refreshSeconds = 5
+
+    private var cluster: ClusterStore { model.cluster }
+
+    var body: some View {
         HStack(spacing: 8) {
             let enabled = cluster.machines.filter(\.machine.isEnabled)
             ConnectionDot(state: cluster.onlineCount == enabled.count && !enabled.isEmpty ? .online
@@ -496,7 +504,7 @@ private struct SessionRowView: View {
 
     @ViewBuilder private var waitMenu: some View {
         Button("Wait For…") { model.pickWaits(for: row.id) }
-            .disabled(model.rankedRows.count < 2)
+            .disabled(model.cluster.agents.count < 2)
         if !model.relations.waitingFor(row.id).isEmpty {
             Button("Resume (Stop Waiting)") { model.relations.stopWaiting(row.id) }
         }

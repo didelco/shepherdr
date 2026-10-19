@@ -210,7 +210,9 @@ enum HerdrJSON {
                 workspaceID: item.workspaceId, workspaceName: workspace?.label.nonempty ?? item.workspaceId,
                 tabID: item.tabId, tabName: tabs[item.tabId]?.label.nonempty ?? item.tabId,
                 paneID: item.paneId, directory: directory,
-                project: workspace?.worktree?.repoName ?? directory.map { URL(fileURLWithPath: $0).lastPathComponent },
+                // The path's own last part: a URL would stat it on this Mac, where another machine's
+                // /home/… goes through the automounter on every refresh.
+                project: workspace?.worktree?.repoName ?? directory.map { ($0 as NSString).lastPathComponent },
                 summary: item.tokens?["summary"]?.nonempty ?? item.title?.nonempty ?? item.terminalTitleStripped?.nonempty,
                 isLaunchPending: item.launchPending ?? false
             )

@@ -3,7 +3,10 @@ import Observation
 
 @MainActor @Observable
 public final class ClusterStore {
-    public private(set) var machines: [MachineState] = [MachineState(machine: .local)]
+    public private(set) var machines: [MachineState] = [MachineState(machine: .local)] { didSet { updateAgents() } }
+    /// When each machine last answered, by machine ID. Apart from `machines`, which only changes
+    /// when what a machine reports does: views that read it aren't redrawn by every refresh.
+    public private(set) var lastSuccess: [String: Date] = [:]
     public private(set) var discoveryFailure: HerdrFailure?
     public private(set) var isRefreshing = false
     public private(set) var lastRefresh: Date?
@@ -18,16 +21,20 @@ public final class ClusterStore {
 
     public init(client: any HerdrClient = CLIHerdrClient()) { self.client = client }
 
-    public var agents: [AgentRow] {
-        machines.flatMap { state in
-            state.agents.map { AgentRow(agent: $0, machineName: state.machine.name,
-                                       isStale: state.isStale, lastSuccess: state.lastSuccess) }
+    /// Every machine's sessions, most urgent first. Kept rather than computed: views read it many
+    /// times per update, and it only changes when a snapshot brings something new.
+    public private(set) var agents: [AgentRow] = []
+
+    private func updateAgents() {
+        let rows = machines.flatMap { state in
+            state.agents.map { AgentRow(agent: $0, machineName: state.machine.name, isStale: state.isStale) }
         }.sorted {
             if $0.priority != $1.priority { return $0.priority < $1.priority }
             if $0.machineName != $1.machineName { return $0.machineName < $1.machineName }
             if $0.name != $1.name { return $0.name < $1.name }
             return $0.id.terminalID < $1.id.terminalID
         }
+        if rows != agents { agents = rows }
     }
 
     public var onlineCount: Int { machines.filter { $0.connection == .online }.count }
@@ -99,10 +106,7 @@ public final class ClusterStore {
     public func refresh() async {
         guard !isRefreshing else { return }
         isRefreshing = true
-        defer {
-            isRefreshing = false
-            for index in machines.indices { machines[index].isRefreshing = false }
-        }
+        defer { isRefreshing = false }
         enum Update: Sendable {
             case catalog(Result<[Machine], HerdrFailure>)
             case snapshot(String, Result<MachineSnapshot, HerdrFailure>)
@@ -114,7 +118,6 @@ public final class ClusterStore {
             var scheduled = Set<String>()
             for index in machines.indices where machines[index].machine.isEnabled {
                 let machine = machines[index].machine
-                machines[index].isRefreshing = true
                 scheduled.insert(machine.id)
                 group.addTask {
                     do { return .snapshot(machine.id, .success(try await client.snapshot(for: machine))) }
@@ -135,21 +138,21 @@ public final class ClusterStore {
                     let catalog = [Machine.local] + discovered.filter { !$0.isLocal }
                     // Defend the protocol boundary even for alternate clients.
                     var seen = Set<String>()
-                    machines = catalog.filter { seen.insert($0.id).inserted }.map { machine in
+                    let updated = catalog.filter { seen.insert($0.id).inserted }.map { machine in
                         var state = machines.first { $0.id == machine.id } ?? MachineState(machine: machine)
                         state.machine = machine
                         if !machine.isEnabled {
                             state.connection = .disabled
-                            state.isRefreshing = false
                         } else if state.connection == .disabled {
                             state.connection = .loading
                         }
                         return state
                     }
+                    // The catalog rarely changes; an equal one leaves every view alone.
+                    if updated != machines { machines = updated }
                     for index in machines.indices where machines[index].machine.isEnabled {
                         let machine = machines[index].machine
                         guard scheduled.insert(machine.id).inserted else { continue }
-                        machines[index].isRefreshing = true
                         group.addTask {
                             do { return .snapshot(machine.id, .success(try await client.snapshot(for: machine))) }
                             catch is CancellationError { return .cancelled }
@@ -161,17 +164,19 @@ public final class ClusterStore {
                 case .snapshot(let id, let result):
                     guard let index = machines.firstIndex(where: { $0.id == id }),
                           machines[index].machine.isEnabled else { continue }
-                    machines[index].isRefreshing = false
+                    var state = machines[index]
                     switch result {
                     case .success(let snapshot):
-                        machines[index].snapshot = snapshot
-                        machines[index].connection = .online
-                        machines[index].failure = nil
-                        machines[index].lastSuccess = Date()
+                        state.snapshot = snapshot
+                        state.connection = .online
+                        state.failure = nil
+                        lastSuccess[id] = Date()
                     case .failure(let failure):
-                        machines[index].connection = failure.state
-                        machines[index].failure = failure
+                        state.connection = failure.state
+                        state.failure = failure
                     }
+                    // Most refreshes find nothing new: then nothing that reads machines redraws.
+                    if state != machines[index] { machines[index] = state }
                 case .cancelled: break
                 }
             }

@@ -366,6 +366,7 @@ struct SessionView: View {
 /// Herdr metadata for the selected session.
 private struct SessionDetails: View {
     let context: SessionContext
+    let cluster: ClusterStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -383,7 +384,7 @@ private struct SessionDetails: View {
             field("Machine", context.machine.machine.isLocal ? "Local" : "\(context.machine.machine.name) · \(context.machine.machine.target ?? "")")
             field("Herdr session", context.machine.machine.session)
             field("Terminal ID", context.target.terminalID)
-            if let date = context.machine.lastSuccess {
+            if let date = cluster.lastSuccess[context.machine.id] {
                 field("Last received", date.formatted(date: .abbreviated, time: .standard))
             }
             Text("Leaving a session detaches this client only. The pane keeps running in Herdr.")

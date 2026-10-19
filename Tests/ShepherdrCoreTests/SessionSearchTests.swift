@@ -9,7 +9,7 @@ struct SessionSearchTests {
                           state: .idle, reportedState: "idle", workspaceID: "w-\(workspace)", workspaceName: workspace,
                           tabID: "w1:t1", tabName: "1", paneID: "w1:p1", directory: directory, project: nil,
                           summary: summary, isLaunchPending: false)
-        return AgentRow(agent: agent, machineName: machine, isStale: false, lastSuccess: nil)
+        return AgentRow(agent: agent, machineName: machine, isStale: false)
     }
 
     @Test func namesThatStartWithWhatYouTypeComeFirst() {
