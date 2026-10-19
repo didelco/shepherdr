@@ -472,7 +472,9 @@ final class AppModel {
 
     /// The queue as the sidebar shows it. While filtering, groups list only their matching
     /// sessions, unless the group's own name matches.
-    var queue: [QueueItem] {
+    var queue: [QueueItem] { memo(\.queue) { layoutQueue() } }
+
+    private func layoutQueue() -> [QueueItem] {
         let items = order.layout(agents, projects: gatheredProjects)
         guard !search.isEmpty else { return items }
         return items.compactMap { item in
@@ -494,7 +496,9 @@ final class AppModel {
     }
 
     /// The sessions and grouped shells the sidebar lists, in order, with the sessions nested under each.
-    private var listedMembers: [GroupMember] {
+    private var listedMembers: [GroupMember] { memo(\.listedMembers) { listMembers() } }
+
+    private func listMembers() -> [GroupMember] {
         let forest = waitForest
         func tree(_ row: AgentRow) -> [GroupMember] {
             forest.isNested(row.id) ? [] : forest.rows(from: row).map { .session($0.row) }
@@ -518,7 +522,9 @@ final class AppModel {
     }
 
     /// The sidebar's nesting of sessions on hold, for the queue as listed now.
-    var waitForest: WaitForest {
+    var waitForest: WaitForest { memo(\.forest) { plantForest() } }
+
+    private func plantForest() -> WaitForest {
         let listed = queue.flatMap(\.rows)
         let parents = relations.parents(in: listed.map(\.id))
         let byID = Dictionary(listed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -538,11 +544,15 @@ final class AppModel {
     /// Items moves are relative to: filtering hides some, collapsing does not. Nested sessions
     /// keep their slot but move with the session they are nested under.
     private var movableItems: Set<QueueItemID> {
-        let forest = waitForest
-        return Set(queue.flatMap { [$0.id] + $0.rows.filter { !forest.isNested($0.id) }.map { QueueItemID.session($0.id) } })
+        memo(\.movableItems) {
+            let forest = waitForest
+            return Set(queue.flatMap { [$0.id] + $0.rows.filter { !forest.isNested($0.id) }.map { QueueItemID.session($0.id) } })
+        }
     }
 
-    private var allShells: [ShellRow] {
+    private var allShells: [ShellRow] { memo(\.allShells) { findShells() } }
+
+    private func findShells() -> [ShellRow] {
         cluster.machines.flatMap { state -> [ShellRow] in
             guard let snapshot = state.snapshot else { return [] }
             let agentTerminals = Set(snapshot.agents.map(\.id.terminalID))
@@ -589,7 +599,7 @@ final class AppModel {
 
     func context(for id: Agent.ID) -> SessionContext? {
         guard let machine = cluster.machines.first(where: { $0.id == id.machineID }) else { return nil }
-        if let row = cluster.agents.first(where: { $0.id == id }) {
+        if let row = cluster.agentsByID[id] {
             return SessionContext(target: TerminalTarget(machine: machine.machine, terminalID: id.terminalID,
                                                          title: row.title, workspace: row.workspace),
                                   machine: machine, agent: row, paneID: row.agent.paneID)
@@ -936,14 +946,14 @@ final class AppModel {
         guard !awaited.isEmpty else { return nil }
         let busy = awaited.contains { other in
             // A shell is waited for until its command finishes, which ends the hold on it.
-            guard let row = cluster.agents.first(where: { $0.id == other }) else { return shell(for: other).map { !$0.isStale } ?? false }
+            guard let row = cluster.agentsByID[other] else { return shell(for: other).map { !$0.isStale } ?? false }
             guard !row.isStale else { return false }
             return row.agent.state == .working || row.agent.state == .blocked
         }
         return busy ? .waiting : .ready
     }
 
-    func row(for id: Agent.ID) -> AgentRow? { cluster.agents.first { $0.id == id } }
+    func row(for id: Agent.ID) -> AgentRow? { cluster.agentsByID[id] }
 
     /// A pane without an agent, by its ID.
     func shell(for id: Agent.ID) -> ShellRow? { allShells.first { $0.id == id } }
@@ -1241,7 +1251,9 @@ final class AppModel {
 
     /// Each session's project while the queue gathers projects. Sessions a session waits for are
     /// listed under it instead, so they never pull their project's heading to their own place.
-    var gatheredProjects: [Agent.ID: String]? {
+    var gatheredProjects: [Agent.ID: String]? { memo(\.gatheredProjects) { gatherProjects() } }
+
+    private func gatherProjects() -> [Agent.ID: String]? {
         guard order.gathersProjects else { return nil }
         let nested = relations.parents(in: agents.map(\.id))
         var projects: [Agent.ID: String] = [:]
@@ -1288,7 +1300,9 @@ final class AppModel {
     }
 
     /// The heading each session is listed under.
-    private var projectHeadings: [Agent.ID: ProjectRunID] {
+    private var projectHeadings: [Agent.ID: ProjectRunID] { memo(\.projectHeadings) { headProjects() } }
+
+    private func headProjects() -> [Agent.ID: ProjectRunID] {
         guard order.gathersProjects else { return [:] }
         let forest = waitForest
         var headings: [Agent.ID: ProjectRunID] = [:]

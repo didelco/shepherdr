@@ -24,6 +24,8 @@ public final class ClusterStore {
     /// Every machine's sessions, most urgent first. Kept rather than computed: views read it many
     /// times per update, and it only changes when a snapshot brings something new.
     public private(set) var agents: [AgentRow] = []
+    /// The same sessions by ID, for looking one up without going through all of them.
+    public private(set) var agentsByID: [Agent.ID: AgentRow] = [:]
 
     private func updateAgents() {
         let rows = machines.flatMap { state in
@@ -34,7 +36,9 @@ public final class ClusterStore {
             if $0.name != $1.name { return $0.name < $1.name }
             return $0.id.terminalID < $1.id.terminalID
         }
-        if rows != agents { agents = rows }
+        guard rows != agents else { return }
+        agents = rows
+        agentsByID = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     public var onlineCount: Int { machines.filter { $0.connection == .online }.count }
