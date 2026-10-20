@@ -340,6 +340,8 @@ final class AppModel {
     var isSwitching = false
     /// Whether Shepherdr can be seen: off screen, other machines are asked less often.
     @ObservationIgnored let presence = ScreenPresence()
+    /// Whether this Mac is awake and online enough to start agents with nobody watching.
+    @ObservationIgnored let readiness = ReadinessMonitor()
 
     init(cluster: ClusterStore = ClusterStore(), order: SessionOrderStore = SessionOrderStore(),
          relations: SessionRelationStore = SessionRelationStore(), sessionStates: SessionStateStore = SessionStateStore()) {
@@ -359,6 +361,8 @@ final class AppModel {
             if cluster.automaticRefresh { Task { await self.cluster.refresh() } }
             checksMonitor.lookAgain()
         }
+        // Awake, or back online: a run that waited for it goes now.
+        readiness.onChange { [weak self] in self?.compass.tick() }
         // Commands to each machine share one SSH connection from now on.
         SSHOptions.prepareSharing()
     }
