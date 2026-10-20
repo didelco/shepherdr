@@ -57,9 +57,10 @@ final class ReadinessMonitor {
         return blocker
     }
 
-    /// Returns once an agent that reaches `host` may start, checking every few seconds.
-    func untilReady(host: String?) async {
-        while blocker(host: host) != nil, !Task.isCancelled { try? await Task.sleep(for: .seconds(5)) }
+    /// Returns once an agent that reaches `host` may start, checking every few seconds, or as soon
+    /// as `wanted` says it's no longer needed.
+    func untilReady(host: String?, while wanted: () -> Bool = { true }) async {
+        while wanted(), blocker(host: host) != nil, !Task.isCancelled { try? await Task.sleep(for: .seconds(5)) }
     }
 
     /// Whether this Mac went to sleep or lost the network since `date`.

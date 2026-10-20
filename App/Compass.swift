@@ -243,8 +243,8 @@ final class CompassController {
 
     var agentRow: AgentRow? { agentID.flatMap { model?.row(for: $0) } }
 
-    /// You typed to the agent: a run waits until you've been quiet for a while.
-    func noteTyping() { lastTyping = Date() }
+    /// You typed to the agent, now or at `date`: a run waits until you've been quiet for a while.
+    func noteTyping(at date: Date = Date()) { lastTyping = max(lastTyping, date) }
 
     /// When you last typed to the agent, in the prompt editor or its terminal.
     private var lastTyped: Date {

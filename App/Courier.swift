@@ -614,8 +614,13 @@ final class Courier {
         mail.update(item.id) { $0.status = .queued }
         Task {
             let name = request.name ?? Self.sessionName(for: request.directory, agent: request.agent)
-            // An agent started in a dark wake or offline would miss what it loads at launch.
-            if machineID == Machine.local.id { await model.readiness.untilReady(host: request.agent.flatMap(Readiness.host(forAgent:))) }
+            // An agent started in a dark wake or offline would miss what it loads at launch. You may
+            // discard the request meanwhile.
+            if machineID == Machine.local.id {
+                let isQueued = { [mail] in mail.item(item.id)?.status == .queued }
+                await model.readiness.untilReady(host: request.agent.flatMap(Readiness.host(forAgent:)), while: isQueued)
+                guard isQueued() else { return }
+            }
             let created: CreatedSession
             do {
                 created = try await model.cluster.createSession(NewSessionRequest(directory: request.directory, name: name, agentKind: request.agent),

@@ -48,7 +48,11 @@ struct SessionView: View {
         }
         .background(Theme.background)
         .onAppear { model.activeTerminal = terminal }
-        .onDisappear { if model.activeTerminal === terminal { model.activeTerminal = nil } }
+        .onDisappear {
+            // What you typed in Compass's terminal still counts off screen, such as against starting its agent again.
+            if isCompass, let input = terminal.lastInput { model.compass.noteTyping(at: input) }
+            if model.activeTerminal === terminal { model.activeTerminal = nil }
+        }
         .task(id: id) {
             // Once the terminal is attached: Herdr refuses an attach while a read of the pane runs.
             for _ in 0..<50 where terminal.status == .connecting || terminal.status == .disconnected {
