@@ -346,13 +346,17 @@ final class Courier {
     // MARK: Delivering
 
     /// Sends queued handoffs and first prompts to their sessions once those are free: idle or done.
+    /// An agent on this Mac gets them only while the Mac is awake and online: in a dark wake it
+    /// couldn't reach its service. Other machines' agents don't wait for this Mac.
     private func deliver() {
         guard let model else { return }
         let now = Date()
         for item in mail.items where item.status == .queued && (item.kind == .handoff || item.kind == .prompt) {
             guard !delivering.contains(item.id), let recipient = item.recipient, let row = model.row(for: recipient), !row.isStale,
                   row.agent.state == .idle || row.agent.state == .done,
-                  now.timeIntervalSince(lastDelivery[recipient] ?? .distantPast) > Self.deliveryGap else { continue }
+                  now.timeIntervalSince(lastDelivery[recipient] ?? .distantPast) > Self.deliveryGap,
+                  recipient.machineID != Machine.local.id || model.readiness.blocker(host: Readiness.host(forAgent: row.agent.kind)) == nil
+            else { continue }
             delivering.insert(item.id)
             lastDelivery[recipient] = now
             Task { await transmit(item, to: row) }
@@ -610,6 +614,8 @@ final class Courier {
         mail.update(item.id) { $0.status = .queued }
         Task {
             let name = request.name ?? Self.sessionName(for: request.directory, agent: request.agent)
+            // An agent started in a dark wake or offline would miss what it loads at launch.
+            if machineID == Machine.local.id { await model.readiness.untilReady(host: request.agent.flatMap(Readiness.host(forAgent:))) }
             let created: CreatedSession
             do {
                 created = try await model.cluster.createSession(NewSessionRequest(directory: request.directory, name: name, agentKind: request.agent),

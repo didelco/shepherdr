@@ -142,6 +142,8 @@ struct CompassSidebar: View {
             Text("○ the run waits until you stop typing").foregroundStyle(Theme.cyan)
         case .waitingForAgent:
             Text(compass.agentID == nil ? "○ starting the agent…" : "○ the run waits for the agent").foregroundStyle(Theme.cyan)
+        case .waitingForMac(let blocker):
+            Text("○ the run waits for \(blocker.summary)").foregroundStyle(Theme.cyan)
         case .idle:
             if let run = compass.lastFinished, let finished = run.finished {
                 let time = Compass.time(finished, calendar: compass.calendar)

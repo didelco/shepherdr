@@ -70,10 +70,11 @@ Use **Settings → Machines** for failure details. A malformed response is **Inc
 App/                              SwiftUI presentation: queue sidebar, work area, prompt editor, browser, settings, theme
   Compass.swift                   Compass: its agent, schedule, runs, page, actions and backup, and the page's bridge
   CompassViews.swift              The mode tabs, Compass's column and work area, and its welcome screen
+  ReadinessMonitor.swift          Sleep, dark wakes and the network, for agents Shepherdr starts or prompts unattended
 Sources/ShepherdrCore/
   Transport/                      CLI adapters, executable discovery, bounded process/stream transports, agent tools and mailbox, Compass's folder and Git
   DTO/                            JSON wire types, validation and domain mapping
-  Domain/                         Machine, Workspace, Agent, lifecycle and failure models, project gathering, letters and machine lists, Compass's schedule, settings and actions
+  Domain/                         Machine, Workspace, Agent, lifecycle and failure models, project gathering, letters and machine lists, Compass's schedule, settings and actions, readiness to start agents
   Store/                          MainActor cluster state, local priorities, groups, project headings and holds, terminal connections, agent tools and mail
   Resources/AgentTools/           The shepherdr command and skill installed on each machine
   Resources/Updater/              The script that replaces the app with a new release
@@ -89,7 +90,7 @@ scripts/make-icon.swift            Renders App/Assets.xcassets/AppIcon.appiconse
 scripts/make-header-masks.py       Prepares the header's masks and cleaned art (Python, rarely needed)
 ```
 
-Compass's pure parts are in Core and tested there: `CompassSchedule` (run times and missed runs, with fixed clocks), `CompassConfig` (lenient, since agents edit it), `CompassAction` (the page's buttons), `CompassFolder` (the kit and the files by owner) and `CompassRepository` (Git, tested with a real Git and a bare remote when Git is installed). `CompassController` in the app follows the agent through each run.
+Compass's pure parts are in Core and tested there: `CompassSchedule` (run times and missed runs, with fixed clocks), `CompassConfig` (lenient, since agents edit it), `CompassAction` (the page's buttons), `CompassFolder` (the kit and the files by owner), `CompassRepository` (Git, tested with a real Git and a bare remote when Git is installed), and `Readiness` and `AgentStartup` (when an agent may start or get its first prompt, with fixed clocks). `CompassController` in the app follows the agent through each run; `ReadinessMonitor` feeds `Readiness` from macOS.
 
 `HerdrClient` exposes domain snapshots and the machine catalog. `HerdrTerminalClient` exposes live terminal connections, frames and input. `CLIHerdrClient` implements both; views never execute commands or decode JSON. Agent identity combines the machine profile and terminal ID, so identical pane IDs and names on different machines remain distinct. Native Unix-socket transport and event subscriptions can replace the CLI behind these boundaries.
 

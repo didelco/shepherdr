@@ -39,6 +39,8 @@ final class CompassController {
     private(set) var pageModified: Date?
     /// Set up in progress, from the empty state or a restore.
     private(set) var isPreparing = false
+    /// What this Mac waits for before the open run can start the agent or prompt it, such as the network.
+    private(set) var waitingFor: Readiness.Blocker?
 
     enum Shown: Equatable {
         case today
@@ -66,6 +68,10 @@ final class CompassController {
     @ObservationIgnored private var backupQueue: Task<Void, Never>?
     @ObservationIgnored private var pendingCommit: Task<Void, Never>?
     @ObservationIgnored private var ticker: Task<Void, Never>?
+    /// The agent Shepherdr started last, until its first prompt.
+    @ObservationIgnored private var startup: AgentStartup?
+    /// How many times that agent started again, across a sleep or a lost network, before its first prompt.
+    @ObservationIgnored private var restarts = 0
 
     /// A run waits this long after you last typed to the agent.
     private static let typingPause: TimeInterval = 120
@@ -240,12 +246,15 @@ final class CompassController {
     /// You typed to the agent: a run waits until you've been quiet for a while.
     func noteTyping() { lastTyping = Date() }
 
-    private var isTyping: Bool {
+    /// When you last typed to the agent, in the prompt editor or its terminal.
+    private var lastTyped: Date {
         var last = lastTyping
         if let terminal = model?.activeTerminal, let id = agentID, terminal.target.terminalID == id.terminalID,
            let input = terminal.lastInput { last = max(last, input) }
-        return Date().timeIntervalSince(last) < Self.typingPause
+        return last
     }
+
+    private var isTyping: Bool { Date().timeIntervalSince(lastTyped) < Self.typingPause }
 
     /// Every pane in Compass's folder and workspace: the agent's, and any left from before.
     private var compassPanes: [TerminalPane] {
@@ -257,11 +266,13 @@ final class CompassController {
     }
 
     /// Gets the agent going for a run: a fresh one for the day's first, closing yesterday's and
-    /// anything left in Compass's folder; or an agent in the pane whose agent exited.
+    /// anything left in Compass's folder; or an agent in the pane whose agent exited. False when it
+    /// failed; true too when this Mac went to sleep meanwhile, leaving the agent for a later tick.
     private func prepareAgent(fresh: Bool) async -> Bool {
         guard let model, !creatingAgent else { return false }
         creatingAgent = true
         defer { creatingAgent = false }
+        let began = Date()
         do {
             var pane = fresh ? nil : agentID.flatMap { id in localSnapshot?.panes.first { $0.terminalID == id.terminalID } }
                 .map { (paneID: $0.paneID, terminalID: $0.terminalID) }
@@ -286,6 +297,8 @@ final class CompassController {
             state.agentDay = today
             sawWorking = false
             saveState()
+            // The pane's agent starts on a later tick, once this Mac is awake and online again.
+            if model.readiness.blocker(host: Readiness.host(forAgent: config.agent)) != nil { return true }
             // Another agent may be called compass already, such as one Herdr kept from before.
             var notice: String?
             do {
@@ -295,6 +308,7 @@ final class CompassController {
                 notice = try await model.cluster.startAgent(name, kind: config.agent, paneID: pane.paneID, onMachine: Machine.local.id)
             }
             if let notice { model.sessionNotices[Agent.ID(machineID: Machine.local.id, terminalID: pane.terminalID)] = notice }
+            startup = AgentStartup(terminalID: pane.terminalID, began: began, ready: Date(), restarts: restarts)
             return true
         } catch {
             problem = "The Compass agent didn't start: \(AppModel.failure(error).message)"
@@ -362,12 +376,15 @@ final class CompassController {
         case running(since: Date)
         /// The agent stopped at a question, such as a permission.
         case needsYou
+        /// This Mac isn't ready to start the agent or prompt it, such as offline.
+        case waitingForMac(Readiness.Blocker)
     }
 
     var activity: Activity {
         guard let run = openRun else { return agentRow?.agent.state == .blocked ? .needsYou : .idle }
         if agentRow?.agent.state == .blocked { return .needsYou }
         if run.outcome == .running { return .running(since: run.sent ?? run.created) }
+        if let waitingFor { return .waitingForMac(waitingFor) }
         return isTyping ? .waitingForYou : .waitingForAgent
     }
 
@@ -378,16 +395,15 @@ final class CompassController {
               let index = state.runs.lastIndex(where: \.isOpen), state.runs[index].outcome == .waiting else { return }
         let run = state.runs[index]
         let agent = agentID
+        // Asleep, in a dark wake or offline, an agent would start without what it loads at launch,
+        // such as Claude Code's connectors, and a prompt would go nowhere.
+        let blocker = model.readiness.blocker(host: Readiness.host(forAgent: config.agent))
+        if waitingFor != blocker { waitingFor = blocker }
         // The day's first run starts a fresh agent; a pane whose agent exited gets one again.
         let fresh = agent == nil || (run.kind == .first && state.agentDay != run.day)
         if fresh || model.row(for: agent!) == nil {
-            guard !isTyping, !creatingAgent else { return }
-            delivering = true
-            Task {
-                let started = await prepareAgent(fresh: fresh)
-                delivering = false
-                if !started { fail(run.id, problem ?? "The Compass agent didn't start.") }
-            }
+            guard blocker == nil, !isTyping, !creatingAgent else { return }
+            launchAgent(fresh: fresh, for: run)
             return
         }
         guard let agent, let row = model.row(for: agent), !row.isStale,
@@ -395,6 +411,23 @@ final class CompassController {
               !model.courier.mail.items.contains(where: { $0.recipient == agent && $0.status == .queued }) else {
             notifyIfBlocked(run)
             return
+        }
+        guard blocker == nil else { return }
+        // An agent that started while this Mac went to sleep or lost the network may lack what it
+        // loads only at launch, such as Claude Code's connectors: before its first prompt, while it
+        // has never worked, it starts again.
+        if let startup, startup.terminalID == agent.terminalID, row.agent.state == .idle {
+            switch startup.decision(disrupted: model.readiness.disrupted(since: startup.began), typed: lastTyped >= startup.began, at: Date()) {
+            case .wait:
+                return
+            case .restart:
+                ReadinessMonitor.log.notice("Compass's agent started across a sleep or a lost network: starting it again")
+                restarts += 1
+                launchAgent(fresh: true, for: run)
+                return
+            case .prompt:
+                break
+            }
         }
         delivering = true
         writeSessions(force: true)
@@ -405,6 +438,10 @@ final class CompassController {
             defer { delivering = false }
             do {
                 try await model.cluster.prompt(paneID: row.agent.paneID, text: prompt, onMachine: agent.machineID)
+                if startup?.terminalID == agent.terminalID {
+                    startup = nil
+                    restarts = 0
+                }
                 record(run.id) {
                     $0.outcome = .running
                     $0.sent = Date()
@@ -416,6 +453,15 @@ final class CompassController {
                 if let detail = failure.detail, ["agent_blocked", "agent_not_ready", "agent_busy"].contains(where: detail.hasSuffix) { return }
                 fail(run.id, failure.message)
             }
+        }
+    }
+
+    private func launchAgent(fresh: Bool, for run: CompassRun) {
+        delivering = true
+        Task {
+            let started = await prepareAgent(fresh: fresh)
+            delivering = false
+            if !started { fail(run.id, problem ?? "The Compass agent didn't start.") }
         }
     }
 
@@ -446,6 +492,12 @@ final class CompassController {
         if let id = agentID, state.terminalID != id.terminalID {
             state.terminalID = id.terminalID
             saveState()
+        }
+        // An agent that worked, such as on a handoff or on what you typed, has a conversation: it never starts again.
+        if let startup, let row = agentRow, row.id.terminalID == startup.terminalID,
+           [.working, .blocked, .done].contains(row.agent.state) {
+            self.startup = nil
+            restarts = 0
         }
         checkPage()
         writeSessions(force: false)

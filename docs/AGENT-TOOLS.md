@@ -111,7 +111,7 @@ Only regular files (no symbolic links) with the names the command writes cross. 
 
 ## Delivering
 
-`MailPlanner.plan` turns a letter into actions; `Courier` in the app carries them out. Handoffs and pending prompts are delivered with `herdr [--machine] agent prompt <pane> <text>` once the recipient's agent is idle or done, one at a time, at least 20 seconds apart per session. Herdr refuses while the agent shows a question or isn't ready, and Shepherdr tries again on a later refresh. For a recipient on another machine, attachments are first copied to its `~/.cache/shepherdr/drops`, as dropped files are.
+`MailPlanner.plan` turns a letter into actions; `Courier` in the app carries them out. Handoffs and pending prompts are delivered with `herdr [--machine] agent prompt <pane> <text>` once the recipient's agent is idle or done, one at a time, at least 20 seconds apart per session. A recipient on this Mac also waits until `Readiness` allows its agent kind (see [Compass's runs](#runs)), and so does a session requested on this Mac, before `workspace create`; recipients and sessions on other machines don't wait for this Mac. Herdr refuses while the agent shows a question or isn't ready, and Shepherdr tries again on a later refresh. For a recipient on another machine, attachments are first copied to its `~/.cache/shepherdr/drops`, as dropped files are.
 
 Letters from the Mac apply on their own. From another machine, anything whose text would reach a session on a different machine, requests for sessions, pages to open, and closing a session on a different machine wait for the user, unless **Trust its letters** is on for that machine. A handoff between sessions on the same remote machine crosses nothing and is delivered directly.
 
@@ -160,6 +160,14 @@ Follow prompt.md. Today's page is days/2026-10-15.html; context/run.json has the
 Right before it, Shepherdr writes `context/run.json` (`kind` first, update or last; `trigger`; `slot`; `since`; `page`; `previous`; `marks`; `time_zone`; `language`; `strip`; `schedule`) and `context/sessions.json`. A run is over when the agent goes idle or done after working, or a minute after the prompt if Herdr never saw it work. It updated the page when the page's modification date is later than the prompt. Then Shepherdr copies the page to `days/<day>/HH-MM.html`, deletes copies older than 14 days, and commits the folder.
 
 `CompassSchedule.dueSlot` decides when: the latest of today's run times that has passed and that no run started since. Runs missed on earlier days are never made up. The day's first run, when no run started today, closes every pane in Compass's workspace and folder and starts a fresh agent; the sessions the old agent waited for wait for the new one.
+
+Shepherdr starts the agent and types a run only while `Readiness` allows it, since an agent started in a dark wake (a few seconds awake with the screen off, without DNS) misses what it loads only at launch, such as Claude Code's connectors from claude.ai:
+
+- **Fully awake.** `System Capabilities` in `IOPMrootDomain` includes `kIOPMSystemCapabilityGraphics`, which a dark wake lacks, and no `NSWorkspace.willSleepNotification` came without a `didWakeNotification` or `screensDidWakeNotification` after it. Where the capabilities can't be read, the notifications alone decide; where they say graphics, a sleep notice older than a minute is a wake that was missed.
+- **Online,** for the kinds whose service Shepherdr knows (`Readiness.host(forAgent:)`: `claude`, `codex`, `gemini`): `NWPathMonitor` reports a satisfied path, and the service's host resolved with `getaddrinfo` on that path in the last minute. A wake, a sleep or a path change forgets the lookups; a failed one is tried again after 10 seconds.
+- **Started again before its first run.** A new agent's first prompt waits 15 seconds after `agent start` returns (`AgentStartup.settling`). If this Mac went to sleep or lost its path since Shepherdr began starting it, Shepherdr closes its pane and starts a fresh agent, as on a new day, at most twice. Never once Herdr reported it working, blocked or done, nor once you typed to it: then it has a conversation.
+
+`ReadinessMonitor` logs sleeps, wakes, the network and each change of what agents wait for: `/usr/bin/log show --last 1d --predicate 'subsystem == "com.theagilemonkeys.Shepherdr"'`.
 
 ### The page's actions
 
