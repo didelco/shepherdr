@@ -94,15 +94,16 @@ import Foundation
         #expect(result.exitCode == 0)
     }
 
-    @Test func testRealProcessTimeoutIsBounded() async {
-        let start = Date()
+    /// The deadline ends the run: it never waits for the process to exit on its own. The process
+    /// would sleep an hour, so only a run that ends at its deadline finishes within the test's
+    /// minute, however slow the machine. A bound on the elapsed time failed on CI's runner, which
+    /// took up to 5.5 seconds to get here.
+    @Test(.timeLimit(.minutes(1))) func testRealProcessTimeoutIsBounded() async {
         do {
-            _ = try await ProcessRunner().run(executable: URL(fileURLWithPath: "/bin/sleep"), arguments: ["10"], timeout: 0.1)
+            _ = try await ProcessRunner().run(executable: URL(fileURLWithPath: "/bin/sleep"), arguments: ["3600"], timeout: 0.1)
             Issue.record("Expected timeout")
         } catch CommandError.timedOut { }
         catch { Issue.record("Unexpected \(error)") }
-        // Well short of the 10 seconds it would sleep; CI's runner took 2.4 seconds to get here.
-        #expect(Date().timeIntervalSince(start) < 5)
     }
 
     @Test func testRealProcessCancellationIsBounded() async throws {
