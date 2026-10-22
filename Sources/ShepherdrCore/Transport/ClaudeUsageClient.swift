@@ -6,14 +6,14 @@ import Foundation
 public struct ClaudeUsageClient: Sendable {
     public init() {}
 
-    public func fetch() async -> ClaudeUsage? {
+    public func fetch() async -> SubscriptionUsage? {
         guard let token = await token() else { return nil }
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!, timeoutInterval: 15)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-        return ClaudeUsage.parse(data)
+        return SubscriptionUsage.parse(data)
     }
 
     private func token() async -> String? {

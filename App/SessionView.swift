@@ -13,6 +13,8 @@ struct SessionView: View {
     let workspace: SessionWorkspace
     @ViewState<TerminalStore> private var terminal: TerminalStore
     @ViewState<Bool> private var showDetails = false
+    /// The model and effort its agent runs with, read from the agent's own files.
+    @ViewState<AgentRunInfo?> private var runInfo: AgentRunInfo? = nil
     @ViewState<CGFloat> private var editorHeight: CGFloat = 60
     @AppStorage("terminalFontSize") private var fontSize = 13.0
     @AppStorage("terminalFontFamily") private var fontFamily = ConsoleFonts.defaultFamily
@@ -57,6 +59,7 @@ struct SessionView: View {
             }
             await model.harvestResources(for: id)
         }
+        .task(id: id) { await followRunInfo() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             terminal.disconnect()
         }
@@ -234,7 +237,7 @@ struct SessionView: View {
             promptButton
             DictationButton(model: model, id: id, compact: true)
             Spacer(minLength: 8)
-            if context.agent?.agent.program.label == "claude", let usage = model.usage.usage { subscription(usage) }
+            if let usage = subscriptionUsage { subscription(usage) }
             place
         }
         .padding(.horizontal, 16).padding(.vertical, 5)
@@ -242,44 +245,80 @@ struct SessionView: View {
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
-    /// The Claude subscription's limits: the share used and when each starts again.
-    private func subscription(_ usage: ClaudeUsage) -> some View {
-        HStack(spacing: 10) {
-            if let window = usage.session { limit("5h", window) }
-            if let window = usage.week { limit("week", window) }
+    /// The Claude subscription's limits, each with two thin lines: what is used, and how much of the
+    /// window has passed. The used line running ahead of the time line means burning faster than time.
+    private func subscription(_ usage: SubscriptionUsage) -> some View {
+        HStack(spacing: 14) {
+            if let window = usage.session { limit("5h", window, length: SubscriptionUsage.sessionLength) }
+            if let window = usage.week { limit("week", window, length: SubscriptionUsage.weekLength) }
         }
         .font(Theme.mono(10.5))
         .padding(.trailing, 6)
     }
 
-    private func limit(_ name: String, _ window: ClaudeUsage.Window) -> some View {
-        let tint: Color = window.percent >= 95 ? Theme.red : window.percent >= 80 ? Theme.amber : Theme.dim
+    private func limit(_ name: String, _ window: SubscriptionUsage.Window, length: TimeInterval) -> some View {
+        let tint: Color = window.percent >= 95 ? Theme.red : window.percent >= 80 ? Theme.amber : Theme.phosphor
         let exact = window.resetsAt.map { "Starts again " + $0.formatted(date: .abbreviated, time: .shortened) } ?? "No reset time reported"
-        return HStack(spacing: 4) {
-            Text(name).foregroundStyle(Theme.faint)
-            Text("\(window.percent)%").foregroundStyle(tint).fontWeight(.semibold)
-            if let reset = window.resetsAt {
-                TimelineView(.everyMinute) { context in
-                    Text(ClaudeUsage.untilReset(reset, now: context.date)).foregroundStyle(Theme.faint)
+        return TimelineView(.everyMinute) { context in
+            let passed = window.elapsed(of: length, now: context.date)
+            HStack(spacing: 6) {
+                Text(name).foregroundStyle(Theme.faint)
+                VStack(spacing: 2) {
+                    UsageLine(fraction: window.utilization / 100, tint: tint)
+                    UsageLine(fraction: passed ?? 0, tint: Theme.cyan.opacity(0.7)).opacity(passed == nil ? 0.3 : 1)
+                }
+                .frame(width: 64)
+                Text("\(window.percent)%").foregroundStyle(tint).fontWeight(.semibold)
+                if let reset = window.resetsAt {
+                    Text(SubscriptionUsage.untilReset(reset, now: context.date)).foregroundStyle(Theme.faint)
                 }
             }
         }
-        .help("Claude subscription, \(name == "5h" ? "five-hour" : "weekly") limit: \(window.percent)% used. \(exact).")
+        .help("Claude subscription, \(name == "5h" ? "five-hour" : "weekly") limit: \(window.percent)% used"
+              + (window.elapsed(of: length).map { ", \(Int(($0 * 100).rounded()))% of the time gone" } ?? "") + ". \(exact).")
         .accessibilityElement(children: .combine)
     }
 
-    /// The agent the session runs, or Terminal when it is a plain shell.
+    /// The subscription of the session's agent, when this Mac knows its usage.
+    private var subscriptionUsage: SubscriptionUsage? {
+        switch context.agent?.agent.program.label {
+        case "claude": model.subscriptions.claude
+        case "codex": model.subscriptions.codex
+        default: nil
+        }
+    }
+
+    /// Reads the agent's model and effort again every few seconds: `/model` changes them mid-session.
+    /// Only sessions on this Mac have their files here.
+    private func followRunInfo() async {
+        guard context.machine.machine.isLocal, let agent = context.agent?.agent, let directory = agent.directory,
+              ["claude", "codex"].contains(agent.program.label) else { runInfo = nil; return }
+        let isClaude = agent.program.label == "claude"
+        while !Task.isCancelled {
+            let info = await Task.detached {
+                isClaude ? AgentTranscripts().claude(directory: directory) : AgentTranscripts().codex(directory: directory)
+            }.value
+            if info != runInfo { runInfo = info }
+            try? await Task.sleep(for: .seconds(5))
+        }
+    }
+
+    /// The agent the session runs with its model and effort, or Terminal when it is a plain shell.
     private var place: some View {
         HStack(spacing: 6) {
             if let program = context.agent?.agent.program {
                 AgentMark(program: program, style: .glyph)
                 Text(program.name)
+                if let model = runInfo?.modelTitle { Text("·").foregroundStyle(Theme.faint); Text(model).foregroundStyle(Theme.text.opacity(0.85)) }
+                if let effort = runInfo?.effort { Text("·").foregroundStyle(Theme.faint); Text(effort).foregroundStyle(Theme.phosphor) }
             } else {
                 Text("$").foregroundStyle(Theme.phosphor)
                 Text("Terminal")
             }
         }
         .font(Theme.mono(10.5)).foregroundStyle(Theme.dim)
+        .help(runInfo.map { "Model: \($0.model ?? "unknown"). Effort: \($0.effort ?? "unknown"). Read from this session's own files." }
+              ?? "Where this session runs")
         .accessibilityElement(children: .combine)
     }
 
@@ -949,5 +988,18 @@ struct BrowserSplit<Terminal: View, Browser: View>: View {
                 fraction = browserWidth(in: total, fraction: width / available) / available
             })
             .accessibilityHidden(true)
+    }
+}
+
+/// A thin line filled to `fraction`, in the console's line color behind it.
+private struct UsageLine: View {
+    let fraction: Double
+    let tint: Color
+
+    var body: some View {
+        Theme.line.overlay(alignment: .leading) {
+            GeometryReader { proxy in tint.frame(width: proxy.size.width * min(1, max(0, fraction))) }
+        }
+        .frame(height: 3).clipShape(Capsule())
     }
 }

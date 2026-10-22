@@ -1,7 +1,7 @@
 import Foundation
 
 /// How much of a Claude subscription's limits is used, as `api.anthropic.com/api/oauth/usage` reports it.
-public struct ClaudeUsage: Equatable, Sendable {
+public struct SubscriptionUsage: Equatable, Sendable {
     /// One limit: the share used (0...100) and when it starts again.
     public struct Window: Equatable, Sendable {
         public let utilization: Double
@@ -14,7 +14,16 @@ public struct ClaudeUsage: Equatable, Sendable {
 
         /// A whole percentage, as the status bar shows it.
         public var percent: Int { Int(utilization.rounded()) }
+
+        /// How much of a window `length` long has passed (0...1), judging by when it starts again.
+        public func elapsed(of length: TimeInterval, now: Date = .now) -> Double? {
+            guard let resetsAt else { return nil }
+            return min(1, max(0, 1 - resetsAt.timeIntervalSince(now) / length))
+        }
     }
+
+    public static let sessionLength: TimeInterval = 5 * 3600
+    public static let weekLength: TimeInterval = 7 * 86400
 
     /// The rolling five-hour limit.
     public let session: Window?
@@ -27,9 +36,9 @@ public struct ClaudeUsage: Equatable, Sendable {
     }
 
     /// Nil when the answer has neither limit.
-    public static func parse(_ data: Data) -> ClaudeUsage? {
+    public static func parse(_ data: Data) -> SubscriptionUsage? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        let usage = ClaudeUsage(session: window(root["five_hour"]), week: window(root["seven_day"]))
+        let usage = SubscriptionUsage(session: window(root["five_hour"]), week: window(root["seven_day"]))
         return usage.session == nil && usage.week == nil ? nil : usage
     }
 

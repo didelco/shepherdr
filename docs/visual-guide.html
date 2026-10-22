@@ -161,7 +161,7 @@ herdr status</code></pre>
 <li><b>Crear y cerrar sesiones</b> con <kbd>⌘N</kbd>.</li>
 <li><b>Compass, la página de tu día.</b> Un agente propio la mantiene, y sus botones lanzan las sesiones que propone cuando tú las revisas.</li>
 </ul>
-<p>Sin cuentas, sin telemetría, sin servidor. Los prompts, la salida de la terminal y tu voz nunca se escriben en disco, salvo el primer prompt de una sesión que lanzas desde Compass, que espera hasta que el agente lo recibe y entonces se borra. Solo se recuerdan tu cola y, por sesión, sus pestañas y enlaces; con Compass, también lo que muestra la cola, para su agente. El dictado se ejecuta por completo en tu Mac. Lo único que Shepherdr pide por su cuenta es el uso de la suscripción de Claude bajo una sesión de Claude Code: envía a Anthropic, cada cinco minutos, el token que Claude Code guarda en tu llavero, y nada más.</p>
+<p>Sin cuentas, sin telemetría, sin servidor. Los prompts, la salida de la terminal y tu voz nunca se escriben en disco, salvo el primer prompt de una sesión que lanzas desde Compass, que espera hasta que el agente lo recibe y entonces se borra. Solo se recuerdan tu cola y, por sesión, sus pestañas y enlaces; con Compass, también lo que muestra la cola, para su agente. El dictado se ejecuta por completo en tu Mac. Lo único que Shepherdr pide por su cuenta es el uso de la suscripción de Claude bajo una sesión de Claude Code: envía a Anthropic, cada cinco minutos, el token que Claude Code guarda en tu llavero, y nada más. El uso de Codex, y el modelo y el esfuerzo de ambos agentes, se leen de sus propios ficheros de sesión en este Mac, sin ninguna petición.</p>
 </div>
 <div class="en">
 <h2>Features</h2>
@@ -176,7 +176,7 @@ herdr status</code></pre>
 <li><b>Create and close sessions</b> with <kbd>⌘N</kbd>.</li>
 <li><b>Compass, the page of your day.</b> An agent of its own keeps it, and its buttons start the sessions it suggests once you check them.</li>
 </ul>
-<p>No accounts, no telemetry, no server. Prompts, terminal output and your voice never touch the disk, except the first prompt of a session you start from Compass, which waits until its agent takes it and is then deleted. Only your queue and, per session, its browser tabs and links are remembered; with Compass, also what the queue shows, for its agent. Dictation runs entirely on your Mac. The only request of its own is the Claude subscription's usage under a Claude Code session: it sends the token Claude Code keeps in your keychain to Anthropic, every five minutes, and nothing else.</p>
+<p>No accounts, no telemetry, no server. Prompts, terminal output and your voice never touch the disk, except the first prompt of a session you start from Compass, which waits until its agent takes it and is then deleted. Only your queue and, per session, its browser tabs and links are remembered; with Compass, also what the queue shows, for its agent. Dictation runs entirely on your Mac. The only request of its own is the Claude subscription's usage under a Claude Code session: it sends the token Claude Code keeps in your keychain to Anthropic, every five minutes, and nothing else. Codex's usage, and the model and effort of both agents, are read from their own session files on this Mac, with no request.</p>
 </div>
 </section>
 <section id="connect">
@@ -254,7 +254,7 @@ herdr status</code></pre>
 <ul>
 <li>Escribe directamente en la TUI del agente. <kbd>⇧⏎</kbd> añade una línea sin enviar.</li>
 <li><kbd>⌘L</kbd> (o el icono del lápiz de la barra de estado, bajo la terminal) abre el <b>editor de prompts</b>, para textos largos. Guarda el borrador, <kbd>⏎</kbd> envía y <kbd>↑</kbd>/<kbd>↓</kbd> recuperan prompts de esa sesión.</li>
-<li>Bajo la terminal, la <b>barra de estado</b> tiene el editor de prompts y el dictado, dónde estás (Claude Code, Codex, Terminal…) y, en Claude Code, el uso de tu suscripción: el porcentaje de los límites de 5 horas y semanal y cuándo se reinician.</li>
+<li>Bajo la terminal, la <b>barra de estado</b> tiene el editor de prompts y el dictado, dónde estás (Claude Code, Codex, Terminal…) con el modelo y el esfuerzo de esa sesión y, en Claude Code y Codex, el uso de tu suscripción: dos líneas por límite de 5 horas y semanal (lo gastado y el tiempo transcurrido), el porcentaje y cuándo se reinicia.</li>
 <li>Suelta <b>ficheros o imágenes</b> en la terminal para pegar su ruta; Claude Code y Codex adjuntan las imágenes. En una máquina remota se copian antes por SSH a <code>~/.cache/shepherdr/drops</code>.</li>
 <li>Haz clic en una opción de un <b>menú numerado</b> (permisos) para marcarla; doble clic para confirmar.</li>
 <li><kbd>⌘⎋</kbd> envía Escape para interrumpir. El <b>candado</b> (<kbd>⌘E</kbd>) deja la sesión en solo lectura.</li>
@@ -274,7 +274,7 @@ herdr status</code></pre>
 <ul>
 <li>Type straight into the agent's TUI. <kbd>⇧⏎</kbd> adds a line without sending.</li>
 <li><kbd>⌘L</kbd> (or the pencil icon in the status bar under the terminal) opens the <b>prompt editor</b>, for long text. It keeps your draft, <kbd>⏎</kbd> sends and <kbd>↑</kbd>/<kbd>↓</kbd> recall this session's prompts.</li>
-<li>Under the terminal, the <b>status bar</b> has the prompt editor and dictation, where you are (Claude Code, Codex, Terminal…) and, in Claude Code, your subscription usage: the share used of the 5-hour and weekly limits and when each starts again.</li>
+<li>Under the terminal, the <b>status bar</b> has the prompt editor and dictation, where you are (Claude Code, Codex, Terminal…) with that session's model and effort and, in Claude Code and Codex, your subscription usage: two lines per 5-hour and weekly limit (what is used and the time gone), the percentage and when each starts again.</li>
 <li>Drop <b>files or images</b> on the terminal to paste their paths; Claude Code and Codex attach images. On a remote machine they're first copied over SSH to <code>~/.cache/shepherdr/drops</code>.</li>
 <li>Click an option of a <b>numbered menu</b> (permissions) to select it; double-click to confirm.</li>
 <li><kbd>⌘⎋</kbd> sends Escape to interrupt. The <b>padlock</b> (<kbd>⌘E</kbd>) makes the session read-only.</li>

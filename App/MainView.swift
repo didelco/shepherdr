@@ -62,7 +62,7 @@ struct MainView: View {
         .task { await model.watchBackgroundWork() }
         .onAppear { model.compass.start() }
         .onAppear { model.updates.start() }
-        .onAppear { model.usage.start() }
+        .onAppear { model.subscriptions.start() }
         .onChange(of: refreshSeconds) { configureRefresh() }
         .onChange(of: cluster.agents.map(\.id), initial: true) {
             model.order.synchronize(with: model.agents.map(\.id))
