@@ -48,6 +48,7 @@ struct SessionView: View {
                         .frame(width: 230)
                 }
             }
+            statusBar
         }
         .background(Theme.background)
         .onAppear { model.activeTerminal = terminal }
@@ -88,7 +89,6 @@ struct SessionView: View {
                     offline
                 }
                 if workspace.isEditorOpen { editor }
-                statusBar
             }
         } browser: {
             BrowserPanel(browser: workspace.browser)
@@ -231,7 +231,7 @@ struct SessionView: View {
 
     // MARK: Status bar
 
-    /// Under the terminal: the prompt editor and dictation on the left, where we are on the right.
+    /// Under the whole work area, whatever is beside the terminal: the prompt editor and dictation on the left, where we are on the right.
     private var statusBar: some View {
         HStack(spacing: 10) {
             promptButton

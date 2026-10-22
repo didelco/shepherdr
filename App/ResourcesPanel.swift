@@ -61,8 +61,9 @@ struct ResourcesPanel: View {
         let isOpen = workspace.browser.isVisible && workspace.browser.selected?.url == resource.url
         return Button { workspace.open(resource) } label: {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
-                Text(Self.glyph(resource.kind)).font(Theme.mono(10.5, .bold))
-                    .foregroundStyle(tint(of: resource)).frame(width: 12)
+                ResourceIcon(look: ResourceIcon.look(of: resource, outcome: checks.outcome(of: resource),
+                                                     issue: checks.issues[resource.key]))
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 5) {
                         Text(resource.name).font(Theme.mono(11, .medium)).lineLimit(1).truncationMode(.middle)
@@ -101,31 +102,6 @@ struct ResourcesPanel: View {
         lines.append(resource.url.absoluteString)
         lines.append("Mentioned \(resource.mentions)× · opened \(resource.opens)×")
         return lines.joined(separator: "\n")
-    }
-
-    private static func glyph(_ kind: SessionResource.Kind) -> String {
-        switch kind {
-        case .pullRequest: "⇄"
-        case .issue: "◎"
-        case .artifact: "◆"
-        case .link: "↗"
-        }
-    }
-
-    /// Its kind's color while open; lilac once it landed, as GitHub marks merged pull requests and
-    /// completed issues; dimmed once dropped.
-    private func tint(of resource: SessionResource) -> Color {
-        switch checks.outcome(of: resource) {
-        case .landed: Theme.lilac
-        case .dropped: Theme.dim
-        case nil:
-            switch resource.kind {
-            case .pullRequest: Theme.phosphor
-            case .issue: Theme.amber
-            case .artifact: Theme.cyan
-            case .link: Theme.text
-            }
-        }
     }
 
     private func status(of resource: SessionResource) -> String? {
