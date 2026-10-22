@@ -42,29 +42,20 @@ struct SessionSidebar: View {
             Button { model.selection = .overview } label: {
                 HStack(alignment: .center, spacing: 10) {
                     PixelFlock(pixel: 1.5)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("SHEPHERDR").font(Theme.mono(13, .heavy)).tracking(2.5).foregroundStyle(Theme.text)
-                        Text(summaryLine).font(Theme.mono(10)).foregroundStyle(Theme.dim).lineLimit(1)
-                    }
+                    Text("SHEPHERDR").font(Theme.mono(13, .heavy)).tracking(2.5).foregroundStyle(Theme.text)
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Overview (⌘0)")
-            Button { model.startNewSession() } label: { Text("+").font(Theme.mono(14, .bold)) }
+            Button { model.startNewSession() } label: { Image(systemName: "plus").font(.system(size: 12, weight: .semibold)) }
                 .buttonStyle(ConsoleButtonStyle())
                 .disabled(model.onlineMachines.isEmpty)
                 .help("New session (⌘N)")
+                .accessibilityLabel("New session")
         }
         .padding(.horizontal, 14).padding(.top, 34).padding(.bottom, 12)
-    }
-
-    private var summaryLine: String {
-        let live = model.agents.filter { !$0.isStale }
-        let working = live.filter { $0.agent.state == .working }.count
-        let blocked = live.filter { $0.agent.state == .blocked }.count
-        return blocked > 0 ? "\(blocked) need you · \(working) working" : "\(live.count) agent\(live.count == 1 ? "" : "s") · \(working) working"
     }
 
     private var searchField: some View {
@@ -164,20 +155,20 @@ struct SessionSidebar: View {
     }
 
     private var queueHeader: some View {
-        let gathers = model.order.gathersProjects
+        let matches = model.matchingRows.count
+        let gathers = Binding { model.order.gathersProjects } set: { model.order.gathersProjects = $0 }
         return HStack(spacing: 10) {
-            ConsoleHeader(title: "Queue", trailing: model.search.isEmpty ? "\(model.matchingRows.count)"
-                                                                          : "\(model.matchingRows.count) match")
-            Button { model.order.gathersProjects.toggle() } label: {
-                Text(gathers ? "[x] projects" : "[ ] projects").font(Theme.mono(9.5, .semibold))
+            ConsoleHeader(title: "Sessions", trailing: model.search.isEmpty ? nil : "\(matches) match\(matches == 1 ? "" : "es")")
+            Menu {
+                Toggle("Gather Sessions by Project", isOn: gathers)
+                Button("New Group…") { model.promptNewGroup() }
+            } label: {
+                Image(systemName: "ellipsis.circle").font(.system(size: 12))
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(gathers ? Theme.phosphor.opacity(0.8) : Theme.faint)
-            .help("Gather each project's sessions under a heading, at the top of the queue and in each group (View → Gather Sessions by Project)")
-            Button { model.promptNewGroup() } label: { Text("+ group").font(Theme.mono(9.5, .semibold)) }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.phosphor.opacity(0.8))
-                .help("New group. Drag sessions into it, or use a session's context menu.")
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .foregroundStyle(Theme.dim)
+            .help("Organize sessions")
+            .accessibilityLabel("Organize sessions")
         }
         .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 4)
     }
@@ -197,7 +188,7 @@ struct SessionSidebar: View {
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 4)
-            .help("Panes without a detected agent")
+            .help("Sessions without an agent yet")
             if showShells {
                 ForEach(shells, id: \.listID) { shell in shellRow(shell, grouped: false) }
             }
@@ -205,8 +196,11 @@ struct SessionSidebar: View {
     }
 
     private func shellRow(_ shell: ShellRow, grouped: Bool) -> some View {
-        ShellRowView(shell: shell, isGrouped: grouped, isSelected: model.selectedID == shell.id,
-                     showsMachine: model.showsMachineNames) { model.open(shell.id) }
+        let checkout = model.cluster.checkout(machineID: shell.machine.id, workspaceID: shell.pane.workspaceID)
+        let folder = shell.pane.directory.map { ($0 as NSString).lastPathComponent }
+        return ShellRowView(shell: shell, isGrouped: grouped, isSelected: model.selectedID == shell.id,
+                     showsMachine: model.showsMachineNames,
+                     place: checkout?.branch ?? checkout?.name ?? folder) { model.open(shell.id) }
             .contextMenu {
                 Button("Open") { model.open(shell.id) }
                 Button("Rename…") { model.promptRename(shell.id) }.disabled(shell.isStale)
@@ -222,48 +216,47 @@ struct SessionSidebar: View {
     }
 
     @ViewBuilder private var emptyQueue: some View {
-        let text: String = if !model.search.isEmpty { "no match for \"\(model.search)\"" }
-            else if cluster.isRefreshing && cluster.lastRefresh == nil { "connecting to herdr…" }
-            else if cluster.onlineCount == 0 { "herdr is not reachable.\nopen settings (⌘,) for details." }
-            else { "no agents running.\nstart one in herdr." }
+        let text: String = if !model.search.isEmpty { "No sessions match \"\(model.search)\"" }
+            else if cluster.isRefreshing && cluster.lastRefresh == nil { "Connecting…" }
+            else if cluster.onlineCount == 0 { "Can't reach your machines.\nCheck Settings → Machines." }
+            else { "No sessions yet.\nCreate one with +." }
         Text(text).font(Theme.mono(11)).foregroundStyle(Theme.faint)
             .padding(.horizontal, 14).padding(.vertical, 12)
     }
 
+    /// One row: a notice only when something needs doing, then the lid face, the coffee cup and settings.
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .center, spacing: 8) {
-                LidStatus(cluster: cluster, keepAwake: model.keepAwake)
-                Spacer(minLength: 4)
-                CoffeeButton(keepAwake: model.keepAwake)
-            }
-            connectionStatus
+        HStack(alignment: .center, spacing: 8) {
+            connectionNotice
+            Spacer(minLength: 4)
+            LidStatus(cluster: cluster, keepAwake: model.keepAwake)
+            CoffeeButton(keepAwake: model.keepAwake)
+            SettingsLink { Image(systemName: "gearshape").font(.system(size: 12)) }
+                .buttonStyle(.plain).foregroundStyle(Theme.dim)
+                .help("Machines and preferences (⌘,)")
+                .accessibilityLabel("Settings")
         }
         .font(Theme.mono(10))
         .foregroundStyle(Theme.dim)
         .padding(.horizontal, 14).padding(.vertical, 10)
     }
 
-    private var connectionStatus: some View {
-        HStack(spacing: 8) {
-            let enabled = cluster.machines.filter(\.machine.isEnabled)
-            ConnectionDot(state: cluster.onlineCount == enabled.count && !enabled.isEmpty ? .online
-                          : cluster.onlineCount == 0 ? .unreachable : .loading)
-            Text(enabled.count == 1 ? (cluster.onlineCount == 1 ? "local online" : "local offline")
-                                    : "\(cluster.onlineCount)/\(enabled.count) online")
-            Spacer(minLength: 4)
-            if cluster.isRefreshing {
-                Text("sync…").foregroundStyle(Theme.phosphor.opacity(0.7))
-            } else {
-                Text(refreshSeconds == 0 ? "paused" : "↻ \(refreshSeconds)s")
-                    .help(cluster.lastRefresh.map { "Checked \($0.formatted(date: .omitted, time: .standard))" } ?? "")
+    /// Shown only when a machine is down or the refresh is paused; silent while everything is fine.
+    @ViewBuilder private var connectionNotice: some View {
+        let enabled = cluster.machines.filter(\.machine.isEnabled)
+        let offline = max(0, enabled.count - cluster.onlineCount)
+        let connecting = cluster.isRefreshing && cluster.lastRefresh == nil
+        let lastCheck = cluster.lastRefresh.map { "Checked \($0.formatted(date: .omitted, time: .standard))" } ?? ""
+        if !enabled.isEmpty && offline > 0 && !connecting {
+            HStack(spacing: 6) {
+                ConnectionDot(state: .unreachable)
+                Text(cluster.onlineCount == 0 ? "Not connected" : "\(offline) machine\(offline == 1 ? "" : "s") offline")
+                    .lineLimit(1).truncationMode(.tail)
             }
-            Button { if let guide = AppModel.guide { model.openHelp(guide) } } label: { Text("?").font(Theme.mono(13, .bold)) }
-                .buttonStyle(.plain).foregroundStyle(Theme.dim)
-                .help("Shepherdr guide (⌘?)")
-            SettingsLink { Text("⚙").font(.system(size: 13)) }
-                .buttonStyle(.plain).foregroundStyle(Theme.dim)
-                .help("Machines and preferences (⌘,)")
+            .help(lastCheck)
+        } else if refreshSeconds == 0 {
+            Text("Refresh paused").foregroundStyle(Theme.faint).lineLimit(1)
+                .help("Sessions are not refreshed automatically (Settings). Refresh Sessions (⌘R) updates them." + (lastCheck.isEmpty ? "" : "\n" + lastCheck))
         }
     }
 }
@@ -279,14 +272,14 @@ private struct LidStatus: View {
             let working = cluster.agents.filter {
                 $0.id.machineID == Machine.local.id && !$0.isStale && $0.agent.state == .working
             }.count
+            // Words only for a warning: the calm cases are the face and the cup.
+            let warning: String? = keepAwake.isOn ? (keepAwake.onBattery ? "Lid still sleeps it" : nil)
+                : working > 0 ? "Keep the lid open" : nil
             HStack(spacing: 7) {
+                if let warning {
+                    Text(warning).foregroundStyle(Theme.amber).lineLimit(1).truncationMode(.tail)
+                }
                 PixelFace(mood: working > 0 ? .working : .happy, caffeinated: keepAwake.isOn)
-                Text(keepAwake.isOn ? (keepAwake.onBattery ? "awake · but the lid still sleeps it" : "awake · won't sleep on power")
-                     : working > 0 ? "\(working) local session\(working == 1 ? "" : "s") running · don't close the lid"
-                                   : "it's safe to close the lid")
-                    .foregroundStyle(keepAwake.isOn ? (keepAwake.onBattery ? Theme.amber : Theme.cyan)
-                                     : working > 0 ? Theme.amber : Theme.phosphor.opacity(0.85))
-                    .lineLimit(1).truncationMode(.tail)
             }
             .help(keepAwake.isOn && keepAwake.onBattery ? "This Mac is on battery: it won't sleep by itself, but closing the lid still puts it to sleep and pauses its agents. Plug it in to keep them going."
                   : keepAwake.isOn ? "Coffee is on: this Mac won't sleep while it's plugged in. Remote sessions keep going either way."
@@ -353,7 +346,7 @@ private struct SessionRowView: View {
     let model: AppModel
     @Binding var hint: QueueDrop?
     @ViewState<Bool> private var hovering = false
-    @ViewState private var height = RowHeight(44)
+    @ViewState private var height = RowHeight(36)
 
     private var row: AgentRow { tree.row }
     private var item: QueueItemID { .session(row.id) }
@@ -375,7 +368,7 @@ private struct SessionRowView: View {
             .contentShape(Rectangle())
             .onTapGesture { model.open(row.id) }
             .onHover { hovering = $0 }
-            .help("\(row.agent.program.name) · \(row.project)")
+            .help(detailHelp)
             .queueDraggable(item, model: model, enabled: !isNested)
             .onDrop(of: [.plainText], delegate: QueueDropDelegate(model: model, hint: $hint) { dragged, y in
                 drop(of: dragged, at: y)
@@ -386,31 +379,42 @@ private struct SessionRowView: View {
             .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
     }
 
+    /// One line: state, name, machine when there are several, mail. Everything else is in the tooltip
+    /// and in the session's own view.
     private var content: some View {
-        HStack(alignment: .top, spacing: 8) {
-            // Nested sessions move with the session waiting for them, so their own priority is not shown.
-            if !isNested {
-                Text(String(format: "%02d", row.manualPriority))
-                    .font(Theme.mono(10, .semibold))
-                    .foregroundStyle(isSelected ? accent : Theme.faint)
-                    .padding(.top, 1)
-            }
+        HStack(alignment: .center, spacing: 8) {
             stateMark
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(row.workspace).font(Theme.mono(12, .semibold)).lineLimit(1)
-                        .foregroundStyle(isSelected ? Theme.text : Theme.text.opacity(0.85))
-                    if showsMachine {
-                        Text("@\(row.machineName)").font(Theme.mono(10)).foregroundStyle(Theme.faint).lineLimit(1)
-                    }
-                    MailMark(session: row.id, courier: model.courier)
-                }
-                Text(row.title).font(Theme.mono(10.5)).foregroundStyle(Theme.dim).lineLimit(1)
-                whereabouts
+            AgentMark(program: row.agent.program, style: .glyph)
+            Text(row.workspace).font(Theme.mono(12, .semibold)).lineLimit(1)
+                .foregroundStyle(isSelected ? Theme.text : Theme.text.opacity(0.85))
+            if hovering, let place = placeName {
+                Text(place).font(Theme.mono(10)).foregroundStyle(Theme.dim).lineLimit(1).truncationMode(.middle)
             }
+            if showsMachine {
+                Text("@\(row.machineName)").font(Theme.mono(10)).foregroundStyle(Theme.faint).lineLimit(1)
+            }
+            MailMark(session: row.id, courier: model.courier)
+            checksFailedMark
             Spacer(minLength: 0)
             if tree.nestedCount > 0 { nestedToggle }
             if (hovering || isSelected) && !isNested { ReorderArrows(item: item, model: model, shortcuts: true) }
+        }
+        // As tall as the reorder arrows, so showing them never changes the row's height.
+        .frame(minHeight: 26)
+    }
+
+    /// Where the session works, shown on hover only: its branch, else its repository or folder.
+    private var placeName: String? {
+        let checkout = model.cluster.checkout(machineID: row.id.machineID, workspaceID: row.agent.workspaceID)
+        let folder = row.agent.directory.map { ($0 as NSString).lastPathComponent }
+        let place = checkout?.branch ?? checkout?.name ?? folder
+        return place?.isEmpty == false ? place : nil
+    }
+
+    /// The one thing worth a glance from the list: CI failed on the session's pull request.
+    @ViewBuilder private var checksFailedMark: some View {
+        if model.checksMonitor.state(of: model.pullRequests(of: row.id)) == .failed {
+            ChecksMark(state: .failed).font(Theme.mono(10, .bold)).help("Checks failed on its pull request")
         }
     }
 
@@ -431,7 +435,7 @@ private struct SessionRowView: View {
         let selectionOpacity: Double = isSelected ? 1 : row.agent.state == .blocked && !row.isStale ? 0.6 : 0
         let background: Color = isSelected ? Theme.raised : hovering ? Theme.raised.opacity(0.5) : .clear
         return content
-            .padding(.leading, leading + CGFloat(tree.depth) * Self.indent).padding(.trailing, 8).padding(.vertical, 7)
+            .padding(.leading, leading + CGFloat(tree.depth) * Self.indent).padding(.trailing, 8).padding(.vertical, 5)
             .background(background)
             .overlay(alignment: .leading) {
                 if group != nil { Rectangle().fill(Theme.line).frame(width: 1).padding(.leading, 18) }
@@ -491,6 +495,9 @@ private struct SessionRowView: View {
 
     @ViewBuilder private var menu: some View {
         Button("Open") { model.open(row.id) }
+        let pulls = model.pullRequests(of: row.id)
+        Button(pulls.count == 1 ? "Open Pull Request" : "Open Pull Requests") { model.openPullRequests(of: row.id) }
+            .disabled(pulls.isEmpty)
         Button("Rename…") { model.promptRename(row.id) }.disabled(row.isStale)
         Button("New Session in Same Folder…") { model.startNewSession(besides: row.id) }
             .disabled(!model.canStartNewSession(besides: row.id))
@@ -545,78 +552,29 @@ private struct SessionRowView: View {
         return text
     }
 
-    /// The session's agent, its pull request when it has one, where it works: its folder, or for a
-    /// worktree its project, and what its agent left running.
-    private var whereabouts: some View {
-        let pulls = model.pullRequests(of: row.id)
+    /// The tooltip, after the system's delay of about a second: what the session is doing, where it
+    /// works, how many pull requests it has, which machine it is on, when it last reported and its state.
+    private var detailHelp: String {
         let checkout = model.cluster.checkout(machineID: row.id.machineID, workspaceID: row.agent.workspaceID)
-        let folder: String? = checkout?.name ?? row.agent.directory.map { ($0 as NSString).lastPathComponent }
+        let folder = row.agent.directory ?? checkout?.path ?? row.agent.project
+        let pulls = model.pullRequests(of: row.id)
+        var lines: [String] = []
+        if !row.title.isEmpty { lines.append(row.title) }
+        lines.append("Repo: " + (checkout?.repository ?? "none") + (checkout?.isLinkedWorktree == true ? " (worktree)" : ""))
+        lines.append("Folder: " + (folder ?? "not reported"))
+        lines.append("Pull requests: \(pulls.count) · Machine: \(row.machineName)")
+        lines.append("Last received: " + Self.received(row.lastSuccess))
         let background = model.backgroundCommands(of: row)
-        return HStack(spacing: 9) {
-            AgentMark(program: row.agent.program).foregroundStyle(Theme.dim)
-            if !pulls.isEmpty { pullsButton(pulls) }
-            if let folder { folderLabel(folder, checkout: checkout) }
-            BackgroundLabel(commands: background).foregroundStyle(Theme.dim).layoutPriority(-1)
-        }
-        .font(Theme.mono(9.5))
-        .foregroundStyle(Theme.faint)
-        .padding(.top, 1)
+        lines.append("State: " + (row.isStale ? "\(row.stateTitle) (last known)" : row.stateTitle)
+                     + (background.isEmpty ? "" : " · \(background.count) command\(background.count == 1 ? "" : "s") running"))
+        return lines.joined(separator: "\n")
     }
 
-    private func pullsButton(_ pulls: [SessionResource]) -> some View {
-        let label = pulls.count == 1 ? Self.number(of: pulls[0]) : "\(pulls.count) PRs"
-        // Lilac once its pull requests landed, as in Resources: the session's work is in.
-        let tint = switch model.checksMonitor.outcome(of: pulls) {
-        case .landed: Theme.lilac
-        case .dropped: Theme.dim
-        case nil: Theme.phosphor
-        }
-        return Button { model.openPullRequests(of: row.id) } label: {
-            HStack(spacing: 4) {
-                Text("⇄ " + label).foregroundStyle(tint.opacity(0.85))
-                ChecksMark(state: model.checksMonitor.state(of: pulls))
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(pullsHelp(pulls))
-    }
-
-    private func pullsHelp(_ pulls: [SessionResource]) -> String {
-        let checks = model.checksMonitor.checks
-        func line(_ pull: SessionResource) -> String {
-            var text = pull.name
-            if let title = pull.title { text += "  " + title }
-            if let summary = checks[pull.key]?.summary, !summary.isEmpty { text += "  [" + summary + "]" }
-            return text
-        }
-        let heading = pulls.count == 1 ? "Open in this session's browser:" : "Open these pull requests in this session's browser:"
-        return ([heading] + pulls.prefix(10).map(line)).joined(separator: "\n")
-    }
-
-    /// Worktrees in their own color: work that lives apart from the main checkout.
-    private func folderLabel(_ folder: String, checkout: WorkspaceCheckout?) -> some View {
-        let isWorktree = checkout?.isLinkedWorktree == true
-        return HStack(spacing: 4) {
-            Image(systemName: isWorktree ? "arrow.triangle.branch" : "folder").font(.system(size: 8, weight: .semibold))
-            Text(folder).lineLimit(1).truncationMode(.middle)
-            if isWorktree { Text("worktree").opacity(0.7) }
-        }
-        .foregroundStyle(isWorktree ? Theme.cyan.opacity(0.8) : Theme.faint)
-        .help(folderHelp(checkout))
-    }
-
-    private func folderHelp(_ checkout: WorkspaceCheckout?) -> String {
-        guard let checkout else { return row.agent.directory ?? "" }
-        let branch = checkout.branch.map { " on branch \($0)" } ?? ""
-        return (checkout.isLinkedWorktree ? "A worktree of \(checkout.repository)\(branch)" : "\(checkout.repository)\(branch)")
-            + "\n" + checkout.path
-    }
-
-    /// `#2175` from `theam/tam-os#2175`, `!31` from a GitLab merge request.
-    private static func number(of resource: SessionResource) -> String {
-        guard let mark = resource.name.lastIndex(where: { $0 == "#" || $0 == "!" }) else { return resource.name }
-        return String(resource.name[mark...])
+    /// "3 minutes ago (Oct 22, 2026 at 10:35:12)": in plain terms first, then exactly.
+    private static func received(_ date: Date?) -> String {
+        guard let date else { return "never" }
+        let relative = date.formatted(.relative(presentation: .named, unitsStyle: .wide))
+        return "\(relative) (\(date.formatted(date: .abbreviated, time: .standard)))"
     }
 
     /// Shows or hides the sessions nested under this one. Amber while a hidden one needs you.
@@ -625,7 +583,6 @@ private struct SessionRowView: View {
             Text("\(tree.isCollapsed ? "▸" : "▾")\(tree.nestedCount)")
                 .font(Theme.mono(10, .semibold))
                 .foregroundStyle(tree.hiddenBlocked > 0 ? Theme.amber : tree.hidesSelection ? Theme.phosphor : Theme.dim)
-                .padding(.top, 1)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -638,17 +595,16 @@ private struct TreeLines: View {
     let tree: TreeRow
     /// Where the row's level-0 content starts.
     let leading: CGFloat
-    /// Below the middle of the first line of text, and below the parent's number or state glyph.
-    private let elbow: CGFloat = 14, parentBottom: CGFloat = 22
+    /// The middle of the row's line, and below the parent's state glyph.
+    private let elbow: CGFloat = 18, parentBottom: CGFloat = 27
 
     var body: some View {
         // Read on the main actor: Canvas draws from a nonisolated closure.
         let indent = SessionRowView.indent
         return Canvas { context, size in
-            // Each level's line runs under the middle of its parent's first column: the priority
-            // number at the top of the tree, the state glyph below it.
+            // Each level's line runs under the middle of its parent's state glyph.
             func x(_ level: Int) -> CGFloat {
-                leading + CGFloat(level - 1) * indent + (level == 1 ? 6 : 7)
+                leading + CGFloat(level - 1) * indent + 7
             }
             var path = Path()
             for (index, passes) in tree.guides.enumerated() where passes {
@@ -999,21 +955,29 @@ private struct ShellRowView: View {
     let isGrouped: Bool
     let isSelected: Bool
     let showsMachine: Bool
+    /// Its branch, else its repository or folder; shown on hover only.
+    let place: String?
     let open: () -> Void
+    @ViewState<Bool> private var hovering = false
 
     var body: some View {
         HStack(spacing: 8) {
             Text("$").font(Theme.mono(11, .bold)).foregroundStyle(isSelected ? Theme.phosphor : Theme.faint)
-                .frame(width: 30, alignment: .trailing)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(shell.pane.workspaceName).font(Theme.mono(11.5, .medium)).foregroundStyle(Theme.text.opacity(0.8)).lineLimit(1)
-                Text(showsMachine ? "shell @\(shell.machine.name)" : "shell")
-                    .font(Theme.mono(10)).foregroundStyle(Theme.faint).lineLimit(1)
+                .frame(width: 18, alignment: .center)
+                .help("Shell")
+            Text(shell.pane.workspaceName).font(Theme.mono(12, .medium)).foregroundStyle(Theme.text.opacity(0.8)).lineLimit(1)
+            if hovering, let place {
+                Text(place).font(Theme.mono(10)).foregroundStyle(Theme.dim).lineLimit(1).truncationMode(.middle)
+            }
+            if showsMachine {
+                Text("@\(shell.machine.name)").font(Theme.mono(10)).foregroundStyle(Theme.faint).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
+        .frame(minHeight: 26)
         .padding(.leading, isGrouped ? 26 : 12).padding(.trailing, 8).padding(.vertical, 5)
-        .background(isSelected ? Theme.raised : .clear)
+        .background(isSelected ? Theme.raised : hovering ? Theme.raised.opacity(0.5) : .clear)
+        .onHover { hovering = $0 }
         .overlay(alignment: .leading) {
             if isGrouped { Rectangle().fill(Theme.line).frame(width: 1).padding(.leading, 18) }
         }

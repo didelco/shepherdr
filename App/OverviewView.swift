@@ -22,7 +22,7 @@ struct OverviewView: View {
                     NoticeView(title: "Saved machines could not be refreshed", message: failure.message, detail: failure.detail)
                 }
                 ForEach(cluster.machines.filter { $0.failure != nil }) { state in
-                    NoticeView(title: "\(state.machine.name): \(state.connection.title)" + (state.isStale ? " · showing last known data" : ""),
+                    NoticeView(title: "\(state.machine.name): \(state.connection.title)" + (state.isStale ? " · showing the last known state" : ""),
                                message: state.failure?.message ?? "", detail: state.failure?.detail)
                 }
                 sessions
@@ -122,9 +122,9 @@ struct OverviewView: View {
     private var emptyMessage: String {
         if !model.matchingRows.isEmpty { return "No sessions in the chosen states and machines." }
         if !model.search.isEmpty { return "No sessions match \"\(model.search)\"." }
-        if cluster.isRefreshing && cluster.lastRefresh == nil { return "Connecting to Herdr…" }
-        if cluster.onlineCount == 0 { return "Herdr is not reachable. Open Settings (⌘,) → Machines for details, then refresh (⌘R)." }
-        return "Connected. Agents appear here when Herdr detects them in a workspace."
+        if cluster.isRefreshing && cluster.lastRefresh == nil { return "Connecting to your machines…" }
+        if cluster.onlineCount == 0 { return "Can't reach your machines. Check Settings → Machines." }
+        return "Connected. Sessions appear here when you start an agent."
     }
 }
 

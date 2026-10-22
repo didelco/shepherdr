@@ -335,6 +335,7 @@ final class AppModel {
     let updates = UpdateController()
     /// Whether Shepherdr keeps this Mac from sleeping; off every time it opens.
     let keepAwake = KeepAwake()
+    let usage = UsageMonitor()
 
     init(cluster: ClusterStore = ClusterStore(), order: SessionOrderStore = SessionOrderStore(),
          relations: SessionRelationStore = SessionRelationStore(), sessionStates: SessionStateStore = SessionStateStore()) {

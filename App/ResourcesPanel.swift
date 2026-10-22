@@ -8,13 +8,24 @@ import ShepherdrCore
 struct ResourcesPanel: View {
     let workspace: SessionWorkspace
     let checks: ChecksMonitor
+    /// Hides the panel; the header's resources button brings it back.
+    let close: () -> Void
     private static let shown = 10
     @ViewState private var expanded = Set<SessionResource.Kind>()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ConsoleHeader(title: "Resources", trailing: "\(workspace.visibleResources.count)")
-                .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 6)
+            HStack(spacing: 8) {
+                ConsoleHeader(title: "Resources", trailing: "\(workspace.visibleResources.count)")
+                Button(action: close) {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.dim)
+                        .frame(width: 14, height: 14).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Close Resources")
+                .accessibilityLabel("Close Resources")
+            }
+            .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 6)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(SessionResource.Kind.allCases, id: \.self) { kind in
