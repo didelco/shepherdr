@@ -231,14 +231,15 @@ struct SessionView: View {
 
     // MARK: Status bar
 
-    /// Under the whole work area, whatever is beside the terminal: the prompt editor and dictation on the left, where we are on the right.
+    /// Under the whole work area, whatever is beside the terminal: the prompt editor and dictation on the left, followed by
+    /// where we are (agent, model, effort); the subscription's consumption on the right.
     private var statusBar: some View {
         HStack(spacing: 10) {
             promptButton
             DictationButton(model: model, id: id, compact: true)
+            place.padding(.leading, 6)
             Spacer(minLength: 8)
             if let usage = subscriptionUsage { subscription(usage) }
-            place
         }
         .padding(.horizontal, 16).padding(.vertical, 5)
         .background(Theme.panel)
