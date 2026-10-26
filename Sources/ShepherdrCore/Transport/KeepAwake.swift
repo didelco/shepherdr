@@ -72,8 +72,9 @@ public final class KeepAwake {
     }
 
     nonisolated private static func runsOnBattery() -> Bool {
+        // The info is ours to release (Copy); the type belongs to it (Get), so it isn't.
         guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let type = IOPSGetProvidingPowerSourceType(info)?.takeRetainedValue() as String? else { return false }
+              let type = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String? else { return false }
         return type == kIOPMBatteryPowerKey
     }
 }
