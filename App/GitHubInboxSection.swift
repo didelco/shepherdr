@@ -23,7 +23,7 @@ struct GitHubInboxSection: View {
         }
         .task { await monitor.syncIfNeeded() }
         // Following, pausing or dropping a repository asks again right away.
-        .onChange(of: store.activeRepositories) { Task { await monitor.sync() } }
+        .onChange(of: model.followedRepositories) { Task { await monitor.sync() } }
     }
 
     private var header: some View {
@@ -38,7 +38,7 @@ struct GitHubInboxSection: View {
                       + "others' (ready, small and old ones first), then fix yours. Stacked pull requests go after their base.")
             Button("SYNC") { Task { await monitor.sync() } }
                 .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
-                .disabled(monitor.isSyncing || store.activeRepositories.isEmpty)
+                .disabled(monitor.isSyncing || model.followedRepositories.isEmpty)
                 .help("Ask GitHub again now")
             Button("REPOS…") { model.showsGitHubRepositoriesSheet = true }
                 .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
@@ -48,15 +48,15 @@ struct GitHubInboxSection: View {
 
     private func trailing(now: Date) -> String? {
         if monitor.isSyncing { return "syncing…" }
-        guard let inbox = monitor.inbox else { return store.activeRepositories.isEmpty ? nil : "never synced" }
+        guard let inbox = monitor.inbox else { return model.followedRepositories.isEmpty ? nil : "never synced" }
         let synced = "synced \(Self.age(of: inbox.syncedAt, now: now))"
         return inbox.viewer.isEmpty ? synced : "@\(inbox.viewer) · \(synced)"
     }
 
     @ViewBuilder private var content: some View {
-        if store.activeRepositories.isEmpty {
-            message(store.repositories.isEmpty
-                    ? "No repositories followed yet. Press REPOS… to add the ones whose issues and pull requests you want here."
+        if model.followedRepositories.isEmpty {
+            message(store.repositories.isEmpty && model.sessionLinks.repositories.isEmpty
+                    ? "No repositories followed yet. Sessions working in a GitHub repository add it here; press REPOS… to add others."
                     : "Every followed repository is paused. Press REPOS… to resume one.")
         } else if let inbox = monitor.inbox {
             if let error = monitor.error {
@@ -64,7 +64,8 @@ struct GitHubInboxSection: View {
                     .font(Theme.mono(10)).foregroundStyle(Theme.amber).lineLimit(1).truncationMode(.tail)
                     .help([error.notice.message, error.notice.detail].compactMap { $0 }.joined(separator: "\n"))
             }
-            columns(inbox.items.filter { store.activeRepositories.contains($0.repository) })
+            let followed = Set(model.followedRepositories)
+            columns(inbox.items.filter { followed.contains($0.repository) })
         } else if let error = monitor.error {
             let notice = error.notice
             NoticeView(title: notice.title, message: notice.message, detail: notice.detail)
@@ -82,21 +83,22 @@ struct GitHubInboxSection: View {
 
     /// In suggested order, the pull requests leave their columns for one ordered list.
     @ViewBuilder private func columns(_ items: [GitHubInboxItem]) -> some View {
-        let steps = suggestsOrder ? PullRequestOrder.steps(for: items, checks: monitor.checks) : []
+        let steps = suggestsOrder ? PullRequestOrder.steps(for: items, checks: model.checksMonitor.checks) : []
+        let links = model.sessionLinks
         let kinds = Self.kinds.filter { kind in (!suggestsOrder || kind == .assignedIssue) && items.contains { $0.kind == kind } }
         if kinds.isEmpty && steps.isEmpty {
             message("Nothing waiting for you in the followed repositories.")
         } else {
-            if !steps.isEmpty { order(steps) }
+            if !steps.isEmpty { order(steps, links: links) }
             if !kinds.isEmpty {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 10, alignment: .top)], spacing: 10) {
-                    ForEach(kinds, id: \.self) { kind in column(kind, items.filter { $0.kind == kind }) }
+                    ForEach(kinds, id: \.self) { kind in column(kind, items.filter { $0.kind == kind }, links: links) }
                 }
             }
         }
     }
 
-    private func order(_ steps: [PullRequestStep]) -> some View {
+    private func order(_ steps: [PullRequestStep], links: SessionLinks) -> some View {
         let unseen = store.unseen(steps.map(\.item)).count
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
@@ -106,7 +108,7 @@ struct GitHubInboxSection: View {
                     .font(Theme.mono(9)).foregroundStyle(unseen > 0 ? Theme.phosphor : Theme.faint)
             }
             .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 3)
-            ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in row(step.item, place: (index + 1, step)) }
+            ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in row(step.item, place: (index + 1, step), links: links) }
         }
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -114,7 +116,7 @@ struct GitHubInboxSection: View {
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line, lineWidth: 1))
     }
 
-    private func column(_ kind: GitHubInboxItem.Kind, _ items: [GitHubInboxItem]) -> some View {
+    private func column(_ kind: GitHubInboxItem.Kind, _ items: [GitHubInboxItem], links: SessionLinks) -> some View {
         let isExpanded = expanded.contains(kind)
         let unseen = store.unseen(items).count
         return VStack(alignment: .leading, spacing: 0) {
@@ -125,7 +127,7 @@ struct GitHubInboxSection: View {
                     .font(Theme.mono(9)).foregroundStyle(unseen > 0 ? Theme.phosphor : Theme.faint)
             }
             .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 3)
-            ForEach(isExpanded ? items : Array(items.prefix(Self.shown))) { item in row(item) }
+            ForEach(isExpanded ? items : Array(items.prefix(Self.shown))) { item in row(item, links: links) }
             if items.count > Self.shown {
                 Button {
                     if isExpanded { expanded.remove(kind) } else { expanded.insert(kind) }
@@ -145,12 +147,21 @@ struct GitHubInboxSection: View {
     }
 
     /// In suggested order, a row leads with its place and what to do, and says why under its title.
-    private func row(_ item: GitHubInboxItem, place: (number: Int, step: PullRequestStep)? = nil) -> some View {
+    /// It ends with what to do about it in a session: start one, or open the ones working on it.
+    private func row(_ item: GitHubInboxItem, place: (number: Int, step: PullRequestStep)? = nil, links: SessionLinks) -> some View {
         let isUnseen = store.isUnseen(item)
-        return Button { open(item) } label: {
+        return HStack(spacing: 0) {
+            details(item, place: place, isUnseen: isUnseen)
+            sessionButton(InboxAction(item: item, sessions: links.sessions(for: item)), for: item)
+                .padding(.trailing, 10)
+        }
+    }
+
+    private func details(_ item: GitHubInboxItem, place: (number: Int, step: PullRequestStep)?, isUnseen: Bool) -> some View {
+        Button { open(item) } label: {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 if let place {
-                    Text("\(place.number)").font(Theme.mono(10)).foregroundStyle(Theme.faint)
+                    Text(verbatim: "\(place.number)").font(Theme.mono(10)).foregroundStyle(Theme.faint)
                         .frame(width: 18, alignment: .trailing)
                     Text(Self.label(place.step.action)).font(Theme.mono(9.5, .bold))
                         .foregroundStyle(Self.tint(place.step.action)).frame(width: 54, alignment: .leading)
@@ -159,11 +170,12 @@ struct GitHubInboxSection: View {
                     .foregroundStyle(Self.tint(item.kind)).frame(width: 12)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 5) {
-                        Text("\(item.repository.displayName)#\(item.number)").font(Theme.mono(11, .medium))
+                        // Verbatim: numbers in a localized Text would get a thousands separator, #1.234.
+                        Text(verbatim: "\(item.repository.displayName)#\(item.number)").font(Theme.mono(11, .medium))
                             .lineLimit(1).truncationMode(.middle)
                             .foregroundStyle(isUnseen ? Theme.text : Theme.text.opacity(0.7))
                         if item.isPullRequest {
-                            ChecksMark(state: monitor.checks[item.key]?.state).font(Theme.mono(10, .bold))
+                            ChecksMark(state: model.checksMonitor.checks[item.key]?.state).font(Theme.mono(10, .bold))
                         }
                         if let badge = Self.badge(item) {
                             Text(badge.label).font(Theme.mono(9, .semibold)).foregroundStyle(badge.color)
@@ -201,6 +213,29 @@ struct GitHubInboxSection: View {
         }
     }
 
+    /// IMPLEMENT or REVIEW in a new session, or OPEN the sessions working on it.
+    private func sessionButton(_ action: InboxAction, for item: GitHubInboxItem) -> some View {
+        let label: String, help: String, tint: Color
+        switch action {
+        case .implement:
+            (label, help, tint) = ("IMPLEMENT", "Start a session that implements this issue, in a worktree of its own", Theme.cyan)
+        case .review:
+            (label, help, tint) = ("REVIEW", item.kind == .myPullRequest
+                ? "Start a session on this pull request's branch, in a worktree of its own, to address its reviews and checks"
+                : "Start a session that reviews this pull request, in a worktree of its branch", Theme.cyan)
+        case .open(let id):
+            (label, help, tint) = ("OPEN", "Open \(model.row(for: id)?.workspace ?? "its session"), which works on it", Theme.phosphor)
+        case .choose(let ids):
+            (label, help, tint) = ("OPEN \(ids.count)", "\(ids.count) sessions work on it: choose one", Theme.phosphor)
+        }
+        return Button(label) {
+            store.markSeen(item)
+            model.perform(action, for: item)
+        }
+        .buttonStyle(ConsoleButtonStyle(tint: tint, compact: true))
+        .help(help)
+    }
+
     private func open(_ item: GitHubInboxItem) {
         NSWorkspace.shared.open(item.url)
         store.markSeen(item)
@@ -210,7 +245,7 @@ struct GitHubInboxSection: View {
         var lines = [item.title, "by @\(item.author) · updated \(item.updatedAt.formatted(date: .abbreviated, time: .shortened))"]
         if let step { lines.append("\(Self.label(step.action)): \(Self.meaning(step.action)) (\(step.reasons.joined(separator: ", ")))") }
         if let badge = Self.badge(item) { lines.append(badge.help) }
-        if let checks = monitor.checks[item.key], !checks.summary.isEmpty { lines.append("Checks: \(checks.summary)") }
+        if let checks = model.checksMonitor.checks[item.key], !checks.summary.isEmpty { lines.append("Checks: \(checks.summary)") }
         if !item.linkedPullRequests.isEmpty {
             let pulls = item.linkedPullRequests.map { pull in
                 let state = pull.isOpen ? (pull.isDraft ? " (draft)" : "") : " (closed)"

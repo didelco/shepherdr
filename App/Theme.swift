@@ -515,13 +515,15 @@ struct ConsoleHeader: View {
 struct ConsoleButtonStyle: ButtonStyle {
     var tint: Color = Theme.phosphor
     var prominent = false
+    /// Smaller, to sit in a list's row.
+    var compact = false
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(Theme.mono(11, .semibold))
+            .font(Theme.mono(compact ? 9 : 11, .semibold))
             .foregroundStyle(prominent ? Theme.background : tint)
-            .padding(.horizontal, 9).padding(.vertical, 4)
+            .padding(.horizontal, compact ? 6 : 9).padding(.vertical, compact ? 2 : 4)
             .background(prominent ? tint.opacity(configuration.isPressed ? 0.7 : 1)
                                   : tint.opacity(configuration.isPressed ? 0.22 : 0.08),
                         in: RoundedRectangle(cornerRadius: 4))

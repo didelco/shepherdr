@@ -248,6 +248,10 @@ struct NewSessionDraft: Identifiable {
     var agentKind: String?
     var prompt: String?
     var compass: FromCompass?
+    /// A new worktree's branch, for a session that works apart from the folder's own checkout.
+    var worktreeBranch: String?
+    /// Links the session starts with in its resources, such as the issue it implements.
+    var pins: [URL] = []
 }
 
 /// Window-level navigation and composer state. Drafts and prompt history stay in memory only.
@@ -325,6 +329,12 @@ final class AppModel {
     let checksMonitor = ChecksMonitor()
     /// The repositories the home screen's GitHub inbox follows, and which items you've seen.
     let githubInbox = GitHubInboxStore()
+    /// What GitHub and the machines said about pull requests, issues and repositories, kept so they
+    /// aren't asked again; written to disk once a minute and as Shepherdr quits.
+    let githubCache = GitHubCache()
+    /// The GitHub repository each session's folder is in, as its machine said.
+    private(set) var sessionRepositories: [Agent.ID: InboxRepository] = [:]
+    @ObservationIgnored private var isLookingUpFolders = false
     /// What GitHub asks of you in those repositories.
     let inboxMonitor = GitHubInboxMonitor()
     /// The overview's choice of states and machines.
@@ -341,6 +351,8 @@ final class AppModel {
     let visits = VisitStore()
     /// The quick switcher (⌘T), while it is open.
     var isSwitching = false
+    /// What the quick switcher opens with typed in, such as a pull request to find its sessions.
+    @ObservationIgnored var switcherSeed = ""
     /// Whether Shepherdr can be seen: off screen, other machines are asked less often.
     @ObservationIgnored let presence = ScreenPresence()
     /// Whether this Mac is awake and online enough to start agents with nobody watching.
@@ -356,6 +368,7 @@ final class AppModel {
         self.sessionStates = sessionStates
         notifier.model = self
         checksMonitor.model = self
+        checksMonitor.restore(from: githubCache)
         courier.model = self
         compass.model = self
         relations.onChange = { [weak self] in self?.settleStatuses() }
@@ -754,6 +767,48 @@ final class AppModel {
 
     // MARK: Resources
 
+    /// Which sessions work on which repositories, pull requests and issues, from the links each one
+    /// collected and the repository its folder is in.
+    var sessionLinks: SessionLinks {
+        SessionLinks(rankedRows.map { ($0.id, resources(for: $0.id)) }, repositories: sessionRepositories)
+    }
+
+    /// The repositories the GitHub inbox asks about: those you follow, and those sessions work in,
+    /// unless you paused them.
+    var followedRepositories: [InboxRepository] {
+        githubInbox.activeRepositories(including: sessionLinks.repositories)
+    }
+
+    /// Does what an inbox item's button offers: a new session that implements or reviews it, in a
+    /// worktree of its own, the one session working on it, or ⌘T to choose among several.
+    func perform(_ action: InboxAction, for item: GitHubInboxItem) {
+        let name = "\(item.repository.displayName)#\(item.number)"
+        switch action {
+        case .implement:
+            newSession = NewSessionDraft(directory: "https://github.com/\(item.repository.displayName)", agentKind: usualAgentKind,
+                                         prompt: "Implement the issue \(name): \(item.title)\n\(item.url.absoluteString)",
+                                         worktreeBranch: "issue-\(item.number)", pins: [item.url])
+        case .review:
+            // A pull request's link gets a worktree of its branch.
+            let task = item.kind == .myPullRequest
+                ? "Pick up my pull request \(name): \(item.title). Address its review comments and failing checks."
+                : "Review the pull request \(name): \(item.title)"
+            newSession = NewSessionDraft(directory: item.url.absoluteString, agentKind: usualAgentKind,
+                                         prompt: "\(task)\n\(item.url.absoluteString)", pins: [item.url])
+        case .open(let id):
+            open(id)
+        case .choose:
+            openSwitcher(query: name)
+        }
+    }
+
+    /// The agent most sessions run, for sessions Shepherdr suggests.
+    private var usualAgentKind: String {
+        let kinds = rankedRows.map(\.agent.kind).filter(NewSessionRequest.agentKinds.contains)
+        let counts = Dictionary(kinds.map { ($0, 1) }, uniquingKeysWith: +)
+        return counts.max { $0.value != $1.value ? $0.value < $1.value : $0.key > $1.key }?.key ?? "claude"
+    }
+
     /// A session's resources, without opening its workspace: the queue shows them for every session.
     func resources(for id: Agent.ID) -> [SessionResource] {
         workspaces[id]?.resources ?? SessionResources.merge([], into: sessionStates.state(for: id).resources)
@@ -777,10 +832,14 @@ final class AppModel {
 
     /// Opens the session with its pull request in its browser, or the ten most relevant, each in a tab.
     func openPullRequests(of id: Agent.ID) {
-        let pulls = pullRequests(of: id)
+        openResources(pullRequests(of: id), of: id)
+    }
+
+    /// Opens the session with one of its resources in its browser, or the first ten, each in a tab.
+    func openResources(_ resources: [SessionResource], of id: Agent.ID) {
         open(id)
-        if pulls.count == 1 { workspace(for: id).open(pulls[0]) }
-        else { workspace(for: id).browser.open(all: pulls.prefix(10).map(\.url)) }
+        if resources.count == 1 { workspace(for: id).open(resources[0]) }
+        else { workspace(for: id).browser.open(all: resources.prefix(10).map(\.url)) }
     }
 
     func collectResources(_ found: [SessionResource], for id: Agent.ID) {
@@ -811,12 +870,22 @@ final class AppModel {
     private func check(_ resource: SessionResource, for id: Agent.ID) async {
         let workspace = workspace(for: id)
         // GitHub's CLI answers for private repositories too, and says whether it's a pull request.
+        if resource.github != nil, let known = githubCache.item(resource.key, since: Date().addingTimeInterval(-7 * 24 * 3600)) {
+            if let isPullRequest = known.isPullRequest {
+                workspace.update(resource.key) { $0.verified(isPullRequest: isPullRequest).found(title: known.title) }
+            } else {
+                workspace.update(resource.key) { $0.missing() }
+            }
+            return
+        }
         if let github = resource.github, gitHub.isAvailable {
             switch await gitHub.look(owner: github.owner, repository: github.repository, number: github.number) {
             case .found(let isPullRequest, let title):
+                githubCache.remember(GitHubCache.Item(isPullRequest: isPullRequest, title: title), for: resource.key)
                 workspace.update(resource.key) { $0.verified(isPullRequest: isPullRequest).found(title: title) }
                 return
             case .missing:
+                githubCache.remember(.missing, for: resource.key)
                 workspace.update(resource.key) { $0.missing() }
                 return
             case .unknown:
@@ -1059,6 +1128,44 @@ final class AppModel {
 
     /// After each refresh: holds forget sessions that closed, wherever they were closed, statuses
     /// are worked out again, and shells sessions wait for are looked at.
+    /// After each refresh: which GitHub repository each session's folder is in, from what machines
+    /// said before, and asking those that answer about folders they haven't been asked about lately,
+    /// one machine at a time.
+    func learnRepositories(now: Date = Date()) {
+        // A folder's repository hardly ever changes; one in none is asked about again sooner.
+        let found = now.addingTimeInterval(-7 * 24 * 3600), none = now.addingTimeInterval(-24 * 3600)
+        var known: [Agent.ID: InboxRepository] = [:]
+        var unknown: [String: Set<String>] = [:]
+        for row in cluster.agents where !row.isStale {
+            guard let folder = row.agent.directory, !folder.isEmpty else { continue }
+            let machine = row.id.machineID
+            // Nil: never asked lately. A nil inside: a folder in no repository on GitHub.
+            guard let answer = githubCache.repository(ofFolder: folder, onMachine: machine, since: none) else {
+                unknown[machine, default: []].insert(folder)
+                continue
+            }
+            guard let name = answer else { continue }
+            if let repository = InboxRepository(parsing: name) { known[row.id] = repository }
+            if githubCache.repository(ofFolder: folder, onMachine: machine, since: found) == nil {
+                unknown[machine, default: []].insert(folder)
+            }
+        }
+        if known != sessionRepositories { sessionRepositories = known }
+        guard !unknown.isEmpty, !isLookingUpFolders else { return }
+        isLookingUpFolders = true
+        Task {
+            defer { isLookingUpFolders = false }
+            for (machineID, folders) in unknown.sorted(by: { $0.key < $1.key }) {
+                guard let machine = cluster.machines.first(where: { $0.id == machineID && $0.connection == .online })?.machine,
+                      let answer = await FolderRepositories.lookUp(folders.sorted(), on: machine) else { continue }
+                for (folder, repository) in answer {
+                    githubCache.remember(repository: repository?.fullName, ofFolder: folder, onMachine: machineID)
+                }
+            }
+            learnRepositories()
+        }
+    }
+
     func keepHolds() {
         let held = Set(relations.holds.keys).union(relations.holds.values.joined().map(\.awaited)).union(relations.unsynced)
         let gone = HoldUpkeep.gone(held, machines: cluster.machines, missingSince: &missingSince)
@@ -1160,6 +1267,11 @@ final class AppModel {
     }
 
     /// Detaches every terminal, as Shepherdr quits.
+    /// Writes what is kept in memory and belongs on disk, as Shepherdr quits.
+    func saveCaches() {
+        githubCache.save()
+    }
+
     func closeTerminals() {
         for holder in terminals.values { holder.close() }
         terminals = [:]
@@ -1222,6 +1334,7 @@ final class AppModel {
         while !Task.isCancelled {
             do { try await Task.sleep(for: .seconds(60)) } catch { return }
             trimCaches()
+            githubCache.save()
         }
     }
 
@@ -1601,13 +1714,26 @@ final class AppModel {
         func onMachine(_ name: String) -> Bool { machine.map { name.localizedStandardContains($0) } ?? true }
         var targets: [SwitchTarget] = []
         if machine == nil, words.allSatisfy({ "compass".localizedStandardContains($0) }) { targets.append(.compass) }
-        targets += rankedRows.filter { onMachine($0.machineName) && words.allSatisfy($0.matches) }.map(SwitchTarget.session)
+        // A session matches by its own names, or by the pull requests and issues it links to.
+        targets += rankedRows.filter { row in
+            onMachine(row.machineName) && words.allSatisfy { word in
+                row.matches(word) || resources(for: row.id).contains { SessionSearch.matches($0, word: word) }
+                    || sessionRepositories[row.id]?.id.localizedStandardContains(word) == true
+            }
+        }.map(SwitchTarget.session)
         targets += allShells.filter { onMachine($0.machine.name) && words.allSatisfy($0.matches) }.map(SwitchTarget.shell)
         return visits.recentFirst(targets, place: \.place, excluding: currentPlace)
     }
 
     func toggleSwitcher() {
         if isSwitching { closeSwitcher() } else { isSwitching = true }
+    }
+
+    /// Opens the quick switcher with something typed in, such as `theam/shepherdr#12` to choose
+    /// among the sessions working on it.
+    func openSwitcher(query: String) {
+        switcherSeed = query
+        isSwitching = true
     }
 
     /// Closes the switcher without going anywhere: the keyboard goes back where it was.

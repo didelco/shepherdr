@@ -1,7 +1,7 @@
 import Foundation
 
 /// Where a pull request's checks stand: CI runs and commit statuses on its latest commit.
-public struct PullRequestChecks: Equatable, Sendable {
+public struct PullRequestChecks: Codable, Equatable, Sendable {
     public enum State: Equatable, Sendable {
         /// No checks report on the pull request.
         case none

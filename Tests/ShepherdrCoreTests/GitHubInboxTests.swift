@@ -237,6 +237,23 @@ struct GitHubInboxTests {
                         updatedAt: Date(timeIntervalSince1970: updated))
     }
 
+    @Test func repositoriesSessionsWorkInAreFollowedUntilPaused() async throws {
+        try await withDefaults { defaults in
+            let store = GitHubInboxStore(defaults: defaults)
+            store.add(repo("a/b"))
+            store.add(repo("a/paused"))
+            store.setPaused(repo("a/paused"), true)
+            // A session repository you follow, or paused, counts once, as you left it.
+            let sessions = [repo("a/b"), repo("a/paused"), repo("c/d"), repo("e/f")]
+            #expect(store.activeRepositories(including: sessions) == [repo("a/b"), repo("c/d"), repo("e/f")])
+            store.setPaused(fromSessions: repo("c/d"), true)
+            #expect(store.activeRepositories(including: sessions) == [repo("a/b"), repo("e/f")])
+            #expect(GitHubInboxStore(defaults: defaults).pausedFromSessions == ["c/d"])
+            store.setPaused(fromSessions: repo("c/d"), false)
+            #expect(store.activeRepositories(including: sessions).contains(repo("c/d")))
+        }
+    }
+
     private func withDefaults(_ body: @MainActor (UserDefaults) async throws -> Void) async throws {
         let suite = "ShepherdrTests.GitHubInbox.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))

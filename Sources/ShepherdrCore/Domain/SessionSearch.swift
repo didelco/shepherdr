@@ -25,6 +25,18 @@ public enum SessionSearch {
         return (text.split(whereSeparator: \.isWhitespace).map(String.init), machine)
     }
 
+    /// Whether a word typed names one of a session's pull requests or issues. A number, as in
+    /// `theam/shepherdr#12`, `shepherdr#12` or `#12`, names exactly that one, never `#123`; other words
+    /// match any part of its name or title.
+    public static func matches(_ resource: SessionResource, word: String) -> Bool {
+        let name = resource.name.lowercased(), word = word.lowercased()
+        if let mark = word.lastIndex(of: "#"), !word[word.index(after: mark)...].isEmpty,
+           word[word.index(after: mark)...].allSatisfy(\.isNumber) {
+            return name == word || name.hasSuffix("/" + word) || (word.hasPrefix("#") && name.hasSuffix(word))
+        }
+        return name.localizedStandardContains(word) || (resource.title?.localizedStandardContains(word) ?? false)
+    }
+
     /// The text before the last `@`, and the machine after it when one is typed.
     private static func split(_ query: String) -> (text: String, machine: String?) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)

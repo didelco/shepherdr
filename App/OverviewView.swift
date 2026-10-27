@@ -120,7 +120,7 @@ struct OverviewView: View {
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 10)], spacing: 10) {
                     ForEach(rows) { row in
-                        SessionCard(row: row, status: model.status(of: row), showsMachine: model.showsMachineNames,
+                        SessionCard(model: model, row: row, status: model.status(of: row), showsMachine: model.showsMachineNames,
                                     background: model.backgroundCommands(of: row)) {
                             model.open(row.id)
                         }
@@ -337,7 +337,9 @@ final class MachineUsageMonitor {
     }
 }
 
+/// A session in the overview: a click opens it, and one on its pull requests or issues opens those.
 private struct SessionCard: View {
+    let model: AppModel
     let row: AgentRow
     let status: SessionStatus
     let showsMachine: Bool
@@ -347,8 +349,8 @@ private struct SessionCard: View {
 
     var body: some View {
         let color = Theme.color(for: status)
-        Button(action: open) {
-            VStack(alignment: .leading, spacing: 8) {
+        // Not a button: its pull requests' label is one of its own.
+        VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Text(String(format: "%02d", row.manualPriority)).font(Theme.mono(10, .semibold)).foregroundStyle(Theme.faint)
                     StateGlyph(status: status, background: !background.isEmpty)
@@ -364,6 +366,7 @@ private struct SessionCard: View {
                         if showsMachine { Text("@\(row.machineName)") }
                     }
                     .layoutPriority(1)
+                    SessionLinksLabel(model: model, id: row.id, showsIssues: true).layoutPriority(1)
                     BackgroundLabel(commands: background).foregroundStyle(Theme.dim)
                 }
                 .font(Theme.mono(10)).foregroundStyle(Theme.faint).lineLimit(1)
@@ -373,8 +376,10 @@ private struct SessionCard: View {
             .background(hovering ? Theme.raised : Theme.panel, in: RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(hovering ? color.opacity(0.6) : Theme.line, lineWidth: 1))
             .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+            .onTapGesture(perform: open)
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default, open)
         .onHover { hovering = $0 }
         .opacity(row.isStale ? 0.6 : 1)
         .help("Open \(row.workspace)")

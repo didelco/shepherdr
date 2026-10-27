@@ -26,9 +26,15 @@ public final class GitHubInboxStore {
     @ObservationIgnored private let defaults: UserDefaults
     static let storageKey = "githubInbox.v1"
 
+    /// Repositories sessions work in that you paused: they aren't asked about while sessions work in
+    /// them, by `owner/name`.
+    public private(set) var pausedFromSessions: Set<String>
+
     private struct Record: Codable {
         var repositories: [WatchedRepository]
         var seen: [String: Date]
+        /// Absent from records saved before sessions' repositories were followed.
+        var pausedFromSessions: Set<String>?
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -37,10 +43,25 @@ public final class GitHubInboxStore {
         var ids = Set<String>()
         repositories = (record?.repositories ?? []).filter { ids.insert($0.id).inserted }
         seen = record?.seen ?? [:]
+        pausedFromSessions = record?.pausedFromSessions ?? []
     }
 
     /// The repositories to ask GitHub about.
     public var activeRepositories: [InboxRepository] { repositories.filter { !$0.isPaused }.map(\.repository) }
+
+    /// The repositories to ask GitHub about when sessions work in `sessions`: the ones you follow,
+    /// then theirs, except those you paused either way.
+    public func activeRepositories(including sessions: [InboxRepository]) -> [InboxRepository] {
+        let listed = Set(repositories.map(\.id))
+        return activeRepositories + sessions.filter { !listed.contains($0.id) && !pausedFromSessions.contains($0.id) }
+    }
+
+    /// Stops or resumes asking about a repository sessions work in, without following it.
+    public func setPaused(fromSessions repository: InboxRepository, _ paused: Bool) {
+        guard pausedFromSessions.contains(repository.id) != paused else { return }
+        if paused { pausedFromSessions.insert(repository.id) } else { pausedFromSessions.remove(repository.id) }
+        save()
+    }
 
     /// Follows a repository, or resumes it if it was paused.
     public func add(_ repository: InboxRepository) {
@@ -89,7 +110,7 @@ public final class GitHubInboxStore {
     public func unseen(_ items: [GitHubInboxItem]) -> [GitHubInboxItem] { items.filter(isUnseen) }
 
     private func save() {
-        if let data = try? JSONEncoder().encode(Record(repositories: repositories, seen: seen)) {
+        if let data = try? JSONEncoder().encode(Record(repositories: repositories, seen: seen, pausedFromSessions: pausedFromSessions)) {
             defaults.set(data, forKey: Self.storageKey)
         }
     }

@@ -69,6 +69,8 @@ struct NewSessionSheet: View {
         _prompt = ViewState(initialValue: draft.prompt ?? "")
         _compassWaits = ViewState(initialValue: draft.compass?.compassWaits ?? false)
         _placement = ViewState(initialValue: draft.placement)
+        _inWorktree = ViewState(initialValue: draft.worktreeBranch != nil)
+        _branch = ViewState(initialValue: draft.worktreeBranch ?? "")
     }
 
     /// Asked for with an agent or a prompt: the sheet starts the agent too.
@@ -259,7 +261,8 @@ struct NewSessionSheet: View {
                     .background(Theme.background, in: RoundedRectangle(cornerRadius: 4))
                     .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.line, lineWidth: 1))
             }
-            Text("Sent once the agent is ready. Read it before you start: it came from a page built with what others wrote.")
+            Text(draft.compass != nil ? "Sent once the agent is ready. Read it before you start: it came from a page built with what others wrote."
+                                      : "Sent once the agent is ready.")
                 .font(Theme.mono(10)).foregroundStyle(Theme.faint).fixedSize(horizontal: false, vertical: true)
         }
         if draft.compass != nil {
@@ -301,7 +304,7 @@ struct NewSessionSheet: View {
                 Text("Opens your clone \(whereabouts), or clones it into \(destination) first.").foregroundStyle(Theme.dim)
             case .pullRequest(let repository, let number)?:
                 let title = pull?.head.map { " · \($0.title)" } ?? ""
-                Text("⇄ \(repository.fullName)#\(number)\(title)").foregroundStyle(Theme.lilac).lineLimit(2)
+                Text(verbatim: "⇄ \(repository.fullName)#\(number)\(title)").foregroundStyle(Theme.lilac).lineLimit(2)
                 Text(pullDetail(number: number, destination: destination)).foregroundStyle(Theme.dim)
             case nil:
                 EmptyView()
@@ -541,7 +544,7 @@ struct NewSessionSheet: View {
         from?.compassWaits = compassWaits && kind != nil
         Task {
             failure = await model.createSession(request, onMachine: machine.id, placement: startsAgent ? placement : draft.placement,
-                                                pins: pins, prompt: first, compass: from)
+                                                pins: pins + draft.pins, prompt: first, compass: from)
         }
     }
 }

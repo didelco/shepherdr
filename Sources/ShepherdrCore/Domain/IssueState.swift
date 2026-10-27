@@ -1,7 +1,7 @@
 import Foundation
 
 /// Where a GitHub issue stands: open, or closed for one of GitHub's three reasons.
-public enum IssueState: Equatable, Sendable {
+public enum IssueState: String, Codable, Equatable, Sendable {
     case open, completed, notPlanned, duplicate
 
     public var isOpen: Bool { self == .open }
