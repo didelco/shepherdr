@@ -339,6 +339,8 @@ final class AppModel {
     @ObservationIgnored let presence = ScreenPresence()
     /// Whether this Mac is awake and online enough to start agents with nobody watching.
     @ObservationIgnored let readiness = ReadinessMonitor()
+    /// Whether Shepherdr keeps this Mac from sleeping; off every time it opens.
+    let keepAwake = KeepAwake()
 
     init(cluster: ClusterStore = ClusterStore(), order: SessionOrderStore = SessionOrderStore(),
          relations: SessionRelationStore = SessionRelationStore(), sessionStates: SessionStateStore = SessionStateStore()) {
