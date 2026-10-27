@@ -65,6 +65,7 @@ struct MainView: View {
         .task { await model.watchCaches() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             model.closeTerminals()
+            model.saveCaches()
         }
         .onAppear { model.compass.start() }
         .onAppear { model.updates.start() }
@@ -76,6 +77,7 @@ struct MainView: View {
         .onChange(of: cluster.lastRefresh, initial: true) {
             model.restoreSelection()
             model.keepHolds()
+            model.learnRepositories()
             model.courier.observe()
             model.compass.observe()
         }

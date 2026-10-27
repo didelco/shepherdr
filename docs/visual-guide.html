@@ -155,14 +155,14 @@ herdr status</code></pre>
 <li><b>La terminal real, embebida.</b> Escribe en la TUI del agente; suelta ficheros e imágenes; usa el editor de prompts o dicta.</li>
 <li><b>Un navegador por sesión.</b> Los enlaces se abren junto a la terminal y las pestañas se conservan. Los ficheros locales también se abren.</li>
 <li><b>Recursos a mano.</b> PRs, issues y artefactos de Claude de cada sesión, en un panel lateral.</li>
-<li><b>Tu bandeja de GitHub.</b> En el resumen, los PRs que esperan tu revisión, tus issues asignadas y tus PRs de los repos que sigues, con sus checks. Marca <b>SUGGEST ORDER</b> y te propone en qué orden atender los PRs.</li>
+<li><b>Tu bandeja de GitHub.</b> En el resumen, los PRs que esperan tu revisión, tus issues asignadas y tus PRs de los repos que sigues, con sus checks. Marca <b>SUGGEST ORDER</b> y te propone en qué orden atender los PRs. Cada uno lleva su botón: <b>IMPLEMENT</b> o <b>REVIEW</b> abre una sesión nueva en su propio worktree, y <b>OPEN</b>, la sesión que ya trabaja en él. Los repos en los que trabajan tus sesiones se siguen solos.</li>
 <li><b>Sabes cuándo te toca.</b> Un aviso cuando un agente termina o te necesita, con lo último que dijo.</li>
 <li><b>Sesiones en espera.</b> Un planificador espera a sus subagentes en un árbol plegable.</li>
 <li><b>Conducir o solo mirar.</b> Candado de solo lectura. Nunca le quita la entrada a otro cliente sin que lo pidas.</li>
 <li><b>Crear y cerrar sesiones</b> con <kbd>⌘N</kbd>.</li>
 <li><b>Compass, la página de tu día.</b> Un agente propio la mantiene, y sus botones lanzan las sesiones que propone cuando tú las revisas.</li>
 </ul>
-<p>Sin cuentas, sin telemetría, sin servidor. Los prompts, la salida de la terminal y tu voz nunca se escriben en disco, salvo el primer prompt de una sesión que lanzas desde Compass, que espera hasta que el agente lo recibe y entonces se borra. Solo se recuerdan tu cola, los repos que sigue tu bandeja de GitHub y qué has visto de ellos, y, por sesión, sus pestañas y enlaces; con Compass, también lo que muestra la cola, para su agente. El dictado se ejecuta por completo en tu Mac.</p>
+<p>Sin cuentas, sin telemetría, sin servidor. Los prompts, la salida de la terminal y tu voz nunca se escriben en disco, salvo el primer prompt de una sesión que lanzas desde Compass, que espera hasta que el agente lo recibe y entonces se borra. Solo se recuerdan tu cola, los repos que sigue tu bandeja de GitHub y qué has visto de ellos, lo que GitHub dijo de los PRs, issues y repos por los que preguntó, y, por sesión, sus pestañas y enlaces; con Compass, también lo que muestra la cola, para su agente. El dictado se ejecuta por completo en tu Mac.</p>
 </div>
 <div class="en">
 <h2>Features</h2>
@@ -171,14 +171,14 @@ herdr status</code></pre>
 <li><b>The real terminal, embedded.</b> Type into the agent's TUI; drop files and images; use the prompt editor or dictate.</li>
 <li><b>A browser per session.</b> Links open next to the terminal and tabs stay put. Local files open too.</li>
 <li><b>Resources at hand.</b> The PRs, issues and Claude artifacts each session links to, in a side panel.</li>
-<li><b>Your GitHub inbox.</b> On the overview, the PRs awaiting your review, your assigned issues and your PRs from the repositories you follow, with their checks. Tick <b>SUGGEST ORDER</b> for the order to take the PRs on.</li>
+<li><b>Your GitHub inbox.</b> On the overview, the PRs awaiting your review, your assigned issues and your PRs from the repositories you follow, with their checks. Tick <b>SUGGEST ORDER</b> for the order to take the PRs on. Each has its button: <b>IMPLEMENT</b> or <b>REVIEW</b> opens a new session in a worktree of its own, and <b>OPEN</b> the session already working on it. The repositories your sessions work in are followed on their own.</li>
 <li><b>Know when it's your turn.</b> An alert when an agent finishes or needs you, with what it last said.</li>
 <li><b>Sessions on hold.</b> A planner waits for its subagents in a collapsible tree.</li>
 <li><b>Drive or just watch.</b> Read-only padlock. It never steals input from another client unless you ask.</li>
 <li><b>Create and close sessions</b> with <kbd>⌘N</kbd>.</li>
 <li><b>Compass, the page of your day.</b> An agent of its own keeps it, and its buttons start the sessions it suggests once you check them.</li>
 </ul>
-<p>No accounts, no telemetry, no server. Prompts, terminal output and your voice never touch the disk, except the first prompt of a session you start from Compass, which waits until its agent takes it and is then deleted. Only your queue, the repositories your GitHub inbox follows and what you've seen in them, and, per session, its browser tabs and links are remembered; with Compass, also what the queue shows, for its agent. Dictation runs entirely on your Mac.</p>
+<p>No accounts, no telemetry, no server. Prompts, terminal output and your voice never touch the disk, except the first prompt of a session you start from Compass, which waits until its agent takes it and is then deleted. Only your queue, the repositories your GitHub inbox follows and what you've seen in them, what GitHub said about the PRs, issues and repositories it was asked about, and, per session, its browser tabs and links are remembered; with Compass, also what the queue shows, for its agent. Dictation runs entirely on your Mac.</p>
 </div>
 </section>
 <section id="connect">
@@ -204,7 +204,7 @@ herdr status</code></pre>
 <ul>
 <li>Arrastra una sesión para moverla (una línea marca dónde caerá), usa las flechas ▲▼, <kbd>⌥⌘↑</kbd> y <kbd>⌥⌘↓</kbd>, o <i>Move to Top/Bottom</i> en su menú.</li>
 <li>Salta con <kbd>⌘1</kbd> … <kbd>⌘9</kbd>, avanza con <kbd>⌘[</kbd> y <kbd>⌘]</kbd>, y vuelve al resumen con <kbd>⌘0</kbd>.</li>
-<li><kbd>⌘T</kbd> abre un buscador en el centro, como Spotlight: sesiones, shells y Compass, primero la última que visitaste. Escribe unas letras para filtrar y <kbd>⏎</kbd> para ir.</li>
+<li><kbd>⌘T</kbd> abre un buscador en el centro, como Spotlight: sesiones, shells y Compass, primero la última que visitaste. Escribe unas letras para filtrar, también el número de un PR o issue como <code>shepherdr#12</code>, y <kbd>⏎</kbd> para ir.</li>
 <li>Las sesiones nuevas entran al final. Las prioridades se guardan en este Mac, siguen a la máquina y a la terminal, y no se sincronizan.</li>
 </ul>
 <h3>Grupos</h3>
@@ -229,7 +229,7 @@ herdr status</code></pre>
 <ul>
 <li>Drag a session to move it (a line shows where it lands), use the ▲▼ controls, <kbd>⌥⌘↑</kbd> and <kbd>⌥⌘↓</kbd>, or <i>Move to Top/Bottom</i> in its menu.</li>
 <li>Jump with <kbd>⌘1</kbd> … <kbd>⌘9</kbd>, step with <kbd>⌘[</kbd> and <kbd>⌘]</kbd>, and return to the overview with <kbd>⌘0</kbd>.</li>
-<li><kbd>⌘T</kbd> opens a search panel in the middle, like Spotlight: sessions, shells and Compass, the one you visited last first. Type a few letters to narrow it and <kbd>⏎</kbd> to go.</li>
+<li><kbd>⌘T</kbd> opens a search panel in the middle, like Spotlight: sessions, shells and Compass, the one you visited last first. Type a few letters to narrow it, a PR's or issue's number such as <code>shepherdr#12</code> too, and <kbd>⏎</kbd> to go.</li>
 <li>New sessions join the end. Priorities are saved on this Mac, follow the machine and terminal, and aren't synchronized.</li>
 </ul>
 <h3>Groups</h3>

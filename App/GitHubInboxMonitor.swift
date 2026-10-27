@@ -11,9 +11,6 @@ final class GitHubInboxMonitor {
     private(set) var isSyncing = false
     /// Why the last sync failed; nil once one succeeds.
     private(set) var error: GitHubSyncError?
-    /// The inbox pull requests' checks by item key, from the last sync GitHub answered; kept when
-    /// asking for them fails.
-    private(set) var checks: [String: PullRequestChecks] = [:]
     @ObservationIgnored weak var model: AppModel?
     @ObservationIgnored private let gitHub = GitHubLookup()
     @ObservationIgnored private var syncTask: Task<Void, Never>?
@@ -43,17 +40,19 @@ final class GitHubInboxMonitor {
     private func run() async {
         isSyncing = true
         defer { isSyncing = false }
-        let repositories = model?.githubInbox.activeRepositories ?? []
-        switch await gitHub.inbox(repositories: repositories, includeMyPullRequests: true) {
+        guard let model else { return }
+        switch await gitHub.inbox(repositories: model.followedRepositories, includeMyPullRequests: true) {
         case .success(let found):
             inbox = found
             error = nil
-            let pulls = found.items.filter(\.isPullRequest).map(\.resource)
-            if pulls.isEmpty {
-                checks = [:]
-            } else if let found = await gitHub.checks(of: pulls) {
-                checks = found
+            // What the answer says of each item is kept, so sessions that mention one don't ask again.
+            for item in found.items {
+                model.githubCache.remember(GitHubCache.Item(isPullRequest: item.isPullRequest, title: item.title), for: item.key)
             }
+            // Checks asked for in the last minute, such as those of the session on screen, aren't asked again.
+            let recent = Date().addingTimeInterval(-60), known = model.githubCache.checks
+            let pulls = found.items.filter(\.isPullRequest).map(\.resource).filter { (known[$0.key]?.at ?? .distantPast) < recent }
+            if !pulls.isEmpty, let checks = await gitHub.checks(of: pulls) { model.checksMonitor.absorb(checks) }
         case .failure(let failure):
             error = failure
         }

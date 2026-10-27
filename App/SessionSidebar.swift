@@ -551,50 +551,18 @@ private struct SessionRowView: View {
     /// The session's agent, its pull request when it has one, where it works: its folder, or for a
     /// worktree its project, and what its agent left running.
     private var whereabouts: some View {
-        let pulls = model.pullRequests(of: row.id)
         let checkout = model.cluster.checkout(machineID: row.id.machineID, workspaceID: row.agent.workspaceID)
         let folder: String? = checkout?.name ?? row.agent.directory.map { ($0 as NSString).lastPathComponent }
         let background = model.backgroundCommands(of: row)
         return HStack(spacing: 9) {
             AgentMark(program: row.agent.program).foregroundStyle(Theme.dim)
-            if !pulls.isEmpty { pullsButton(pulls) }
+            SessionLinksLabel(model: model, id: row.id)
             if let folder { folderLabel(folder, checkout: checkout) }
             BackgroundLabel(commands: background).foregroundStyle(Theme.dim).layoutPriority(-1)
         }
         .font(Theme.mono(9.5))
         .foregroundStyle(Theme.faint)
         .padding(.top, 1)
-    }
-
-    private func pullsButton(_ pulls: [SessionResource]) -> some View {
-        let label = pulls.count == 1 ? Self.number(of: pulls[0]) : "\(pulls.count) PRs"
-        // Lilac once its pull requests landed, as in Resources: the session's work is in.
-        let tint = switch model.checksMonitor.outcome(of: pulls) {
-        case .landed: Theme.lilac
-        case .dropped: Theme.dim
-        case nil: Theme.phosphor
-        }
-        return Button { model.openPullRequests(of: row.id) } label: {
-            HStack(spacing: 4) {
-                Text("⇄ " + label).foregroundStyle(tint.opacity(0.85))
-                ChecksMark(state: model.checksMonitor.state(of: pulls))
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(pullsHelp(pulls))
-    }
-
-    private func pullsHelp(_ pulls: [SessionResource]) -> String {
-        let checks = model.checksMonitor.checks
-        func line(_ pull: SessionResource) -> String {
-            var text = pull.name
-            if let title = pull.title { text += "  " + title }
-            if let summary = checks[pull.key]?.summary, !summary.isEmpty { text += "  [" + summary + "]" }
-            return text
-        }
-        let heading = pulls.count == 1 ? "Open in this session's browser:" : "Open these pull requests in this session's browser:"
-        return ([heading] + pulls.prefix(10).map(line)).joined(separator: "\n")
     }
 
     /// Worktrees in their own color: work that lives apart from the main checkout.
@@ -617,11 +585,6 @@ private struct SessionRowView: View {
     }
 
     /// `#2175` from `theam/tam-os#2175`, `!31` from a GitLab merge request.
-    private static func number(of resource: SessionResource) -> String {
-        guard let mark = resource.name.lastIndex(where: { $0 == "#" || $0 == "!" }) else { return resource.name }
-        return String(resource.name[mark...])
-    }
-
     /// Shows or hides the sessions nested under this one. Amber while a hidden one needs you.
     private var nestedToggle: some View {
         Button { withAnimation(.snappy(duration: 0.18)) { model.toggleNestedSessions(of: row.id) } } label: {
@@ -1089,4 +1052,70 @@ private extension View {
 @MainActor final class RowHeight {
     var value: CGFloat
     init(_ value: CGFloat) { self.value = value }
+}
+
+/// A session's pull requests, `⇄ #12` or `⇄ 3 PRs` with their checks: lilac once they landed, dim
+/// once closed. With `showsIssues`, a session without any shows its issues instead, `◉ #7` or
+/// `◉ 2 issues`. Clicking opens them in the session's browser.
+struct SessionLinksLabel: View {
+    let model: AppModel
+    let id: Agent.ID
+    var showsIssues = false
+
+    var body: some View {
+        let pulls = model.pullRequests(of: id)
+        let issues = showsIssues && pulls.isEmpty ? model.issues(of: id) : []
+        if !pulls.isEmpty {
+            pullsButton(pulls)
+        } else if !issues.isEmpty {
+            issuesButton(issues)
+        }
+    }
+
+    private func issuesButton(_ issues: [SessionResource]) -> some View {
+        let label = issues.count == 1 ? Self.number(of: issues[0]) : "\(issues.count) issues"
+        return Button { model.openResources(issues, of: id) } label: {
+            Text("◉ " + label).foregroundStyle(Theme.phosphor.opacity(0.85)).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(([issues.count == 1 ? "Open in this session's browser:" : "Open these issues in this session's browser:"]
+               + issues.prefix(10).map { [$0.name, $0.title].compactMap { $0 }.joined(separator: "  ") }).joined(separator: "\n"))
+    }
+
+    private func pullsButton(_ pulls: [SessionResource]) -> some View {
+        let label = pulls.count == 1 ? Self.number(of: pulls[0]) : "\(pulls.count) PRs"
+        // Lilac once its pull requests landed, as in Resources: the session's work is in.
+        let tint = switch model.checksMonitor.outcome(of: pulls) {
+        case .landed: Theme.lilac
+        case .dropped: Theme.dim
+        case nil: Theme.phosphor
+        }
+        return Button { model.openResources(pulls, of: id) } label: {
+            HStack(spacing: 4) {
+                Text("⇄ " + label).foregroundStyle(tint.opacity(0.85))
+                ChecksMark(state: model.checksMonitor.state(of: pulls))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(pullsHelp(pulls))
+    }
+
+    private func pullsHelp(_ pulls: [SessionResource]) -> String {
+        let checks = model.checksMonitor.checks
+        func line(_ pull: SessionResource) -> String {
+            var text = pull.name
+            if let title = pull.title { text += "  " + title }
+            if let summary = checks[pull.key]?.summary, !summary.isEmpty { text += "  [" + summary + "]" }
+            return text
+        }
+        let heading = pulls.count == 1 ? "Open in this session's browser:" : "Open these pull requests in this session's browser:"
+        return ([heading] + pulls.prefix(10).map(line)).joined(separator: "\n")
+    }
+
+    /// `#12`: the number without its repository, or `!12` for GitLab.
+    private static func number(of resource: SessionResource) -> String {
+        guard let mark = resource.name.lastIndex(where: { $0 == "#" || $0 == "!" }) else { return resource.name }
+        return String(resource.name[mark...])
+    }
 }

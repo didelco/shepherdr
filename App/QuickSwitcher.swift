@@ -8,8 +8,14 @@ import ShepherdrTerminalUI
 /// back to where you just were, as switching channels in Slack does.
 struct QuickSwitcher: View {
     let model: AppModel
-    @ViewState<String> private var query = ""
+    @ViewState<String> private var query: String
     @ViewState<Int> private var highlighted = 0
+
+    init(model: AppModel) {
+        self.model = model
+        _query = ViewState(initialValue: model.switcherSeed)
+        model.switcherSeed = ""
+    }
 
     private static let rowHeight: CGFloat = 46
     private static let visibleRows = 8

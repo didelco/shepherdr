@@ -70,6 +70,8 @@ struct GitHubRepositoriesSheet: View {
                 }
             }
 
+            fromSessions
+
             HStack {
                 Spacer()
                 Button("DONE") { model.showsGitHubRepositoriesSheet = false }
@@ -81,6 +83,46 @@ struct GitHubRepositoriesSheet: View {
         .frame(width: 440)
         .background(Theme.panel)
         .onAppear { focused = true }
+    }
+
+    /// Repositories sessions work in, followed while they do unless paused here; one you follow
+    /// yourself is listed above instead.
+    @ViewBuilder private var fromSessions: some View {
+        let links = model.sessionLinks
+        let listed = Set(store.repositories.map(\.id))
+        let repositories = links.repositories.filter { !listed.contains($0.id) }
+        if !repositories.isEmpty {
+            field("From your sessions") {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(repositories) { repository in
+                        sessionRow(repository, sessions: links.sessions(inRepository: repository.id).count)
+                    }
+                }
+                .background(Theme.background, in: RoundedRectangle(cornerRadius: 4))
+                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.line, lineWidth: 1))
+            }
+        }
+    }
+
+    private func sessionRow(_ repository: InboxRepository, sessions: Int) -> some View {
+        let isPaused = store.pausedFromSessions.contains(repository.id)
+        return HStack(spacing: 8) {
+            Text(repository.displayName).font(Theme.mono(11.5, .medium))
+                .foregroundStyle(isPaused ? Theme.faint : Theme.text).lineLimit(1).truncationMode(.middle)
+            Text(sessions == 1 ? "1 session" : "\(sessions) sessions").font(Theme.mono(9.5)).foregroundStyle(Theme.faint)
+            if isPaused {
+                Text("PAUSED").font(Theme.mono(9, .semibold)).tracking(1).foregroundStyle(Theme.faint)
+            }
+            Spacer(minLength: 4)
+            Button(isPaused ? "RESUME" : "PAUSE") { store.setPaused(fromSessions: repository, !isPaused) }
+                .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
+                .help(isPaused ? "Ask GitHub about it again while sessions work in it"
+                               : "Don't ask GitHub about it, though sessions work in it")
+            Button("FOLLOW") { store.add(repository) }
+                .buttonStyle(ConsoleButtonStyle(tint: Theme.dim))
+                .help("Keep following it once no session works in it")
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
     }
 
     private func row(_ watched: WatchedRepository) -> some View {

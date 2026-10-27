@@ -70,7 +70,9 @@ final class ScreenPresence {
 /// Watches the CI checks of the pull requests of the session on screen, and whether its issues are
 /// still open, through the GitHub CLI: one GraphQL query for its pull requests and one for its
 /// issues, every 15 seconds while checks run and every 2 minutes once they're done, paused while
-/// Shepherdr isn't on screen. A notification tells you when checks finish.
+/// Shepherdr isn't on screen. A notification tells you when checks finish. What it learns goes into
+/// the GitHub cache, so every session's pull requests show their last known state from launch, and
+/// merged or closed ones are never asked about again.
 @MainActor @Observable
 final class ChecksMonitor {
     /// The last known checks of each pull request, by resource key.
@@ -95,6 +97,18 @@ final class ChecksMonitor {
                 }
             }
         }
+    }
+
+    /// Starts from what an earlier launch learned.
+    func restore(from cache: GitHubCache) {
+        checks = cache.checks.mapValues(\.value)
+        issues = cache.issues.mapValues(\.value)
+    }
+
+    /// Checks learned elsewhere, such as by the GitHub inbox: kept, and shown, without a notification.
+    func absorb(_ found: [String: PullRequestChecks]) {
+        for (key, latest) in found where checks[key] != latest { checks[key] = latest }
+        model?.githubCache.remember(checks: found)
     }
 
     /// Back awake or back on screen: looks right away rather than at the next tick.
@@ -142,6 +156,7 @@ final class ChecksMonitor {
         guard !pulls.isEmpty else { return .settled }
         // No answer, such as a spent GitHub budget: look again much later.
         guard let found = await gitHub.checks(of: Array(pulls)) else { return .unanswered }
+        model.githubCache.remember(checks: found)
         for pull in pulls {
             guard let latest = found[pull.key] else { continue }
             let previous = checks[pull.key]
@@ -157,6 +172,7 @@ final class ChecksMonitor {
         let open = model.issues(of: id).filter { $0.github != nil && issues[$0.key]?.isOpen != false }.prefix(10)
         guard !open.isEmpty, let found = await gitHub.issueStates(of: Array(open)) else { return }
         issues.merge(found) { _, latest in latest }
+        model.githubCache.remember(issues: found)
     }
 
     /// One mark for several pull requests.
