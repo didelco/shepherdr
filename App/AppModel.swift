@@ -359,6 +359,7 @@ final class AppModel {
     @ObservationIgnored let readiness = ReadinessMonitor()
     /// Whether Shepherdr keeps this Mac from sleeping; off every time it opens.
     let keepAwake = KeepAwake()
+    let subscriptions = SubscriptionMonitor()
 
     init(cluster: ClusterStore = ClusterStore(), order: SessionOrderStore = SessionOrderStore(),
          relations: SessionRelationStore = SessionRelationStore(), sessionStates: SessionStateStore = SessionStateStore()) {

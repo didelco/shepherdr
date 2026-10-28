@@ -449,11 +449,24 @@ struct StateTag: View {
 /// The agent working in a session, by the mark its own interface shows: `✻ claude` in a row, and a
 /// tag with its name in the session's header.
 struct AgentMark: View {
-    enum Style { case label, tag }
+    enum Style { case label, tag, glyph }
     let program: AgentProgram
     var style: Style = .label
 
     var body: some View {
+        if style == .glyph {
+            // Just the mark, in a fixed width so the names after it line up.
+            Text(program.glyph).font(Theme.mono(11, .bold)).foregroundStyle(Self.tint(program))
+                .frame(width: 18, alignment: .center)
+                .help(program.name)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(program.name)
+        } else {
+            labelOrTag
+        }
+    }
+
+    private var labelOrTag: some View {
         HStack(spacing: style == .tag ? 5 : 3) {
             Text(program.glyph).fontWeight(.bold).foregroundStyle(Self.tint(program))
             if style == .tag {
