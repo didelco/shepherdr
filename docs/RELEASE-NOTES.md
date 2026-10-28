@@ -1,25 +1,28 @@
 Native macOS console for herding your coding agents across your Herdr machines: one prioritized queue, the real terminal of every session, a browser per session, and a notification when it's your turn.
 
-### What's new in 0.8.8
+### What's new in 0.9.0
 
 From 0.8.7 on, Shepherdr offers this version itself, at the foot of the sidebar.
 
-- **Go anywhere with ⌘T.** A panel like Spotlight lists your sessions, shells and Compass, the one you visited last first, so **⌘T** and **Return** take you back to where you just were. Type a few letters to narrow it, with `name@machine` for a machine. It replaces the queue's filter.
-- **Agents can close sessions.** `shepherdr close` closes the agent's own session once its turn ends, or other sessions by name, when you ask it to. A session that's working or needs you stays open unless the agent insists. From another machine, closing a session elsewhere waits for your **CLOSE**. Your machines are offered the updated agent tools.
-- **Open a session's folder in Finder** with the folder button in its header, its context menu, or **⇧⌘O**.
-- **The queue keeps the open session in sight,** scrolling to it when you open it from Compass, a notification or ⌘T.
-- **Lighter on your Mac.** Shepherdr redraws only what a refresh changed and works out the queue once per change. While its window can't be seen, the terminal on screen rests after 30 seconds, other machines are asked every 30 seconds instead of every 5, and browser pages out of sight for 10 minutes let go of their memory. Shepherdr's own SSH commands share one connection per machine.
+- **A GitHub inbox in the overview.** The **GITHUB** tab lists the reviews requested from you, your assigned issues and your pull requests, with their checks, from the repositories you follow under **REPOS…** and those your sessions work in. A dot marks what changed since you looked. **SUGGEST ORDER** numbers your pull requests in the order to take them: merge, review, address changes, resolve conflicts, fix checks.
+- **Start work from the inbox.** An issue offers **IMPLEMENT** and a pull request **REVIEW**, each opening New Session in its own worktree with a prompt ready. Once a session works on it, the button reads **OPEN** and takes you there. **⌘T** also finds sessions by their pull requests, issues and repository, as in `owner/repo#12`, and the overview's cards show their pull requests like the queue does.
+- **Sessions stay as you left them.** Switching no longer reloads a session's terminal and browser from scratch. Shepherdr keeps the ones you visit most, and lets go of the rest only when there are many or macOS runs short of memory.
+- **A coffee cup keeps this Mac awake,** so agents working here don't pause when it would doze off. Click it in the sidebar's footer, or right-click it to keep the screen on too. It's off every time Shepherdr opens.
+- **One status everywhere.** The queue, the overview, ⌘T, the relations panel and Compass agree on each session's status. A session on hold shows its agent's state again once everything it waits for has finished, instead of **READY**. Holds are also kept in Herdr, so another Mac gets them back.
+- **Handoffs and closes are your call.** Agents hand off only when you ask, and every session close an agent asks for waits for your **CLOSE**. A session an agent starts keeps it on hold until it finishes. Your machines are offered the updated agent tools.
+- **Compass starts its agent only with this Mac fully awake and online,** so a run that falls in a dark wake no longer starts Claude Code without its claude.ai connectors. Its column says what the run waits for.
+- **Fewer questions to GitHub.** What Shepherdr learns about pull requests, issues and their checks is kept for later launches, so it doesn't ask again for what it already knows.
 
 ### Fixed
 
-- Shift with an arrow key, which Codex asks for in some questions, did nothing in the terminal.
+- Shepherdr could freeze for good when it rested or closed a terminal that was still connecting.
 
 ### Download and install
 
 - **Apple Silicon (M1 or later), macOS 14 Sonoma or later.** Xcode is not required.
 - Download **Shepherdr-…-macos-arm64.dmg**, open it, and drag **Shepherdr.app** to **Applications**. A ZIP of the same app is also available.
 - **Required:** install and start [Herdr](https://herdr.dev/docs/) separately. Remote machines use Herdr's saved machine profiles and a CLI with `--machine` support, such as 0.9.3.
-- **Recommended:** the [GitHub CLI](https://cli.github.com), signed in with `gh auth login`, to confirm pull requests and issues, fetch their titles and watch pull requests' CI checks.
+- **Recommended:** the [GitHub CLI](https://cli.github.com), signed in with `gh auth login`, to confirm pull requests and issues, fetch their titles, watch pull requests' CI checks and fill the GitHub inbox.
 - Terminals require `terminal session observe/control` on the target machine (verified with CLI/server 0.9.3). Remote terminals, folder checks, machine load and commands left running use an already-trusted SSH host and noninteractive authentication on Unix-like hosts.
 - The agent tools are optional. Shepherdr installs them over SSH only when you accept, writing only `~/.shepherdr` and the agents' skill folders, without `sudo`; on each machine they need only `sh` and Herdr.
 - Once installed, Shepherdr offers new versions as they come out and updates itself in place, only with an app signed by the same team and notarized by Apple.
