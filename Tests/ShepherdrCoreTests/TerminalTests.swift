@@ -104,6 +104,23 @@ struct TerminalTests {
         await #expect(throws: HerdrFailure.self) { try await connection.send(.bytes(Data([3]))) }
     }
 
+    @Test func cancellingAConnectionAsItStartsNeverWaits() async throws {
+        // Cancelling runs the handler while the task's lock is held. A handler that waited for the
+        // connection's queue, while that queue resumed the same task, hung the app for good.
+        let command = TerminalCommand(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "exec /bin/sleep 1"], environment: [:])
+        let done = Flag()
+        DispatchQueue.global().async {
+            for attempt in 0..<200 {
+                let task = Task.detached { try? await CLITerminalConnection.start(command: command, mode: .observe, startupTimeout: 0.2).close() }
+                usleep(UInt32(attempt % 20) * 100)
+                task.cancel()
+            }
+            done.set()
+        }
+        for _ in 0..<200 where !done.isSet { try await Task.sleep(for: .milliseconds(100)) }
+        #expect(done.isSet, "Cancelling a starting connection waited for it")
+    }
+
     @Test func testStreamFailureAndStartupTimeoutAreBounded() async throws {
         for script in ["echo 'permission denied' >&2; exit 255", "exec /bin/sleep 10"] {
             let command = TerminalCommand(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", script], environment: [:])
@@ -114,6 +131,13 @@ struct TerminalTests {
             }
         }
     }
+}
+
+private final class Flag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    var isSet: Bool { lock.withLock { value } }
+    func set() { lock.withLock { value = true } }
 }
 
 private final class MockTerminalConnection: HerdrTerminalConnection, @unchecked Sendable {
