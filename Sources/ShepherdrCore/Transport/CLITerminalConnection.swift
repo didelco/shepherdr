@@ -51,7 +51,7 @@ final class CLITerminalConnection: HerdrTerminalConnection, @unchecked Sendable 
                     }
                 }
             }
-        } onCancel: { connection.close() }
+        } onCancel: { connection.cancel() }
         return connection
     }
 
@@ -178,6 +178,12 @@ final class CLITerminalConnection: HerdrTerminalConnection, @unchecked Sendable 
     }
 
     func close() { ioQueue.sync { finish() } }
+
+    /// Closes from a cancellation handler without waiting: the handler runs while the task's lock
+    /// is held, and the block on ioQueue that launches the process resumes that same task, which
+    /// takes the lock. Waiting for ioQueue there deadlocks. A launch still to come sees `finished`
+    /// and gives up; one already done is closed right after it.
+    private func cancel() { ioQueue.async { [self] in finish() } }
 
     private func finish(_ error: Error? = nil) {
         guard !finished else { return }
