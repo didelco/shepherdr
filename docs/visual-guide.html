@@ -300,7 +300,7 @@ herdr status</code></pre>
 <p><kbd>⌘?</kbd> abre esta guía en el navegador de la sesión que miras, o en el del resumen; <i>Help → Herdr Documentation</i>, la de Herdr.</p>
 <p><b>Ficheros locales:</b> haz clic en una ruta que imprime el agente. El Markdown se abre renderizado, el HTML como página y lo demás en su app por defecto.</p>
 <h3>Recursos</h3>
-<p>El panel <b>RESOURCES</b> (icono de lista en la cabecera, con su número; se cierra con la <b>×</b>) reúne las PRs e issues (GitHub, GitLab, Bitbucket, Linear, Jira) y artefactos de Claude que enlaza la sesión, con los iconos y colores de GitHub (verde abierta, morado fusionada o completada, rojo PR cerrada sin fusionar, gris issue descartada): los diez más relevantes, y <b>more</b> para el resto. Cada recurso nuevo se comprueba una vez, y los que no existen desaparecen.</p>
+<p>El panel <b>RESOURCES</b> (icono de lista en la cabecera, con su número; se cierra con la <b>×</b>) reúne las PRs e issues (GitHub, GitLab, Bitbucket, Linear, Jira) y artefactos de Claude que enlaza la sesión, con los iconos y colores de GitHub (verde abierta, morado fusionada o completada, rojo PR cerrada sin fusionar, gris issue descartada): los diez más relevantes, y <b>more</b> para el resto. Cada recurso nuevo se comprueba una vez, y los que no existen desaparecen. El botón <b>↻</b> de la cabecera vuelve a leer la salida reciente de la sesión: lo que ya no menciona sale del panel (los enlaces fijados por un agente se quedan) y el resto se vuelve a comprobar, también su estado en GitHub.</p>
 <p><b>Checks de CI.</b> Con la CLI de GitHub instalada y con sesión (<code>gh auth login</code>), Shepherdr vigila las PRs abiertas de la sesión que miras: ● corriendo, ✓ pasado, ✗ fallado. Al terminar, un aviso dice si pasaron.</p>
 </div>
 <div class="en">
@@ -309,7 +309,7 @@ herdr status</code></pre>
 <p><kbd>⌘?</kbd> opens this guide in the browser of the session you're viewing, or the overview's; <i>Help → Herdr Documentation</i> opens Herdr's.</p>
 <p><b>Local files:</b> click a path the agent prints. Markdown opens rendered, HTML as a page and anything else in its default app.</p>
 <h3>Resources</h3>
-<p>The <b>RESOURCES</b> panel (the list icon in the header, with its count; close it with its <b>×</b>) gathers the PRs and issues (GitHub, GitLab, Bitbucket, Linear, Jira) and Claude artifacts a session links to, with GitHub's icons and colors (green open, purple merged or completed, red PR closed unmerged, gray issue dropped): the ten most relevant, with <b>more</b> for the rest. Each new resource is checked once, and ones that don't exist leave the panel.</p>
+<p>The <b>RESOURCES</b> panel (the list icon in the header, with its count; close it with its <b>×</b>) gathers the PRs and issues (GitHub, GitLab, Bitbucket, Linear, Jira) and Claude artifacts a session links to, with GitHub's icons and colors (green open, purple merged or completed, red PR closed unmerged, gray issue dropped): the ten most relevant, with <b>more</b> for the rest. Each new resource is checked once, and ones that don't exist leave the panel. The <b>↻</b> button in the header reads the session's recent output again: what it no longer mentions leaves the panel (links an agent pinned stay) and the rest is checked again, GitHub state included.</p>
 <p><b>CI checks.</b> With the GitHub CLI installed and signed in (<code>gh auth login</code>), Shepherdr watches the open PRs of the session you're viewing: ● running, ✓ passed, ✗ failed. When they finish, an alert says whether they passed.</p>
 </div>
 </section>

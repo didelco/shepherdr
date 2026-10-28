@@ -42,14 +42,18 @@ struct SessionView: View {
             Rectangle().fill(Theme.line).frame(height: 1)
             if !isCompass { RelationsPanel(id: id, model: model) }
             MailPanel(session: id, model: model)
-            HStack(spacing: 0) {
-                workArea
+            // The content sits in cards on the panel's shade rather than on the bare background.
+            HStack(spacing: 8) {
+                workArea.card()
                 if showsResources && !isCompass && !workspace.visibleResources.isEmpty {
-                    Rectangle().fill(Theme.line).frame(width: 1)
-                    ResourcesPanel(workspace: workspace, checks: model.checksMonitor) { showsResources = false }
+                    ResourcesPanel(workspace: workspace, checks: model.checksMonitor, close: { showsResources = false },
+                                   refresh: { [model, id] in await model.refreshResources(for: id) })
                         .frame(width: 230)
+                        .card()
                 }
             }
+            .padding(8)
+            .background(Theme.panel)
             statusBar
         }
         .background(Theme.background)

@@ -65,6 +65,15 @@ enum Theme {
                0x4B5E53, 0xFF8A80, 0x8CFFC2, 0xFFD37F, 0x8FBCFF, 0xE6A8FF, 0x9AE6FF, 0xF2FFF7].map { NSColor(hex: $0) })
 }
 
+extension View {
+    /// A rounded surface with a thin border: what a piece of content sits in.
+    func card(radius: CGFloat = 8) -> some View {
+        background(Theme.background)
+            .clipShape(RoundedRectangle(cornerRadius: radius))
+            .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Theme.line, lineWidth: 1))
+    }
+}
+
 extension Color {
     init(hex: UInt32, opacity: Double = 1) {
         self.init(.sRGB, red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255,

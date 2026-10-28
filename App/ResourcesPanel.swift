@@ -10,13 +10,26 @@ struct ResourcesPanel: View {
     let checks: ChecksMonitor
     /// Hides the panel; the header's resources button brings it back.
     let close: () -> Void
+    /// Reads the session again: drops what it no longer mentions and updates the rest.
+    let refresh: () async -> Void
     private static let shown = 10
     @ViewState private var expanded = Set<SessionResource.Kind>()
+    @ViewState private var isRefreshing = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 ConsoleHeader(title: "Resources", trailing: "\(workspace.visibleResources.count)")
+                Button {
+                    isRefreshing = true
+                    Task { await refresh(); isRefreshing = false }
+                } label: {
+                    Image(systemName: "arrow.clockwise").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.dim)
+                        .frame(width: 14, height: 14).contentShape(Rectangle()).opacity(isRefreshing ? 0.4 : 1)
+                }
+                .buttonStyle(.plain).disabled(isRefreshing)
+                .help("Refresh: drop what the session no longer mentions and update the rest")
+                .accessibilityLabel("Refresh Resources")
                 Button(action: close) {
                     Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.dim)
                         .frame(width: 14, height: 14).contentShape(Rectangle())
@@ -54,7 +67,6 @@ struct ResourcesPanel: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Theme.panel)
     }
 
     private func row(_ resource: SessionResource) -> some View {
