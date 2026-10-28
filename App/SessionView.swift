@@ -447,7 +447,7 @@ struct SessionView: View {
 }
 
 /// The selected session in plain terms first, then the Herdr details behind it.
-private struct SessionDetails: View {
+struct SessionDetails: View {
     let context: SessionContext
     let cluster: ClusterStore
     /// Its repository checkout, when it has one.

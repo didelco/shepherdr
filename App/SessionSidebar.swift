@@ -348,6 +348,8 @@ private struct SessionRowView: View {
     let model: AppModel
     @Binding var hint: QueueDrop?
     @ViewState<Bool> private var hovering = false
+    /// The session's details, the same panel as the ⓘ in its header, after the pointer rests on the row.
+    @ViewState<Bool> private var showsDetails = false
     @ViewState private var height = RowHeight(36)
 
     private var row: AgentRow { tree.row }
@@ -370,7 +372,12 @@ private struct SessionRowView: View {
             .contentShape(Rectangle())
             .onTapGesture { model.open(row.id) }
             .onHover { hovering = $0 }
-            .help(detailHelp)
+            .task(id: hovering) {
+                guard hovering else { showsDetails = false; return }
+                try? await Task.sleep(for: .milliseconds(700))
+                if !Task.isCancelled { showsDetails = true }
+            }
+            .popover(isPresented: $showsDetails, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) { detailsPanel }
             .queueDraggable(item, model: model, enabled: !isNested)
             .onDrop(of: [.plainText], delegate: QueueDropDelegate(model: model, hint: $hint) { dragged, y in
                 drop(of: dragged, at: y)
@@ -547,29 +554,13 @@ private struct SessionRowView: View {
         return text
     }
 
-    /// The tooltip, after the system's delay of about a second: what the session is doing, where it
-    /// works, how many pull requests it has, which machine it is on, when it last reported and its state.
-    private var detailHelp: String {
-        let checkout = model.cluster.checkout(machineID: row.id.machineID, workspaceID: row.agent.workspaceID)
-        let folder = row.agent.directory ?? checkout?.path ?? row.agent.project
-        let pulls = model.pullRequests(of: row.id)
-        var lines: [String] = []
-        if !row.title.isEmpty { lines.append(row.title) }
-        lines.append("Repo: " + (checkout?.repository ?? "none") + (checkout?.isLinkedWorktree == true ? " (worktree)" : ""))
-        lines.append("Folder: " + (folder ?? "not reported"))
-        lines.append("Pull requests: \(pulls.count) · Machine: \(row.machineName)")
-        lines.append("Last received: " + Self.received(model.cluster.lastSuccess[row.id.machineID]))
-        let background = model.backgroundCommands(of: row)
-        lines.append("State: " + (row.isStale ? "\(row.stateTitle) (last known)" : row.stateTitle)
-                     + (background.isEmpty ? "" : " · \(background.count) command\(background.count == 1 ? "" : "s") running"))
-        return lines.joined(separator: "\n")
-    }
-
-    /// "3 minutes ago (Oct 22, 2026 at 10:35:12)": in plain terms first, then exactly.
-    private static func received(_ date: Date?) -> String {
-        guard let date else { return "never" }
-        let relative = date.formatted(.relative(presentation: .named, unitsStyle: .wide))
-        return "\(relative) (\(date.formatted(date: .abbreviated, time: .standard)))"
+    @ViewBuilder private var detailsPanel: some View {
+        if let context = model.context(for: row.id) {
+            SessionDetails(context: context, cluster: model.cluster,
+                           checkout: model.cluster.checkout(machineID: row.id.machineID, workspaceID: row.agent.workspaceID),
+                           background: model.backgroundCommands(of: row))
+                .frame(width: 320)
+        }
     }
 
     /// Shows or hides the sessions nested under this one. Amber while a hidden one needs you.
