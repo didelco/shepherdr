@@ -391,14 +391,35 @@ private struct SessionRowView: View {
     /// One line: state, name, machine when there are several, mail. Everything else is in the tooltip
     /// and in the session's own view.
     private var content: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            line
+            if hovering { summary }
+        }
+    }
+
+    /// On hover, under the name: what the session is doing and, below it, the branch it works on.
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if !row.title.isEmpty {
+                Text(row.title).font(Theme.mono(10.5)).foregroundStyle(Theme.text.opacity(0.7))
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            }
+            if let place = placeName {
+                Label { Text(place).lineLimit(1).truncationMode(.middle) } icon: {
+                    Image(systemName: "arrow.triangle.branch").font(.system(size: 8, weight: .semibold))
+                }
+                .font(Theme.mono(10)).foregroundStyle(Theme.dim)
+            }
+        }
+        .padding(.leading, 44).padding(.bottom, 2)
+    }
+
+    private var line: some View {
         HStack(alignment: .center, spacing: 8) {
             stateMark
             AgentMark(program: row.agent.program, style: .glyph)
             Text(row.workspace).font(Theme.mono(12, .semibold)).lineLimit(1)
                 .foregroundStyle(isSelected ? Theme.text : Theme.text.opacity(0.85))
-            if hovering, let place = placeName {
-                Text(place).font(Theme.mono(10)).foregroundStyle(Theme.dim).lineLimit(1).truncationMode(.middle)
-            }
             if showsMachine {
                 Text("@\(row.machineName)").font(Theme.mono(10)).foregroundStyle(Theme.faint).lineLimit(1)
             }
